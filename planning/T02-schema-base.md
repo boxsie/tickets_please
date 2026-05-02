@@ -1,0 +1,206 @@
+---
+id: T02
+title: Storage primitives & integrity check
+status: TODO
+owner: ""
+depends_on: [T01]
+parallelizable_with: [T03, T08, T15]
+wave: 1
+files:
+  - internal/store/store.go
+  - internal/store/stage.go
+  - internal/store/lock.go
+  - internal/store/watch.go
+  - internal/store/yaml.go
+  - internal/store/frontmatter.go
+  - internal/store/projects.go
+  - internal/store/phases.go
+  - internal/store/tickets.go
+  - internal/store/comments.go
+  - internal/store/agents.go
+  - internal/store/integrity.go
+  - internal/store/git.go
+estimate: medium
+stretch: false
+---
+
+# T02 — Storage primitives & integrity check
+
+## Scope
+
+Build the filesystem storage layer that every other ticket reads/writes through. Atomic writes via staging-dir + rename, **per-project flock for mutations**, **fsnotify for cross-process cache invalidation**, yaml + frontmatter codecs, walk helpers, startup integrity check, and an opt-out git auto-commit hook.
+
+**In:** `internal/store/` package, startup integrity walk wired into the `check` subcommand, file-watching helpers exposed for the project cache (T04) to consume.
+
+**Out:** No svc methods, no embedding work, no project cache. T03 owns the `internal/domain/` types. T04 builds on Store; T09/T10 add embeddings; T15 adds agent identity.
+
+## Files
+
+- `internal/store/store.go` — `Store` struct rooted at data_dir
+- `internal/store/stage.go` — `StageOp` helper: stage paths under `.staging/<op-id>/`, rename into place atomically, cleanup on failure
+- `internal/store/lock.go` — `WithProjectLock(slug, fn)` and `WithGlobalLock(fn)` using `golang.org/x/sys/unix.Flock` with timeout
+- `internal/store/watch.go` — `WatchProject(slug, onChange func())` wrapping `fsnotify`
+- `internal/store/yaml.go` — yaml read/write helpers (gopkg.in/yaml.v3)
+- `internal/store/frontmatter.go` — markdown-with-yaml-frontmatter codec for comment files
+- `internal/store/projects.go` — read/write/walk projects
+- `internal/store/phases.go` — read/write/walk phases within a project
+- `internal/store/tickets.go` — read/write/walk tickets within a project (handles both phased and phase-less paths)
+- `internal/store/comments.go` — append-only comment writes; walk in chronological order
+- `internal/store/agents.go` — read/write/walk agents; active-session uniqueness check
+- `internal/store/integrity.go` — startup integrity walk
+- `internal/store/git.go` — `Commit(ctx, paths, agent, summary)` using go-git; no-op when not in a git repo or `auto_commit: false`
+
+## Details
+
+### `Store` shape
+
+```go
+type Store struct {
+    Root       string         // absolute path to data_dir
+    AutoCommit bool
+    Logger     *slog.Logger
+}
+
+func New(cfg config.Config) (*Store, error)
+```
+
+`New` resolves `cfg.DataDir` to an absolute path, creates `agents/`, `projects/`, `.staging/` if missing, runs an integrity check, and (if applicable) verifies the dir is inside a git repo.
+
+### Per-project locks (`lock.go`)
+
+```go
+func (s *Store) WithProjectLock(ctx context.Context, slug string, fn func() error) error
+func (s *Store) WithGlobalLock(ctx context.Context, fn func() error) error
+```
+
+- Each acquires `unix.Flock(fd, LOCK_EX)` on `<root>/projects/<slug>/.lock` (or `<root>/.lock` for global).
+- Lock acquisition has a configurable timeout (`cfg.LockTimeoutSeconds`, default 10s) implemented by repeatedly trying with `LOCK_EX|LOCK_NB` and sleeping 50ms between attempts.
+- On timeout: return an error like `lock contention on project <slug> (held > 10s)` so the caller can surface it cleanly.
+- Lock released on file close OR process death (kernel cleans up).
+- Reads do **not** lock; they rely on atomic-write semantics.
+
+The `StageOp.Commit` flow described below acquires the appropriate lock before performing renames.
+
+### File watching (`watch.go`)
+
+Lightweight `fsnotify` wrapper:
+
+```go
+type ProjectWatcher struct {
+    Slug    string
+    Events  chan struct{}  // collapsed change signal; one per debounce window
+    Close   func()
+}
+
+func (s *Store) WatchProject(slug string) (*ProjectWatcher, error)
+```
+
+- Recursively watches `projects/<slug>/`.
+- Coalesces bursts of events into a single signal (debounce ~50ms).
+- Filters out events from `.staging/` and `.lock` files.
+- Used by the project cache (T04) to invalidate `LoadedProject.Stale` on cross-process changes.
+
+### Atomic writes via `StageOp`
+
+```go
+type StageOp struct {
+    OpID string
+    Files map[string][]byte // relative-to-Root final path → content
+}
+
+func (s *Store) BeginOp() *StageOp
+func (op *StageOp) Write(relPath string, content []byte)
+func (op *StageOp) Commit(ctx context.Context, agent *domain.Agent, summary string) error
+func (op *StageOp) Abort()
+```
+
+`Commit` flow:
+1. Determine which lock the op needs: per-project (the common case) or global (project create/delete).
+2. Acquire the lock via `WithProjectLock` / `WithGlobalLock`.
+3. Inside the lock: write each file to `.staging/<op-id>/<relPath>` (mkdir parents) via `os.WriteFile` + `f.Sync()`.
+4. For each staged file, `os.MkdirAll` its final parent dir and `os.Rename` from staging → final.
+5. `os.RemoveAll(.staging/<op-id>)`.
+6. If `s.AutoCommit && agent != nil`, call `git.Commit(ctx, finalPaths, agent, summary)` (still inside the lock — keeps audit-trail commits ordered).
+7. Release the lock.
+
+Failure between steps 4 and 5 leaves a partial state — the integrity check at the next startup detects it.
+
+`Abort` removes the staging dir without renames.
+
+### Markdown frontmatter codec
+
+Comment files have YAML frontmatter (`---\nkey: value\n---\n`) followed by markdown body. The codec round-trips:
+
+```go
+type Frontmatter map[string]any
+func WriteMarkdown(path string, fm Frontmatter, body string) error
+func ReadMarkdown(path string) (Frontmatter, string, error)
+```
+
+### Walk helpers
+
+- `WalkProjects(func(slug, *Project) error)` — iterates `projects/*/project.yaml`.
+- `WalkTickets(slug string, func(*Ticket) error)` — iterates `projects/<slug>/tickets/*/ticket.yaml`, ordered by directory name.
+- `WalkComments(ticketDir, func(*Comment) error)` — iterates the comments subdir, ordered by filename (which encodes timestamp).
+- `WalkAgents(func(*Agent) error)` — iterates `agents/*.yaml`.
+
+Each walk is a streaming iterator, not a slurp.
+
+### Active-session uniqueness for agents
+
+`Store.RegisterAgent(agent *Agent)`:
+1. WalkAgents, collect any non-expired record with the same `key`. If found, return `ErrAgentKeyConflict`.
+2. Write `agents/<id>.yaml` via StageOp.
+
+### Integrity check
+
+`store.Integrity(ctx)`:
+- Every `*.yaml` parses without error.
+- Every project has `project.yaml` and `summary.md`.
+- Every ticket has `ticket.yaml` and `body.md`.
+- Every `done` ticket also has `completion.md`.
+- Every `created_by` / `completed_by` / `author_id` references an existing `agents/<uuid>.yaml` (or is null).
+- `.staging/` is empty (else log a warning naming the residual op-id; do not auto-clean — leave it for human inspection).
+
+Any **structural** failure (unparseable yaml, missing required file) aborts startup with a clear error message naming the path. Soft failures (orphan embedding sidecar, dangling agent ref) log warnings and continue.
+
+### Git auto-commit
+
+```go
+func (s *Store) commit(ctx context.Context, paths []string, agent *domain.Agent, summary string) error
+```
+
+Implementation:
+- Open the repo at the cwd (or wherever `data_dir` lives) via `go-git`.
+- If not a repo: warn-log once at startup and disable auto-commit for the process.
+- For each call, `wt.Add(relPath)` for each path, then `wt.Commit(summary, &git.CommitOptions{Author: ...})` with `Author.Name = agent.Name`, `Author.Email = agent.Key + "@tickets_please"`, `Author.When = time.Now()`.
+- Commit message format:
+  ```
+  [tickets_please] <verb> <subject> [<agent.name>]
+
+  <summary>
+  ```
+
+T07 (move/complete) and T15 (agent register) will call this with verbs like "move ticket", "complete ticket", "register agent".
+
+## Acceptance criteria
+
+- [ ] `store.New` on a fresh data dir creates `agents/`, `projects/`, and `.staging/`.
+- [ ] `StageOp` round-trip: writing two files via `BeginOp` + `Write` + `Commit` produces both at their final paths and leaves `.staging/` empty.
+- [ ] Killing the process between `Write` and `Commit` leaves `.staging/<op-id>/` populated; integrity at next startup logs the residual op.
+- [ ] `WriteMarkdown` + `ReadMarkdown` round-trips frontmatter and body losslessly.
+- [ ] `RegisterAgent` rejects a second active session with the same `key` (`ErrAgentKeyConflict`); accepts after the first record's `expires_at` passes.
+- [ ] `WalkComments` returns comments in created-at order regardless of filesystem return order.
+- [ ] On a fresh git repo with `auto_commit: true`, calling `op.Commit(ctx, agent, "create project foo")` produces a single commit attributed to `agent.Name`.
+- [ ] On a non-git directory, auto-commit logs the warning once and the StageOp still succeeds.
+- [ ] Integrity check fails loudly if `summary.md` is missing for a project; it warns (not fails) on a stray `*.embedding.json` without a source.
+- [ ] Two simultaneous goroutines calling `WithProjectLock("foo", …)` serialize correctly (verified by a counter test).
+- [ ] `WithProjectLock("foo", …)` does NOT block `WithProjectLock("bar", …)`.
+- [ ] Lock acquisition timeout fires when configured to a small value and a long-held lock is held by a sibling test.
+- [ ] `WatchProject` emits a single coalesced event for a burst of writes (debounce works).
+
+## Notes
+
+See **Data layout**, **Atomicity (the staging + rename pattern)**, **Integrity check (startup)**, and **Auto-commit** in [`../SPEC.md`](../SPEC.md). Keep all paths relative to `Store.Root`; never let absolute paths leak into stored data.
+
+T15 (agent identity) consumes `Store.RegisterAgent` and `Store.WalkAgents` for the session interceptor's lookups. T04+ all sit on top of `StageOp`.

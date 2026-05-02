@@ -1,0 +1,45 @@
+# Sample tickets_please config.
+#
+# Copy this file to ~/.tickets_please/config.yaml and edit as needed.
+# Any value here can be overridden by setting the matching env var
+# (uppercase the key, replace dots with underscores — e.g. data_dir -> DATA_DIR).
+# All keys are optional; missing keys fall back to the built-in defaults.
+
+# Root of the on-disk data tree. Defaults to a directory in the current working dir
+# so the repo's own data lives inside the repo.
+data_dir: ./.tickets_please
+
+# When true and `data_dir` is inside a git repo, every mutating call produces a commit
+# authored as the calling agent. Set to false to skip the audit-trail commits.
+auto_commit: true
+
+# Embedding provider: "ollama" (default, local) or "openai".
+embed_provider: ollama
+
+# Ollama settings (used when embed_provider == "ollama").
+ollama_url: http://localhost:11434
+ollama_model: nomic-embed-text
+
+# OpenAI settings (used when embed_provider == "openai"). API key is required in that case.
+# Note: switching providers with a different vector dim requires deleting all *.embedding.json
+# files so the worker re-embeds with the new provider.
+openai_api_key: ""
+
+# MCP self-identity. The binary registers itself as an agent on startup.
+# `mcp_agent_key` is a self-asserted identifier. Empty = generate one (tickets_please_mcp:<random>).
+mcp_agent_key: ""
+mcp_agent_name: tickets_please_mcp
+
+# Agent session TTL in minutes. Default is fine; cap is enforced server-side.
+agent_session_ttl_minutes: 60
+agent_session_max_minutes: 240
+
+# Project loading & cache.
+project_idle_minutes: 15
+max_loaded_projects: 16
+
+# Concurrent-access mitigations.
+# lock_timeout_seconds — how long to wait for a per-project flock before erroring.
+# fsnotify_enabled     — cross-process cache invalidation. Set false for mtime polling fallback.
+lock_timeout_seconds: 10
+fsnotify_enabled: true

@@ -1,0 +1,20 @@
+# Go build artifacts
+/tickets_please
+/tickets_please-*
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Local env / IDE
+.env
+.env.local
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Transient atomicity scratch — never commit partial writes
+.tickets_please/.staging/
