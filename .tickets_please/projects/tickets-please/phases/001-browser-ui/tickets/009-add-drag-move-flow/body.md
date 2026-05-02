@@ -1,0 +1,1 @@
+Use dnd-kit to drag cards between non-done columns. Every move must open a comment prompt before calling the move endpoint so the audit trail stays complete. Acceptance criteria: dragging todo, in_progress, or testing cards prompts for a comment; empty comments are rejected; successful moves create system comments and update columns; done tickets cannot be moved.
