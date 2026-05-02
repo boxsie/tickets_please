@@ -1,8 +1,8 @@
 ---
 id: T16
 title: Phase methods + AssignTicketToPhase + ListWaves
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T16
 depends_on: [T02, T03, T04, T05, T15]
 parallelizable_with: [T07]
 wave: 5
