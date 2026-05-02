@@ -1,8 +1,8 @@
 ---
 id: T03
 title: Domain types & MCP tool schemas
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T03
 depends_on: [T01]
 parallelizable_with: [T02, T08, T15]
 wave: 1
