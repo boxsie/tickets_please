@@ -25,7 +25,7 @@ A single Go binary that runs as an MCP stdio server. Data lives as a plain direc
 - **Phases & waves.** Optional sub-projects for bigger bodies of work; each phase has a ≥200-char markdown summary an LLM can context-load. Waves are a soft int grouping inside a phase or project — cluster tickets into ordered batches without committing to hard `depends_on` edges.
 - **Subagent-orchestratable.** Tickets carry `depends_on` / `parallelizable_with` / `blocked_by` (computed) plus `wave`, so a swarm of agents can pick ready work in batches without stepping on each other.
 - **Concurrency-safe across processes.** Per-project flock for mutations + fsnotify for cross-process cache invalidation. Two MCP clients on the same data dir don't corrupt each other.
-- **MCP-native.** ~24 tools tuned for LLM ergonomics, including the load-bearing `search_learnings` and `get_project_summary`.
+- **MCP-native.** 28 tools tuned for LLM ergonomics, including the load-bearing `search_learnings` and `get_project_summary`.
 
 ## Quickstart
 
@@ -41,11 +41,66 @@ make build                        # produces ./tickets_please
 ```
 
 Then register the resulting `tickets_please` binary with your MCP-capable client
-(Claude Desktop, Claude Code, Cursor, etc.) as a stdio MCP server.
+(Claude Desktop, Claude Code, Cursor, etc.) as a stdio MCP server. See
+[Wiring up MCP](#wiring-up-mcp) below.
 
 The `.tickets_please/` directory IS the data — it's committed to git, so cloning
 a repo brings its full ticket history with you. Only `.tickets_please/.staging/`
 is gitignored (it holds transient half-applied writes).
+
+## Wiring up MCP
+
+The MCP server exposes 28 tools across projects, phases, tickets, comments,
+search, and introspection. Two of them are load-bearing for LLM ergonomics:
+
+- **`get_project_summary`** — read this before doing any non-trivial work in a project.
+- **`search_learnings`** — run this before starting non-trivial work; past you may have left notes.
+
+### Claude Desktop
+
+Edit your `~/Library/Application Support/Claude/claude_desktop_config.json`
+(macOS) or the equivalent on your platform:
+
+```json
+{
+  "mcpServers": {
+    "tickets_please": {
+      "command": "/abs/path/to/tickets_please",
+      "args": ["mcp"],
+      "env": {
+        "MCP_AGENT_NAME": "Claude Desktop"
+      }
+    }
+  }
+}
+```
+
+`MCP_AGENT_NAME` shows up in attributions (`created_by`, `completed_by`) so
+your audit trail tells you which client did what. Override `MCP_AGENT_KEY`
+too if you want a stable identifier across restarts; the default appends a
+random hex suffix so two simultaneous MCPs don't collide on the active-session
+uniqueness check.
+
+### Claude Code
+
+```bash
+claude mcp add tickets_please /abs/path/to/tickets_please mcp
+```
+
+### First run
+
+Once the MCP is wired up, ask Claude something like:
+
+> Use the tickets_please MCP to create a project called `demo` with a thoughtful
+> 200+ char summary describing what it's for. Then create a ticket
+> "Wire up the initial board". Move it to `in_progress` with a comment, then
+> complete it with substantive testing evidence, work summary, and learnings.
+
+That single conversation exercises `create_project` (≥200-char summary
+enforcement), `create_ticket`, `move_ticket` (comment required, no `done`
+target), and `complete_ticket` (three structured fields, each ≥10 chars), and
+populates `search_learnings` for the next agent. Watch `.tickets_please/`
+fill up with yaml + markdown you can `cat`, `grep`, and `git diff`.
 
 ## Where to go next
 
