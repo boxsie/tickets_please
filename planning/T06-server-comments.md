@@ -1,11 +1,11 @@
 ---
 id: T06
-title: CommentService
+title: Comment methods
 status: TODO
 owner: ""
 depends_on: [T02, T03, T04, T15]
-parallelizable_with: [T05, T08]
-wave: 2
+parallelizable_with: [T05]
+wave: 4
 files:
   - internal/svc/comments.go
   - internal/store/comments.go

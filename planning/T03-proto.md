@@ -18,11 +18,13 @@ stretch: false
 
 ## Scope
 
-Hand-write the Go domain types every other ticket needs. Replaces what would have been a protobuf layer; we ripped that out in favor of a single in-process API.
+Hand-write the Go **hydrated** domain types every other ticket needs. These are what `svc.Service` methods return — full Project, Phase, Ticket, Comment, including the fields that live in sibling markdown files (`Summary`, `Body`, `Learnings`).
 
-**In:** `internal/domain/` package: structs for Project, Phase, Ticket, Comment, Agent, plus enum-style typed strings, plus error sentinels, plus the input structs that `svc.Service` methods accept.
+**Disk record types are NOT this ticket's job.** Those (`store.ProjectRecord`, `store.TicketRecord`, etc.) live in T02. The cache layer assembles records + sibling files into the hydrated `domain.*` types defined here.
 
-**Out:** No proto files, no buf, no codegen. No service interface (that's T04+ landing in `internal/svc`).
+**In:** `internal/domain/` package: hydrated structs for Project, Phase, Ticket, Comment, Agent; enum-style typed strings; error sentinels; input structs that `svc.Service` methods accept.
+
+**Out:** No proto files, no buf, no codegen. No `svc.Service` interface (T15 owns that). No yaml-tag round-tripping — domain types don't need to round-trip to disk; that's the record types' job.
 
 ## Files
 
@@ -105,7 +107,7 @@ type Comment struct {
 }
 ```
 
-YAML tags for marshalling: every field gets a snake_case tag. Use `yaml:"created_at,omitempty"` so unset times don't litter the file.
+**No YAML tags on domain types.** YAML round-tripping is the disk record types' responsibility (T02 owns those). Domain types are pure in-memory shapes returned by `svc.Service`.
 
 ### Input structs
 
@@ -157,8 +159,7 @@ This ticket can ship a `tools.txt` or a Go file `internal/domain/tool_schemas.go
 - [ ] `internal/domain/types.go` compiles and has all entity structs.
 - [ ] `internal/domain/errors.go` compiles; `errors.Is(someErr, domain.ErrNotFound)` works for sentinel values.
 - [ ] Input structs cover every `svc.Service` method that other tickets reference.
-- [ ] Round-trip: marshal a `Ticket` to YAML, unmarshal back, compare deep-equal.
-- [ ] Tool schemas table covers all 18 tools listed in the **MCP server** section (incl. phases + who_am_i + load_project + get_project_summary).
+- [ ] Tool schemas table covers all **27 tools** listed in the **MCP server** section of [`../SPEC.md`](../SPEC.md): 7 project tools, 6 phase tools, 7 ticket tools, 2 comment tools, 4 search tools, 1 introspection tool.
 
 ## Notes
 

@@ -4,7 +4,7 @@ title: Embedding providers (Ollama, OpenAI)
 status: TODO
 owner: ""
 depends_on: [T01]
-parallelizable_with: [T02, T03, T15, T04, T05, T06, T07, T09]
+parallelizable_with: [T02, T03]
 wave: 1
 files:
   - internal/embed/provider.go

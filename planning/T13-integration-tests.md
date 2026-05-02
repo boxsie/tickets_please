@@ -5,7 +5,7 @@ status: TODO
 owner: ""
 depends_on: [T07, T11, T15]
 parallelizable_with: [T12, T14]
-wave: 6
+wave: 9
 files:
   - internal/svc/svc_test.go
   - internal/svc/tickets_test.go

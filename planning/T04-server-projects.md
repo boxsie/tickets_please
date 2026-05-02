@@ -1,16 +1,15 @@
 ---
 id: T04
-title: ProjectService + project cache
+title: Project methods + project cache
 status: TODO
 owner: ""
 depends_on: [T02, T03, T15]
-parallelizable_with: [T05, T06, T08]
-wave: 2
+parallelizable_with: []
+wave: 3
 files:
-  - internal/svc/service.go
   - internal/svc/projects.go
   - internal/cache/projectcache.go
-  - cmd/tickets_please/main.go
+  - internal/svc/service.go
 estimate: large
 stretch: false
 ---
@@ -27,10 +26,9 @@ Implement the project methods on `svc.Service` on top of the filesystem `Store`,
 
 ## Files
 
-- `internal/svc/service.go` — `Service` struct (Store, Embed, Cache, Worker, Indexes, Logger); `New(cfg) (*Service, error)`
-- `internal/svc/projects.go`
+- `internal/svc/projects.go` — the project methods on `Service`
 - `internal/cache/projectcache.go` — `ProjectCache` with sliding TTL + LRU
-- `cmd/tickets_please/main.go` — `runMCP(cfg)` wires Service → MCP server
+- `internal/svc/service.go` — **edited, not created here**. T15 owns this file. T04 extends the struct with `Cache *cache.ProjectCache` and extends `New` to construct it.
 
 ## Details
 
@@ -79,24 +77,30 @@ func (c *ProjectCache) RunEvictor(ctx context.Context)
 
 Loading walks the project's directory once: parses `project.yaml`, `summary.md`, every `tickets/<NNN>-…/ticket.yaml` + `body.md` + (if done) `completion.md`, every `comments/*.md`. Builds a fresh per-project `vecindex.Index` and runs the per-project sidecar backfill (T10).
 
-### `Service` shape
+### Extending `Service` (declared by T15)
+
+T15 owns `internal/svc/service.go` with the foundational struct + `New`. T04 *appends* the project-cache field and wires its construction:
 
 ```go
 type Service struct {
-    Store         *store.Store
-    Embed         embed.Provider
-    Cache         *cache.ProjectCache
-    Worker        *worker.Worker
-    LearningsIdx  *vecindex.Index
-    SummaryIdx    *vecindex.Index
-    Logger        *slog.Logger
-    Cfg           config.Config
+    // ... fields T15 owns (Store, Logger, Cfg, agent state) ...
+
+    // Added by T04:
+    Cache *cache.ProjectCache
 }
 
-func New(cfg config.Config) (*Service, error)
+func New(cfg config.Config) (*Service, error) {
+    // ... T15 startup ...
+    cache := cache.New(store, cfg.ProjectIdleMinutes, cfg.MaxLoadedProjects)
+    s.Cache = cache
+    go s.Cache.RunEvictor(ctx)
+    // ...
+}
 ```
 
-T05/T06/T07/T16 all hang off the same `Service` and use `s.Cache.Get(ctx, slug)` whenever they need a loaded project.
+T05/T06/T07/T16 hang off the same `Service` and use `s.Cache.Get(ctx, slug)` whenever they need a loaded project.
+
+T08, T09, T10, T11 will each append their own fields (`Embed`, `LearningsIdx`, `SummaryIdx`, `Worker`) when they land.
 
 ### Methods
 

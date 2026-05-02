@@ -1,12 +1,13 @@
 ---
 id: T15
-title: Agent identity & in-process middleware
+title: Service skeleton + agent identity + in-process middleware
 status: TODO
 owner: ""
 depends_on: [T02, T03]
-parallelizable_with: [T08]
-wave: 1
+parallelizable_with: [T09]
+wave: 2
 files:
+  - internal/svc/service.go
   - internal/svc/agents.go
   - internal/svc/middleware.go
   - internal/svc/context.go
@@ -14,25 +15,56 @@ estimate: medium
 stretch: false
 ---
 
-# T15 — Agent identity & in-process middleware
+# T15 — Service skeleton + agent identity + in-process middleware
 
-> **Wave 1 foundational ticket.** Despite the high number, this lands BEFORE T04–T07 because every mutating service method depends on the session-validating middleware. Schedule alongside T02/T03/T08.
+> **Wave 2.** Depends on T02 (Store helpers) and T03 (domain types). Lands BEFORE T04 — T04 *extends* the `Service` struct this ticket creates.
 
 ## Scope
 
-Implement `Service.RegisterAgent` / `Heartbeat` / `GetAgent` and the in-process middleware that validates a session ID attached to `context.Context`. No gRPC interceptor — this is pure Go middleware around `svc.Service` methods.
+Define the `Service` struct (the in-process API surface), build its constructor, implement `RegisterAgent` / `Heartbeat` / `GetAgent`, and ship the session-validating middleware that every later ticket's mutating method calls.
 
-**In:** Agent service methods, in-process middleware, context helpers, integration with the MCP layer's identity flow.
+**In:** `Service` struct + `New`, agent methods, middleware, context helpers.
 
-**Out:** No transport layer (the system has none). No metadata-header parsing.
+**Out:** Project/ticket/comment/search methods (T04+ add those). No project cache (T04). No embedding worker (T10). No vector indexes (T09). T15's `Service` declares only the foundational fields; later tickets *append* fields they own.
 
 ## Files
 
+- `internal/svc/service.go` — **the canonical `Service` struct** + `New(cfg)` constructor (this ticket owns the file; later tickets add fields and constructor wiring)
 - `internal/svc/agents.go` — RegisterAgent, Heartbeat, GetAgent
 - `internal/svc/middleware.go` — `requireSession` decorator-style helper
 - `internal/svc/context.go` — `WithAgent`, `AgentFrom`, `WithSessionID`, `SessionIDFrom`
 
 ## Details
+
+### `Service` struct (canonical, in `service.go`)
+
+T15 declares the minimal foundational shape. Later tickets append fields:
+
+```go
+type Service struct {
+    Store  *store.Store
+    Logger *slog.Logger
+    Cfg    config.Config
+
+    // Agents (this ticket).
+    touchOnce map[string]time.Time // debounce LastSeenAt rewrites; protected by touchMu
+    touchMu   sync.Mutex
+
+    // Fields added by later tickets — declare them here as zero values:
+    //   Cache         *cache.ProjectCache  // T04
+    //   Embed         embed.Provider       // T08 (interface) — populated in T10's wiring
+    //   Worker        *worker.Worker       // T10
+    //   LearningsIdx  *vecindex.Index      // T11 / T10 wires it
+    //   SummaryIdx    *vecindex.Index      // T11
+}
+
+func New(cfg config.Config) (*Service, error) {
+    // Build Store, init logger, return Service with foundational fields populated.
+    // Later-ticket fields stay nil until those tickets ship and add their construction.
+}
+```
+
+**Convention for later tickets**: when T04/T08/T10/T11 land, they edit `service.go` to add their field to the struct AND extend `New` to construct it. The struct definition is shared but additive — no ticket *replaces* it.
 
 ### Configuration
 

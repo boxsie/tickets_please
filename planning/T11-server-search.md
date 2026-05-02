@@ -1,11 +1,11 @@
 ---
 id: T11
-title: SearchService (semantic)
+title: Search methods (semantic)
 status: TODO
 owner: ""
 depends_on: [T10]
 parallelizable_with: []
-wave: 4
+wave: 7
 files:
   - internal/svc/search.go
 estimate: small

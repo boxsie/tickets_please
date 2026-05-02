@@ -1,11 +1,11 @@
 ---
 id: T05
-title: TicketService CRUD
+title: Ticket CRUD methods
 status: TODO
 owner: ""
 depends_on: [T02, T03, T04, T15]
-parallelizable_with: [T06, T08]
-wave: 2
+parallelizable_with: [T06]
+wave: 4
 files:
   - internal/svc/tickets.go
   - internal/store/tickets.go

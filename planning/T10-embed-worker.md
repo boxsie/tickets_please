@@ -5,7 +5,7 @@ status: TODO
 owner: ""
 depends_on: [T07, T08, T09]
 parallelizable_with: []
-wave: 3
+wave: 6
 files:
   - internal/worker/embed.go
   - internal/svc/projects.go

@@ -1,11 +1,11 @@
 ---
 id: T16
-title: PhaseService + AssignTicketToPhase
+title: Phase methods + AssignTicketToPhase
 status: TODO
 owner: ""
 depends_on: [T02, T03, T04, T05, T15]
-parallelizable_with: [T06, T08]
-wave: 3
+parallelizable_with: [T07]
+wave: 5
 files:
   - internal/svc/phases.go
   - internal/svc/tickets.go

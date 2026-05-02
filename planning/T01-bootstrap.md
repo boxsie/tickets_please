@@ -78,6 +78,7 @@ type Config struct {
     MaxLoadedProjects      int    `koanf:"max_loaded_projects"`
     LockTimeoutSeconds     int    `koanf:"lock_timeout_seconds"`
     FsnotifyEnabled        bool   `koanf:"fsnotify_enabled"`
+    EnforceDependencies    bool   `koanf:"enforce_dependencies"`
 }
 
 func Load() (Config, error) { /* layered koanf load */ }
@@ -101,6 +102,7 @@ var defaults = map[string]any{
     "max_loaded_projects":       16,
     "lock_timeout_seconds":      10,
     "fsnotify_enabled":          true,
+    "enforce_dependencies":      false,
 }
 ```
 

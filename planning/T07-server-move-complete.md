@@ -4,8 +4,8 @@ title: MoveTicket + CompleteTicket
 status: TODO
 owner: ""
 depends_on: [T05, T06]
-parallelizable_with: [T08, T09]
-wave: 3
+parallelizable_with: [T16]
+wave: 5
 files:
   - internal/svc/validation.go
   - internal/svc/tickets.go

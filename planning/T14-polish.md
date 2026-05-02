@@ -5,7 +5,7 @@ status: TODO
 owner: ""
 depends_on: [T07, T12]
 parallelizable_with: [T13]
-wave: 6
+wave: 9
 files:
   - internal/svc/validation.go
   - internal/svc/middleware.go

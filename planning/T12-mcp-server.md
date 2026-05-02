@@ -5,7 +5,7 @@ status: TODO
 owner: ""
 depends_on: [T03, T04, T05, T06, T07, T11, T15, T16]
 parallelizable_with: []
-wave: 5
+wave: 8
 files:
   - cmd/tickets_please/main.go
   - internal/mcptools/tools.go
@@ -124,13 +124,20 @@ Error mapping (`format.go`):
 | `ErrFailedPrecondition` | `precondition failed: <message>` |
 | `ErrUnauthenticated` | `unauthenticated; re-registering...` (caller retries) |
 
-### Tool list
+### Tool list (27 total — canonical)
 
-All from the spec's **MCP server** section, plus `who_am_i`:
+All from the spec's **MCP server** section. Counted by category:
 
-`list_projects`, `create_project`, `get_project_summary`, `load_project`, `update_project`, `delete_project`, `create_phase`, `list_phases`, `get_phase_summary`, `update_phase`, `assign_ticket_to_phase`, `create_ticket`, `get_ticket`, `list_tickets`, `update_ticket`, `move_ticket`, `complete_ticket`, `add_comment`, `list_comments`, `search_projects`, `search_tickets`, `search_learnings`, `search_comments`, `who_am_i`.
+- **Projects (7)**: `list_projects`, `create_project`, `get_project`, `get_project_summary`, `load_project`, `update_project`, `delete_project`
+- **Phases (6)**: `list_phases`, `create_phase`, `get_phase`, `get_phase_summary`, `update_phase`, `delete_phase`
+- **Tickets (7)**: `list_tickets`, `create_ticket`, `get_ticket`, `update_ticket`, `move_ticket`, `complete_ticket`, `assign_ticket_to_phase`
+- **Comments (2)**: `add_comment`, `list_comments`
+- **Search (4)**: `search_projects`, `search_tickets`, `search_learnings`, `search_comments`
+- **Introspection (1)**: `who_am_i`
 
-`who_am_i` is a special tool that doesn't call svc — it returns `t.identity` from process state.
+`who_am_i` is special — it doesn't call svc, just returns `t.identity` from process state.
+
+If the spec table and this list ever drift, the SPEC table wins. Reconcile back here.
 
 ### Output formatting
 
@@ -177,7 +184,7 @@ Include a "First run" recipe: ask Claude to "create a project called 'demo' with
 - [ ] `./tickets_please check` runs the integrity walk and exits cleanly.
 - [ ] `./tickets_please init` creates the data dir scaffold idempotently.
 - [ ] LLM end-to-end (in a Claude Code chat with the MCP registered):
-  - All 24 tools listed.
+  - All 27 tools listed.
   - `create_project` rejects when summary < 200 chars.
   - `create_ticket` works.
   - `move_ticket` rejects without a comment, succeeds with one.

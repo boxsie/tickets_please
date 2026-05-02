@@ -4,7 +4,7 @@ title: Vector index (in-memory)
 status: TODO
 owner: ""
 depends_on: [T02]
-parallelizable_with: [T07, T08]
+parallelizable_with: [T15]
 wave: 2
 files:
   - internal/vecindex/index.go

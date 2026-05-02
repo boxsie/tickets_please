@@ -43,3 +43,8 @@ max_loaded_projects: 16
 # fsnotify_enabled     — cross-process cache invalidation. Set false for mtime polling fallback.
 lock_timeout_seconds: 10
 fsnotify_enabled: true
+
+# Subagent orchestration.
+# enforce_dependencies — when true, MoveTicket → in_progress blocks if BlockedBy is non-empty.
+#                         Default false: warn-log + annotate the move comment.
+enforce_dependencies: false

@@ -100,32 +100,104 @@ func (s *Store) WatchProject(slug string) (*ProjectWatcher, error)
 - Filters out events from `.staging/` and `.lock` files.
 - Used by the project cache (T04) to invalidate `LoadedProject.Stale` on cross-process changes.
 
-### Atomic writes via `StageOp`
+### Atomic writes via `StageOp` (ordered ops, not flat file map)
+
+Multi-file mutations need more than just "write these N files atomically". `AssignTicketToPhase` (T16) renames an entire ticket directory between `tickets/` and `phases/<NNN>-…/tickets/` AND rewrites `ticket.yaml` AND inserts a `system_move` comment. To support this, `StageOp` is an ordered list of typed ops — not a flat map.
 
 ```go
 type StageOp struct {
     OpID string
-    Files map[string][]byte // relative-to-Root final path → content
+    ops  []op
+    dir  string // .staging/<op-id>/
 }
 
+type op interface{ prepare(stagingDir string) error; apply(rootDir string) error }
+
+type writeOp struct  { path string; content []byte }
+type renameOp struct { from, to string }   // both relative to root
+type removeOp struct { path string }       // relative to root; works on files or trees
+
+// Methods on *StageOp:
 func (s *Store) BeginOp() *StageOp
-func (op *StageOp) Write(relPath string, content []byte)
-func (op *StageOp) Commit(ctx context.Context, agent *domain.Agent, summary string) error
-func (op *StageOp) Abort()
+func (o *StageOp) Write(relPath string, content []byte)        // appends a writeOp
+func (o *StageOp) RenameDir(fromRel, toRel string)             // appends a renameOp
+func (o *StageOp) RemovePath(relPath string)                   // appends a removeOp
+func (o *StageOp) Commit(ctx context.Context, lock LockScope, agent *domain.Agent, summary string) error
+func (o *StageOp) Abort()
 ```
 
+`Write` immediately performs `os.WriteFile` + `f.Sync()` against `.staging/<op-id>/<relPath>` (mkdir parents). `RenameDir`/`RemovePath` register intent only — no fs change at append time, so a crash before `Commit` leaves at most some staged file content (which the integrity check picks up).
+
 `Commit` flow:
-1. Determine which lock the op needs: per-project (the common case) or global (project create/delete).
-2. Acquire the lock via `WithProjectLock` / `WithGlobalLock`.
-3. Inside the lock: write each file to `.staging/<op-id>/<relPath>` (mkdir parents) via `os.WriteFile` + `f.Sync()`.
-4. For each staged file, `os.MkdirAll` its final parent dir and `os.Rename` from staging → final.
-5. `os.RemoveAll(.staging/<op-id>)`.
-6. If `s.AutoCommit && agent != nil`, call `git.Commit(ctx, finalPaths, agent, summary)` (still inside the lock — keeps audit-trail commits ordered).
-7. Release the lock.
+1. Acquire the appropriate flock (`LockScope` is `LockProject(slug)` or `LockGlobal`).
+2. **Apply phase** — iterate `ops` in declared order:
+   - `writeOp`: `os.MkdirAll` parent of final, then `os.Rename` from staging → final.
+   - `renameOp`: `os.Rename(fromAbs, toAbs)` — single syscall, atomic per rename.
+   - `removeOp`: `os.RemoveAll(absPath)`.
+3. `os.RemoveAll(.staging/<op-id>/)`.
+4. If `s.AutoCommit && agent != nil`, call `git.Commit(ctx, touchedPaths, agent, summary)` (inside the lock — keeps audit-trail commits ordered).
+5. Release the lock.
 
-Failure between steps 4 and 5 leaves a partial state — the integrity check at the next startup detects it.
+Failure mid-apply leaves a partial state — but only across distinct ops, never within one (each underlying syscall is atomic). The integrity check at next startup finds:
+- `.staging/<op-id>/` not removed → operation didn't finish, paths can be inspected.
+- A ticket with a bad `column` vs. its directory location (e.g. `done` ticket missing `completion.md`) → partial completion.
 
-`Abort` removes the staging dir without renames.
+The honest claim isn't "multi-op atomicity" — it's "every individual op is atomic, multi-op is fail-detectable". For our scale (single-user, single-MCP active per data dir under flock) this is sufficient.
+
+`Abort` removes the staging dir without applying anything.
+
+### Disk records vs domain types
+
+Disk yaml is **not** the same shape as the in-memory `domain.*` type. Each entity has a paired record struct in `internal/store/` that mirrors only the fields stored in its yaml frontmatter. Sibling markdown files (`summary.md`, `body.md`, `completion.md`, comment bodies) carry the prose and are loaded separately.
+
+```go
+// internal/store/records.go — what's in *.yaml on disk
+type ProjectRecord struct {
+    ID, Slug, Name, Description string
+    CreatedByAgentID            *string   // pointer to *.yaml id; nil if pre-T15
+    CreatedAt, UpdatedAt        time.Time
+    // NO Summary field — that's summary.md, loaded separately.
+}
+
+type TicketRecord struct {
+    ID, ProjectID, Title  string
+    Column                domain.Column
+    PhaseID               *string
+    DependsOn             []string
+    ParallelizableWith    []string
+    CreatedByAgentID      *string
+    CompletedByAgentID    *string
+    CompletedAt           *time.Time
+    CreatedAt, UpdatedAt  time.Time
+    // NO Body, Learnings, etc — those are body.md / completion.md.
+}
+
+type CommentRecord struct {
+    ID, TicketID                 string
+    Kind                         domain.CommentKind
+    AuthorAgentID                *string
+    FromColumn, ToColumn         *domain.Column
+    CreatedAt                    time.Time
+    // NO Body — that's the markdown after the frontmatter block.
+}
+
+type PhaseRecord struct {
+    ID, ProjectID, Slug, Name, Description string
+    Number                                 int
+    CreatedByAgentID                       *string
+    CreatedAt, UpdatedAt                   time.Time
+    // NO Summary.
+}
+
+type AgentRecord struct {
+    // Same fields as domain.Agent — agents have no sidecar files,
+    // so the record IS the full domain shape (just stored as yaml).
+}
+```
+
+The Store package's read functions return records (cheap, no markdown reads). The cache layer (T04) assembles records + sibling files into `domain.*` for handlers to return. Hand-written conversion helpers (`recordToProject(rec ProjectRecord, summary string) *domain.Project`) live in `internal/store/`.
+
+This split is what lets `summary.md` be ≥200 chars without bloating every yaml; lets ticket bodies be markdown files an LLM can `cat`; and keeps integrity-check scans fast (records only).
 
 ### Markdown frontmatter codec
 

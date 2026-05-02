@@ -223,6 +223,7 @@ The directory `~/.tickets_please/` is created on first run if missing. A sample 
 | `max_loaded_projects` | `MAX_LOADED_PROJECTS` | `16` | Cap on simultaneously-loaded projects. LRU eviction beyond this. |
 | `lock_timeout_seconds` | `LOCK_TIMEOUT_SECONDS` | `10` | Per-project flock acquisition timeout for mutations. |
 | `fsnotify_enabled` | `FSNOTIFY_ENABLED` | `true` | Cross-process cache invalidation via fsnotify. Set false for mtime polling fallback. |
+| `enforce_dependencies` | `ENFORCE_DEPENDENCIES` | `false` | When true, `MoveTicket` to `in_progress` blocks if `BlockedBy` is non-empty. False (the default) only logs a warning and annotates the move comment. |
 
 ## Project layout
 
@@ -455,15 +456,45 @@ Picked this up after read-through; starting on the validation layer first.
 
 ### Atomicity (the staging + rename pattern)
 
-Multi-file mutations (e.g. `MoveTicket` updates `ticket.yaml` AND inserts a `system_move` comment) follow this pattern:
+Multi-file mutations (e.g. `MoveTicket` updates `ticket.yaml` AND inserts a `system_move` comment; `AssignTicketToPhase` renames an entire ticket directory between `tickets/` and `phases/<NNN>-…/tickets/` AND updates `ticket.yaml`) follow an **ordered-operations** model — not a flat file map.
 
-1. Generate an op-id (`uuid.NewString()`).
-2. For each file to write, write its final content to `.tickets_please/.staging/<op-id>/<relative-final-path>`.
-3. Once all staged files are written and `fsync`d, rename them into their final locations one at a time. Each `rename(2)` is atomic per file; the multi-file write is "atomic enough" — if a crash hits mid-rename, the integrity check at startup detects partial state and either rolls forward or warns.
-4. On success, `os.RemoveAll` the staging dir.
-5. If auto-commit is enabled, add the touched paths and commit with the agent as author.
+Each `StageOp` carries a list of ordered ops:
 
-For single-file writes (e.g. `CreateComment`) the same pattern applies but degenerates to one rename — no inconsistency window.
+| Op | What it does | When prepared | When applied |
+|---|---|---|---|
+| `Write(relPath, content)` | Writes a file. | At Write time: stages the file under `.staging/<op-id>/<relPath>` (mkdir parents, `f.Sync()`). | At Commit time: `os.Rename` from staging → final. |
+| `RenameDir(fromRel, toRel)` | Moves an entire directory in-place (within `data_dir`). | No-op at prepare time. | At Commit time: `os.Rename(fromAbs, toAbs)`. Single syscall, atomic per rename. |
+| `RemovePath(relPath)` | Deletes a file or tree. | No-op at prepare time. | At Commit time: `os.RemoveAll`. |
+
+`Commit` flow:
+
+1. Acquire the appropriate flock (per-project or global — see **Concurrent access**).
+2. **Prepare phase**: re-validate every staged Write file is on disk under `.staging/<op-id>/`.
+3. **Apply phase**: iterate `ops` in declared order; each op is applied via a single syscall where possible. Failures abort and leave whatever has already been applied; integrity check at next startup detects.
+4. `os.RemoveAll(.staging/<op-id>/)`.
+5. Auto-commit (if enabled) captures the touched paths.
+6. Release the lock.
+
+Failure between prepare and apply leaves staging-dir residue but no on-disk damage.
+Failure mid-apply leaves a partial state that the **integrity check** detects and surfaces. We deliberately don't claim multi-op atomicity beyond per-op syscall atomicity — instead, we make recovery legible.
+
+For single-file writes (e.g. `CreateComment`), the StageOp has one Write op and the prepare/apply degenerates to a single staged-file rename.
+
+### Disk records vs domain types
+
+The on-disk yaml schema is **not** the same as the in-memory `domain.*` type. They serve different audiences:
+
+| Layer | Type | What it carries |
+|---|---|---|
+| Disk | `store.ProjectRecord` | Just the fields stored in `project.yaml` — id, slug, name, description, attribution, timestamps. **No** `summary`/`body` fields (those are sibling files). |
+| Disk | `store.TicketRecord` | id, project_id, title, column, attribution, deps/parallel/phase ref, timestamps. **No** `body`, `learnings`, etc. |
+| Disk | `store.CommentRecord` | id, kind, author_id, from_column, to_column, created_at — i.e. the frontmatter. **No** body. |
+| Disk | `store.AgentRecord` | All Agent fields (it's a flat yaml, no sidecar). |
+| Disk | `store.PhaseRecord` | id, project_id, slug, number, name, description, attribution, timestamps. **No** `summary`. |
+
+Hydrated `domain.*` types (T03) carry the full record **plus** the markdown bodies (`Summary`, `Body`, `Learnings`, etc.) loaded from sibling files. Store-level reads return records; the cache layer assembles records + sibling files into domain types.
+
+This separation keeps yaml frontmatter small and inspectable while domain types travel with their context-loaded prose.
 
 ### Integrity check (startup)
 
@@ -796,25 +827,63 @@ Cosine similarity assumes vectors are L2-normalized. Both Ollama (`nomic-embed-t
 
 When the LLM client spawns `tickets_please mcp` (the default subcommand of the single binary), the process: builds an in-process `svc.Service`, registers itself as an agent against that service, registers MCP tools that wrap the service methods, then serves stdio. Session lifecycle is handled internally — if the session expires mid-conversation the binary auto-re-registers; the LLM never sees session plumbing.
 
-Tools (descriptions written **for the model**, since they show up in tool listings):
+Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **27 tools** across projects, phases, tickets, comments, search, and introspection.
+
+### Projects (7)
 
 | Tool | Description |
 |---|---|
 | `list_projects` | List all ticket projects. Use this first to find the project you want to work in. |
 | `create_project` | Create a new project. Slug must be unique and URL-safe. **Requires a `summary` field — a markdown document (≥200 chars) describing the project's goals, key components, and constraints.** This summary becomes the load-bearing context any future agent reads before working in this project. Be thorough. |
-| `get_project_summary` | Fetch a project's full summary markdown. **Read this before doing any non-trivial work in a project — it's the project's design context.** |
-| `create_ticket` | Create a new ticket in a project. Tickets always start in the `todo` column. Provide a clear title and a body that describes the work; both will be searchable. |
-| `get_ticket` | Fetch a ticket by id, including its current column, completion fields if done, and who created/completed it. |
-| `list_tickets` | List tickets in a project, optionally filtered by column. |
+| `get_project` | Fetch a project's full record (counts, attribution, timestamps, summary). |
+| `get_project_summary` | Fetch just the project's summary markdown. **Read this before doing any non-trivial work in a project — it's the project's design context.** |
+| `load_project` | Pre-warm a project into the server's in-memory cache. Useful before doing many operations against the same project. Optional — calls auto-load if needed. |
+| `update_project` | Edit a project's name, description, or summary. Summary edits trigger re-embedding. |
+| `delete_project` | Delete a project. Refuses if any tickets are still active. |
+
+### Phases (6)
+
+| Tool | Description |
+|---|---|
+| `list_phases` | List phases in a project with active and total ticket counts. |
+| `create_phase` | Add a phase to a project for bigger bodies of work. Requires a `summary` (≥200 chars) — same load-bearing context doc as projects, scoped to this phase. |
+| `get_phase` | Fetch a phase's full record. |
+| `get_phase_summary` | Fetch a phase's full summary markdown. Read this when entering a phase, the same way you'd read a project summary. |
+| `update_phase` | Edit a phase's name, description, or summary. |
+| `delete_phase` | Delete a phase. Refuses if any tickets are still assigned to it. |
+
+### Tickets (7)
+
+| Tool | Description |
+|---|---|
+| `list_tickets` | List tickets in a project, optionally filtered by column or phase. Use `ready_only=true` to surface only unblocked tickets. |
+| `create_ticket` | Create a new ticket in a project. Tickets always start in the `todo` column. Provide a clear title and a body that describes the work; both will be searchable. Optional `phase_id_or_slug`, `depends_on`, `parallelizable_with`. |
+| `get_ticket` | Fetch a ticket by id, including its current column, completion fields if done, blockers, and who created/completed it. |
 | `update_ticket` | Edit a ticket's title or body. **Cannot** change the column — use `move_ticket` or `complete_ticket`. |
 | `move_ticket` | Move a ticket between columns. Requires a comment explaining *why* you're moving it. Cannot be used to move to `done` — use `complete_ticket` for that. |
 | `complete_ticket` | Mark a ticket done. Requires `testing_evidence` (what you tested and how), `work_summary` (what you actually changed), `learnings` (gotchas, surprises, insights for future work). Be thorough — `learnings` are searchable by future tickets. |
+| `assign_ticket_to_phase` | Move a ticket between phases (or to no phase). Requires a comment explaining why — same audit-trail rule as `move_ticket`. |
+
+### Comments (2)
+
+| Tool | Description |
+|---|---|
 | `add_comment` | Add a free-form comment to a ticket. Comments are immutable once created. |
 | `list_comments` | List all comments on a ticket, including system-generated move and completion entries, with author attribution. |
+
+### Search (4)
+
+| Tool | Description |
+|---|---|
 | `search_projects` | Semantic search over project summaries. Use when picking a project to work in or finding related projects. |
-| `search_tickets` | Semantic search over ticket titles and bodies across a project (or all projects). Use when looking for related work. |
+| `search_tickets` | Semantic search over ticket titles and bodies in a project. Use when looking for related work. |
 | `search_learnings` | Semantic search over completion learnings from past finished tickets. **Run this before starting non-trivial work — past you may have left notes.** |
 | `search_comments` | Semantic search across comments. |
+
+### Introspection (1)
+
+| Tool | Description |
+|---|---|
 | `who_am_i` | Returns the current agent identity the MCP server has registered for this session. Useful for the LLM to confirm its own attribution before doing work. |
 
 The "run `search_learnings` first" and "read `get_project_summary` before working" instructions are the unlocks that make the system feed itself.

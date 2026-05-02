@@ -46,53 +46,54 @@ One agent per ticket. If multiple agents need to coordinate edits to the same fi
 ## Dependency graph
 
 ```
-                              ┌─ T04 (Projects + cache) ─┐
-                              │                          │
-T01 ──┬── T02 (storage prims) ─┼─ T05 (Tickets CRUD)      ├─ T07 (Move/Complete) ─┐
-      │                       │                          │                       │
-      ├── T03 (domain types) ─┴─ T06 (Comments) ──────────┴─ T16 (Phases) ───────┤
-      │                                                                          │
-      ├── T15 (agent identity) ─── feeds into T04/T05/T06/T07/T12/T16             ├─ T11 (Search) ── T12 (MCP)
-      │                                                                          │
-      ├── T08 (embed providers) ─────┐                                           │
-      │                              ├─ T10 (worker) ─────────────────────────────┘
-      └── T02 ── T09 (vec index) ────┘
+T01 ─┬─ T02 (storage prims) ─┬─ T15 (Service skeleton + agents) ─┬─ T04 (Projects + cache) ─┬─ T05 (Tickets CRUD) ─┬─ T07 (Move/Complete) ──┐
+     │                       │                                   │                          │                      │                        │
+     ├─ T03 (domain types) ──┘                                   │                          ├─ T06 (Comments) ─────┘                        │
+     │                                                            │                          │                                              │
+     ├─ T08 (embed providers) ───────────────────────────────────┐                          └─ T16 (Phases) ────────────────────────────────┤
+     │                                                           │                                                                          │
+     └─ T02 ── T09 (vec index) ─────────────────────────────────┴────────────── T10 (worker) ───── T11 (search) ───── T12 (MCP binary) ────┘
 
-  Stretch:
-    T13 (integration tests)  depends on T07 + T11 + T15
-    T14 (polish)             depends on T07 + T12
+  Stretch (Wave 9): T13 (tests), T14 (polish)
 ```
 
 ## Suggested execution waves
 
+The wave number is the **earliest** wave a ticket can start in (i.e. all its `depends_on` are satisfied by the previous wave's completions).
+
 - **Wave 0** — T01 alone. Sequential.
-- **Wave 1** — T02, T03, T08, T15 in parallel.
-- **Wave 2** — T04, T05, T06, T09. T08 carries on if not done.
-- **Wave 3** — T07 (needs T05+T06), T16 (needs T04+T05). T10 starts when T07/T08/T09 done.
-- **Wave 4** — T11 (needs T10).
-- **Wave 5** — T12 (needs T11 + all servers + T16's MCP tools).
-- **Wave 6 (stretch)** — T13, T14.
+- **Wave 1** — T02, T03, T08 in parallel.
+- **Wave 2** — T15 (needs T02+T03), T09 (needs T02). Parallel.
+- **Wave 3** — T04 (needs T02+T03+T15). Solo wave — T05/T06 depend on T04 so they wait.
+- **Wave 4** — T05, T06 (each needs T02+T03+T04+T15). Parallel.
+- **Wave 5** — T07 (needs T05+T06), T16 (needs T04+T05+T15). Parallel.
+- **Wave 6** — T10 (needs T07+T08+T09).
+- **Wave 7** — T11 (needs T10).
+- **Wave 8** — T12 (needs T03+T04+T05+T06+T07+T11+T15+T16).
+- **Wave 9 (stretch)** — T13, T14 in parallel.
+
+A subagent orchestrator should pick from "any TODO ticket whose deps are all DONE", not strictly walk waves — waves are just a hint. The frontmatter `wave:` value tells the orchestrator the earliest possible starting wave.
 
 ## Ticket index
 
 | ID | Title | Status | Wave | Depends on |
 |---|---|---|---|---|
 | [T01](T01-bootstrap.md) | Bootstrap module, Makefile, single binary, data dir | TODO | 0 | — |
-| [T02](T02-schema-base.md) | Storage primitives, locks, fsnotify, integrity | TODO | 1 | T01 |
+| [T02](T02-schema-base.md) | Storage primitives, locks, fsnotify, records, integrity | TODO | 1 | T01 |
 | [T03](T03-proto.md) | Domain types & MCP tool schemas | TODO | 1 | T01 |
-| [T04](T04-server-projects.md) | Project methods + project cache | TODO | 2 | T02, T03, T15 |
-| [T05](T05-server-tickets-crud.md) | Ticket CRUD methods | TODO | 2 | T02, T03, T04, T15 |
-| [T06](T06-server-comments.md) | Comment methods | TODO | 2 | T02, T03, T04, T15 |
-| [T07](T07-server-move-complete.md) | MoveTicket + CompleteTicket | TODO | 3 | T05, T06 |
 | [T08](T08-embed-providers.md) | Embedding providers (Ollama, OpenAI) | TODO | 1 | T01 |
 | [T09](T09-schema-pgvector.md) | Vector index (in-memory) | TODO | 2 | T02 |
-| [T10](T10-embed-worker.md) | Embedding worker (JSON sidecars) | TODO | 3 | T07, T08, T09 |
-| [T11](T11-server-search.md) | Search methods (semantic) | TODO | 4 | T10 |
-| [T12](T12-mcp-server.md) | MCP binary entry point | TODO | 5 | T03, T04, T05, T06, T07, T11, T15, T16 |
-| [T13](T13-integration-tests.md) | Integration tests (stretch) | TODO | 6 | T07, T11, T15 |
-| [T14](T14-polish.md) | Polish (stretch) | TODO | 6 | T07, T12 |
-| [T15](T15-agent-identity.md) | Agent identity & in-process middleware | TODO | 1 | T02, T03 |
-| [T16](T16-server-phases.md) | PhaseService + AssignTicketToPhase | TODO | 3 | T02, T03, T04, T05, T15 |
+| [T15](T15-agent-identity.md) | Service skeleton + agent identity + middleware | TODO | 2 | T02, T03 |
+| [T04](T04-server-projects.md) | Project methods + project cache | TODO | 3 | T02, T03, T15 |
+| [T05](T05-server-tickets-crud.md) | Ticket CRUD methods | TODO | 4 | T02, T03, T04, T15 |
+| [T06](T06-server-comments.md) | Comment methods | TODO | 4 | T02, T03, T04, T15 |
+| [T07](T07-server-move-complete.md) | MoveTicket + CompleteTicket | TODO | 5 | T05, T06 |
+| [T16](T16-server-phases.md) | Phase methods + AssignTicketToPhase | TODO | 5 | T02, T03, T04, T05, T15 |
+| [T10](T10-embed-worker.md) | Embedding worker (JSON sidecars) | TODO | 6 | T07, T08, T09 |
+| [T11](T11-server-search.md) | Search methods (semantic) | TODO | 7 | T10 |
+| [T12](T12-mcp-server.md) | MCP binary entry point | TODO | 8 | T03, T04, T05, T06, T07, T11, T15, T16 |
+| [T13](T13-integration-tests.md) | Integration tests (stretch) | TODO | 9 | T07, T11, T15 |
+| [T14](T14-polish.md) | Polish (stretch) | TODO | 9 | T07, T12 |
 
 ## Where the spec lives
 
