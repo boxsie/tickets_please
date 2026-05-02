@@ -1,8 +1,8 @@
 ---
 id: T04
 title: Project methods + project cache
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T04
 depends_on: [T02, T03, T15]
 parallelizable_with: []
 wave: 3
