@@ -35,13 +35,13 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 		return nil, err
 	}
 
+	if err := requireNonEmptyTrimmed("comment body", body); err != nil {
+		return nil, err
+	}
+	if err := requireNonEmptyTrimmed("ticket id", ticketID); err != nil {
+		return nil, err
+	}
 	trimmed := strings.TrimSpace(body)
-	if trimmed == "" {
-		return nil, fmt.Errorf("%w: comment body required", domain.ErrInvalidArgument)
-	}
-	if strings.TrimSpace(ticketID) == "" {
-		return nil, fmt.Errorf("%w: ticket id required", domain.ErrInvalidArgument)
-	}
 
 	slug, err := s.findTicketProjectSlug(ctx, ticketID)
 	if err != nil {
@@ -155,8 +155,8 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 // a session per SPEC §Agent identity & sessions (read methods are
 // unattributed).
 func (s *Service) ListComments(ctx context.Context, ticketID string) ([]*domain.Comment, error) {
-	if strings.TrimSpace(ticketID) == "" {
-		return nil, fmt.Errorf("%w: ticket id required", domain.ErrInvalidArgument)
+	if err := requireNonEmptyTrimmed("ticket id", ticketID); err != nil {
+		return nil, err
 	}
 
 	slug, err := s.findTicketProjectSlug(ctx, ticketID)

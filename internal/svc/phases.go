@@ -19,11 +19,6 @@ import (
 	"tickets_please/internal/worker"
 )
 
-// minPhaseSummaryLen is the SPEC-mandated minimum length of phase summary
-// text (after trim). Same load-bearing context-doc role as project summaries,
-// so we hold them to the same bar — see SPEC §Phases.
-const minPhaseSummaryLen = 200
-
 // CreatePhase stages phase.yaml + summary.md under the project's flock and
 // inserts the freshly-hydrated *domain.Phase into the loaded project's cache
 // entry so subsequent reads see it without waiting for fsnotify.
@@ -34,12 +29,11 @@ func (s *Service) CreatePhase(ctx context.Context, projectIDOrSlug, name, descri
 	}
 
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, fmt.Errorf("%w: phase name required", domain.ErrInvalidArgument)
+	if err := requireNonEmptyTrimmed("phase name", name); err != nil {
+		return nil, err
 	}
-	trimmedSummary := strings.TrimSpace(summary)
-	if len(trimmedSummary) < minPhaseSummaryLen {
-		return nil, fmt.Errorf("%w: phase summary must be at least %d characters of meaningful context", domain.ErrInvalidArgument, minPhaseSummaryLen)
+	if err := requireSummary("phase summary", summary); err != nil {
+		return nil, err
 	}
 
 	lp, _, err := s.Cache.Get(ctx, projectIDOrSlug)
@@ -202,9 +196,8 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 
 	var newSummary *string
 	if in.Summary != nil {
-		t := strings.TrimSpace(*in.Summary)
-		if len(t) < minPhaseSummaryLen {
-			return nil, fmt.Errorf("%w: phase summary must be at least %d characters of meaningful context", domain.ErrInvalidArgument, minPhaseSummaryLen)
+		if err := requireSummary("phase summary", *in.Summary); err != nil {
+			return nil, err
 		}
 		newSummary = in.Summary
 	}

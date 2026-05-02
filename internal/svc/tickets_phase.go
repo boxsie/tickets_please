@@ -32,8 +32,8 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(ticketID) == "" {
-		return nil, fmt.Errorf("%w: ticket id required", domain.ErrInvalidArgument)
+	if err := requireNonEmptyTrimmed("ticket id", ticketID); err != nil {
+		return nil, err
 	}
 	if comment == "" {
 		return nil, fmt.Errorf("%w: comment required", domain.ErrInvalidArgument)

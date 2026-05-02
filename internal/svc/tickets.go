@@ -35,10 +35,10 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		return nil, err
 	}
 
-	title := strings.TrimSpace(in.Title)
-	if title == "" {
-		return nil, fmt.Errorf("%w: title required", domain.ErrInvalidArgument)
+	if err := requireNonEmptyTrimmed("title", in.Title); err != nil {
+		return nil, err
 	}
+	title := strings.TrimSpace(in.Title)
 	if in.Wave < 0 {
 		return nil, fmt.Errorf("%w: wave must be >= 0", domain.ErrInvalidArgument)
 	}
@@ -186,8 +186,8 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 // cache. ListTickets is the structured per-project read path; this is the
 // "I have an opaque id from somewhere" escape hatch.
 func (s *Service) GetTicket(ctx context.Context, id string) (*domain.Ticket, error) {
-	if strings.TrimSpace(id) == "" {
-		return nil, fmt.Errorf("%w: ticket id required", domain.ErrInvalidArgument)
+	if err := requireNonEmptyTrimmed("ticket id", id); err != nil {
+		return nil, err
 	}
 
 	hostSlug, err := s.resolveTicketProject(id)
@@ -301,8 +301,8 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(id) == "" {
-		return nil, fmt.Errorf("%w: ticket id required", domain.ErrInvalidArgument)
+	if err := requireNonEmptyTrimmed("ticket id", id); err != nil {
+		return nil, err
 	}
 	if in.Wave != nil && *in.Wave < 0 {
 		return nil, fmt.Errorf("%w: wave must be >= 0", domain.ErrInvalidArgument)
@@ -439,8 +439,8 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(ticketID) == "" {
-		return nil, fmt.Errorf("%w: ticket id required", domain.ErrInvalidArgument)
+	if err := requireNonEmptyTrimmed("ticket id", ticketID); err != nil {
+		return nil, err
 	}
 	if err := requireMoveTargetColumn(target); err != nil {
 		return nil, err
@@ -601,8 +601,8 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(ticketID) == "" {
-		return nil, fmt.Errorf("%w: ticket id required", domain.ErrInvalidArgument)
+	if err := requireNonEmptyTrimmed("ticket id", ticketID); err != nil {
+		return nil, err
 	}
 	if err := requireMinLen("testing_evidence", testingEvidence, completionMinLen); err != nil {
 		return nil, err
