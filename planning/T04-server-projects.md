@@ -34,48 +34,76 @@ Implement the project methods on `svc.Service` on top of the filesystem `Store`,
 
 ### `ProjectCache`
 
+T04's cache is **vector-free**. It holds the loaded entity tree from disk plus the staleness/watcher plumbing for cross-process coherence. Per-project vector indexes belong to T11 (search) — they get attached to `LoadedProject` later by T10/T11 patches, the same way T08/T09/T10/T11 each contribute fields to `Service`.
+
 ```go
 type LoadedProject struct {
     Project       *domain.Project
-    Tickets       map[string]*domain.Ticket    // id → ticket
+    Phases        map[string]*domain.Phase     // id → phase (built when T16 lands)
+    PhasesBySlug  map[string]*domain.Phase
+    Tickets       map[string]*domain.Ticket    // id → ticket (any phase or none)
     Comments      map[string][]*domain.Comment // ticket id → ordered comments
-    Vectors       *vecindex.Index              // per-project body+comments index
     LoadedAt      time.Time
     LastAccessAt  time.Time
+    Stale         atomic.Bool                  // set by fsnotify; next Get reloads
+    watcher       *store.ProjectWatcher        // nil if fsnotify disabled
     Lock          sync.RWMutex
 }
 
 type ProjectCache struct {
-    store          *store.Store
-    embed          embed.Provider
-    worker         *worker.Worker
-    learningsIdx   *vecindex.Index   // resident, shared
-    summaryIdx     *vecindex.Index   // resident, shared
-    idleTTL        time.Duration
-    maxLoaded      int
-    mu             sync.Mutex
-    loaded         map[string]*LoadedProject  // slug → loaded
-    handles        map[string]string          // handle uuid → slug (for x-project-handle hint)
+    store      *store.Store
+    idleTTL    time.Duration
+    maxLoaded  int
+    mu         sync.Mutex
+    loaded     map[string]*LoadedProject  // slug → loaded
+    handles    map[string]string          // diagnostic uuid → slug
 }
 
+func New(store *store.Store, cfg config.Config) *ProjectCache
+
 func (c *ProjectCache) Get(ctx context.Context, idOrSlug string) (*LoadedProject, string, error)
-// Returns the loaded project plus a fresh project_handle. Auto-loads on miss.
+// Returns the loaded project plus a diagnostic handle. Auto-loads on miss.
+// If the existing entry's Stale flag is set, drops it and reloads transparently.
 
 func (c *ProjectCache) Load(ctx context.Context, idOrSlug string) (*LoadedProject, string, error)
-// Same as Get, but explicitly used by the LoadProject RPC.
+// Same as Get; the `LoadProject` service method calls this for explicit pre-warm.
 
 func (c *ProjectCache) MarkAccess(slug string)
 // Bump LastAccessAt without a full Get.
 
 func (c *ProjectCache) Evict(slug string)
-// Drop from cache; idempotent.
+// Drop from cache, close the watcher, idempotent.
 
 func (c *ProjectCache) RunEvictor(ctx context.Context)
 // Goroutine: every 60s, evict projects whose LastAccessAt + idleTTL < now,
 // or LRU-evict beyond maxLoaded.
 ```
 
-Loading walks the project's directory once: parses `project.yaml`, `summary.md`, every `tickets/<NNN>-…/ticket.yaml` + `body.md` + (if done) `completion.md`, every `comments/*.md`. Builds a fresh per-project `vecindex.Index` and runs the per-project sidecar backfill (T10).
+**Loading flow:**
+1. Acquire `c.mu`.
+2. Walk the project's directory once: parses `project.yaml`, `summary.md`, every `tickets/<NNN>-…/ticket.yaml` + `body.md` + (if done) `completion.md`, every `comments/*.md`. Hand-rolled `record → domain` conversion using the helpers in T02.
+3. If `cfg.FsnotifyEnabled`, call `store.WatchProject(slug)` and start a goroutine that flips `loaded.Stale` on every event.
+4. Insert into `c.loaded`, release `c.mu`.
+
+**Get with stale check:**
+```go
+func (c *ProjectCache) Get(ctx, slug) (*LoadedProject, string, error) {
+    c.mu.Lock()
+    lp, ok := c.loaded[slug]
+    if ok && lp.Stale.Load() {
+        c.evictLocked(slug)  // closes watcher
+        ok = false
+    }
+    c.mu.Unlock()
+    if !ok { return c.loadFromDisk(ctx, slug) }
+    lp.LastAccessAt = time.Now()
+    return lp, c.handleFor(slug), nil
+}
+```
+
+**Eviction closes the watcher** so we don't leak fsnotify resources. Re-loading sets up a fresh watcher.
+
+T11 (search) attaches a `Vectors *vecindex.Index` field to `LoadedProject` via the same "later ticket adds the field" pattern T15 documented for `Service`. Don't define that field here.
 
 ### Extending `Service` (declared by T15)
 
@@ -108,7 +136,7 @@ T08, T09, T10, T11 will each append their own fields (`Embed`, `LearningsIdx`, `
 - **`GetProject(ctx, idOrSlug)`** — `Cache.Get`, return `Project` from `LoadedProject.Project`.
 - **`ListProjects(ctx)`** — `WalkProjects` returning lightweight `Project` summaries (loaded or not). Don't trigger lazy-load just for listing.
 - **`UpdateProject(ctx, idOrSlug, in UpdateProjectInput)`** — load via cache, mutate `LoadedProject.Project` under its write lock, `StageOp` rewrite of `project.yaml` and (if summary changed) `summary.md`. If summary changed, enqueue `JobProjectSummary` and update `SummaryIdx`.
-- **`DeleteProject(ctx, idOrSlug)`** — refuse if project has any non-`done` tickets (`ErrFailedPrecondition`). Otherwise: cache evict, then `os.RemoveAll(projects/<slug>/)`. Auto-commit captures the deletion.
+- **`DeleteProject(ctx, idOrSlug)`** — refuse if project has any non-`done` tickets (`ErrFailedPrecondition`). Otherwise: `Cache.Evict(slug)` (closes the watcher), then a `StageOp` with a single `RemovePath("projects/<slug>")` op committed under the global flock. Auto-commit captures the deletion. **No raw `os.RemoveAll`** — go through StageOp so the audit trail and atomicity model stay consistent.
 - **`LoadProject(ctx, idOrSlug) (LoadProjectResult, error)`** — explicit cache pre-warm. Returns `{Project, Handle, ExpiresAt, TicketCount, ActiveTicketCount}`. The `Handle` is purely diagnostic (used by the MCP `who_am_i` / `loaded_projects` tool to show cache state).
 
 Mutating methods start with `s.requireSession(ctx)` (T15) and read the agent via `domain.AgentFrom(ctx)` to populate `created_by`.
@@ -138,8 +166,11 @@ Each successful mutation calls `op.Commit(ctx, agent, summary)` with verbs:
 - [ ] After idle > `project_idle_minutes`, the eviction loop drops the project; the next op transparently reloads (logs at info).
 - [ ] `UpdateProject(summary=…)` rewrites `summary.md` and triggers a re-embed.
 - [ ] `DeleteProject` with active tickets → `ErrFailedPrecondition`.
+- [ ] `DeleteProject` happy path goes through `StageOp.RemovePath` (verify by inspecting `.staging/<op-id>/` if forcibly killed mid-delete).
 - [ ] With `MAX_LOADED_PROJECTS=2`, loading a third project evicts the LRU.
 - [ ] `ListProjects` does NOT trigger lazy loads (verify by checking cache size before/after).
+- [ ] Cross-process staleness: write to `project.yaml` from outside the cache (e.g. another goroutine using the Store directly), confirm `LoadedProject.Stale` flips and the next `Get` reloads.
+- [ ] Eviction closes the fsnotify watcher (verify by inspecting goroutine count before/after).
 
 ## Notes
 

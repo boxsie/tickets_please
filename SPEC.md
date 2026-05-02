@@ -346,7 +346,7 @@ Ticket `number` is **project-level** — i.e. one global sequence across phased 
 (See **Service API > Phases** above for full method signatures.)
 
 `Ticket.PhaseID` is `*string` — `nil` means phase-less.
-`ListTicketsInput.PhaseIDOrSlug` accepts `""` for "any phase or none", `"-"` (sentinel) for "phase-less only", or a real id/slug for a specific phase.
+`ListTicketsInput.PhaseIDOrSlug` is `*string`: `nil` = any phase or none; `*"-"` (sentinel) = phase-less only; `*"foo"` = that phase. The same convention applies anywhere a `phase_id_or_slug` parameter accepts the optional phase-less sentinel.
 
 ### MCP tool additions
 
@@ -562,16 +562,20 @@ Walking the tree and parsing yamls on every call would be wasteful when an agent
 
 ```go
 type LoadedProject struct {
-    Project       *domain.Project           // parsed project.yaml + summary.md
-    Tickets       map[string]*domain.Ticket // ticket id → ticket (yaml + body.md + completion.md if done)
+    Project       *domain.Project              // parsed project.yaml + summary.md
+    Phases        map[string]*domain.Phase     // populated when phases exist (T16)
+    Tickets       map[string]*domain.Ticket    // ticket id → ticket (yaml + body.md + completion.md if done)
     Comments      map[string][]*domain.Comment // ticket id → ordered comment list
-    Vectors       *vecindex.Project         // per-project vector index slice
     LoadedAt      time.Time
     LastAccessAt  time.Time
+    Stale         atomic.Bool                  // flipped by fsnotify when files change cross-process
+    Lock          sync.RWMutex
+    // Per-project vector index attaches here later — owned by T11 (search). Excluded from T04
+    // so the cache compiles before vecindex/embed/worker packages exist.
 }
 ```
 
-The vector index is partitioned per project so eviction frees its memory cleanly. The cross-project `SearchLearnings` and `SearchProjects` indexes are always-resident (their working sets are small and their utility is global).
+The cross-project `SearchLearnings` and `SearchProjects` indexes are always-resident (their working sets are small and their utility is global). Per-project indexes (when added by T11) are partitioned so eviction frees their memory cleanly.
 
 ### `LoadProject` method
 
@@ -762,11 +766,11 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID string, testingEv
 Two layers; server is authoritative.
 
 1. **Service-level validation** (`internal/svc/validation.go`) — every method validates first. Min lengths (10 chars) on completion fields prevent thin one-character "satisfactions" of the rule. Returns `domain.ErrInvalidArgument` with field-specific messages.
-2. **DB transactions** — both rule-enforcing ops happen in one transaction:
-   - `MoveTicket`: `UPDATE tickets SET column_kind` + `INSERT comments (kind='system_move', from_column, to_column, body=<comment>)`. Either both happen or neither.
-   - `CompleteTicket`: `UPDATE tickets SET column_kind='done', testing_evidence, work_summary, learnings, completed_at=now()` + `INSERT comments (kind='system_completion', body=<formatted summary of all three fields>)`.
+2. **`StageOp` ordered ops + per-project flock** — both rule-enforcing operations build a single StageOp under the project's flock and apply it as one batch:
+   - `MoveTicket`: stage write of updated `ticket.yaml` + write of new `system_move` comment file. Apply phase renames both into place inside the locked window.
+   - `CompleteTicket`: stage write of updated `ticket.yaml` + write of `completion.md` + write of `system_completion` comment file.
 
-Both rules become impossible to bypass at the API.
+Failure mid-apply is detected by the integrity check (residual `.staging/<op-id>/`); the rules can't be silently bypassed because the caller never observes a half-applied state with the lock held.
 
 ## Embedding pipeline
 

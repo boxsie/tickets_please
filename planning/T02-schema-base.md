@@ -163,6 +163,7 @@ type TicketRecord struct {
     ID, ProjectID, Title  string
     Column                domain.Column
     PhaseID               *string
+    Wave                  int          // soft grouping; 0 = unassigned (omitempty in yaml)
     DependsOn             []string
     ParallelizableWith    []string
     CreatedByAgentID      *string

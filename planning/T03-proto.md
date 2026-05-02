@@ -142,7 +142,7 @@ type UpdateTicketInput struct {
 type ListTicketsInput struct {
     ProjectIDOrSlug string
     Column          *Column   // nil = any column
-    PhaseIDOrSlug   *string   // nil = any; empty string = phase-less only (sentinel)
+    PhaseIDOrSlug   *string   // nil = any phase or none; *"-" (sentinel) = phase-less only; *"foo" = that phase
     Wave            *int      // nil = any wave; *int(N) = exactly that wave; *int(0) = unassigned only
     ReadyOnly       bool
     Limit           int       // 0 = default 50; capped at 200

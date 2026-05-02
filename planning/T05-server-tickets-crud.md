@@ -56,7 +56,7 @@ Implement the **non-rule-bearing** ticket methods on `svc.Service`: `Create`, `G
 
 - Lazy-load.
 - Filter by `Column` if specified (`nil` = no filter).
-- Filter by `PhaseIDOrSlug`: `nil` = any; `*string("")` (sentinel) = phase-less only; `*string("foo")` = that phase.
+- Filter by `PhaseIDOrSlug`: `nil` = any phase or none; `*string("-")` (sentinel) = phase-less only; `*string("foo")` = that phase.
 - Filter by `Wave`: `nil` = any wave; `*int(N)` for `N >= 0` = exactly that wave (0 means unassigned).
 - If `ReadyOnly` is true, post-filter to tickets where `BlockedBy` is empty AND `Column ∈ {todo, in_progress}`.
 - Order: `ORDER BY (Wave, CreatedAt)` — tickets within a wave ordered by creation time; wave 0 (unassigned) sorts first or last depending on caller preference (default: last, so the orchestrator sees structured waves before unstructured tickets).

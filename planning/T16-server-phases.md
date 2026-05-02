@@ -119,14 +119,15 @@ Lives in `internal/svc/waves.go` to keep `phases.go` focused on the phase entity
 ```go
 type LoadedProject struct {
     Project       *domain.Project
-    Phases        map[string]*domain.Phase     // id → phase
-    PhasesBySlug  map[string]*domain.Phase
+    Phases        map[string]*domain.Phase     // id → phase (added by T16)
+    PhasesBySlug  map[string]*domain.Phase     // (added by T16)
     Tickets       map[string]*domain.Ticket    // id → ticket (any phase or none)
     Comments      map[string][]*domain.Comment
-    Vectors       *vecindex.Index
     LoadedAt      time.Time
     LastAccessAt  time.Time
+    Stale         atomic.Bool
     Lock          sync.RWMutex
+    // Vectors *vecindex.Index — added later by T11 (search)
 }
 ```
 
@@ -138,10 +139,12 @@ Loader walks both `projects/<slug>/tickets/` and `projects/<slug>/phases/*/ticke
 
 | Tool | Backing method |
 |---|---|
-| `create_phase` | `Service.CreatePhase` |
 | `list_phases` | `Service.ListPhases` |
+| `create_phase` | `Service.CreatePhase` |
+| `get_phase` | `Service.GetPhase` (full record) |
 | `get_phase_summary` | `Service.GetPhase` (returns just `summary`) |
 | `update_phase` | `Service.UpdatePhase` |
+| `delete_phase` | `Service.DeletePhase` |
 | `assign_ticket_to_phase` | `Service.AssignTicketToPhase` |
 | `list_waves` | `Service.ListWaves` |
 

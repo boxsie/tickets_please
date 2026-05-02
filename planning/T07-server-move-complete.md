@@ -40,7 +40,7 @@ Both operations are atomic: ticket file update + system comment file insertion v
 ```go
 func requireNonEmptyTrimmed(field, val string) error
 func requireMinLen(field, val string, min int) error
-func requireMoveTargetColumn(c ticketsv1.Column) error  // rejects UNSPECIFIED and DONE
+func requireMoveTargetColumn(c domain.Column) error  // rejects empty and ColumnDone
 ```
 
 DONE rejection message: `target_column DONE is not allowed; use CompleteTicket to mark a ticket done`.
