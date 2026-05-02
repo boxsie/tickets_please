@@ -1,8 +1,8 @@
 ---
 id: T11
 title: Search methods (semantic)
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T11
 depends_on: [T10]
 parallelizable_with: []
 wave: 7
