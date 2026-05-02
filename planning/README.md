@@ -78,20 +78,20 @@ A subagent orchestrator should pick from "any TODO ticket whose deps are all DON
 
 | ID | Title | Status | Wave | Depends on |
 |---|---|---|---|---|
-| [T01](T01-bootstrap.md) | Bootstrap module, Makefile, single binary, data dir | TODO | 0 | — |
-| [T02](T02-schema-base.md) | Storage primitives, locks, fsnotify, records, integrity | TODO | 1 | T01 |
-| [T03](T03-proto.md) | Domain types & MCP tool schemas | TODO | 1 | T01 |
+| [T01](T01-bootstrap.md) | Bootstrap module, Makefile, single binary, data dir | DONE | 0 | — |
+| [T02](T02-storage.md) | Storage primitives, locks, fsnotify, records, integrity | TODO | 1 | T01 |
+| [T03](T03-domain.md) | Domain types & MCP tool schemas | DONE | 1 | T01 |
 | [T08](T08-embed-providers.md) | Embedding providers (Ollama, OpenAI) | TODO | 1 | T01 |
-| [T09](T09-schema-pgvector.md) | Vector index (in-memory) | TODO | 2 | T02 |
+| [T09](T09-vec-index.md) | Vector index (in-memory) | TODO | 2 | T02 |
 | [T15](T15-agent-identity.md) | Service skeleton + agent identity + middleware | TODO | 2 | T02, T03 |
-| [T04](T04-server-projects.md) | Project methods + project cache | TODO | 3 | T02, T03, T15 |
-| [T05](T05-server-tickets-crud.md) | Ticket CRUD methods | TODO | 4 | T02, T03, T04, T15 |
-| [T06](T06-server-comments.md) | Comment methods | TODO | 4 | T02, T03, T04, T15 |
-| [T07](T07-server-move-complete.md) | MoveTicket + CompleteTicket | TODO | 5 | T05, T06 |
-| [T16](T16-server-phases.md) | Phase methods + AssignTicketToPhase | TODO | 5 | T02, T03, T04, T05, T15 |
+| [T04](T04-projects.md) | Project methods + project cache | TODO | 3 | T02, T03, T15 |
+| [T05](T05-tickets.md) | Ticket CRUD methods | TODO | 4 | T02, T03, T04, T15 |
+| [T06](T06-comments.md) | Comment methods | TODO | 4 | T02, T03, T04, T15 |
+| [T07](T07-move-complete.md) | MoveTicket + CompleteTicket | TODO | 5 | T05, T06 |
+| [T16](T16-phases.md) | Phase methods + AssignTicketToPhase | TODO | 5 | T02, T03, T04, T05, T15 |
 | [T10](T10-embed-worker.md) | Embedding worker (JSON sidecars) | TODO | 6 | T07, T08, T09 |
-| [T11](T11-server-search.md) | Search methods (semantic) | TODO | 7 | T10 |
-| [T12](T12-mcp-server.md) | MCP binary entry point | TODO | 8 | T03, T04, T05, T06, T07, T11, T15, T16 |
+| [T11](T11-search.md) | Search methods (semantic) | TODO | 7 | T10 |
+| [T12](T12-mcp-binary.md) | MCP binary entry point | TODO | 8 | T03, T04, T05, T06, T07, T11, T15, T16 |
 | [T13](T13-integration-tests.md) | Integration tests (stretch) | TODO | 9 | T07, T11, T15 |
 | [T14](T14-polish.md) | Polish (stretch) | TODO | 9 | T07, T12 |
 
