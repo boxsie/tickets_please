@@ -1,8 +1,8 @@
 ---
 id: T01
 title: Bootstrap module, Makefile, single binary, data dir
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T01
 depends_on: []
 parallelizable_with: []
 wave: 0

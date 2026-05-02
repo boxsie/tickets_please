@@ -27,6 +27,26 @@ A single Go binary that runs as an MCP stdio server. Data lives as a plain direc
 - **Concurrency-safe across processes.** Per-project flock for mutations + fsnotify for cross-process cache invalidation. Two MCP clients on the same data dir don't corrupt each other.
 - **MCP-native.** ~24 tools tuned for LLM ergonomics, including the load-bearing `search_learnings` and `get_project_summary`.
 
+## Quickstart
+
+```sh
+make init-config                  # copies examples/config.yaml -> ~/.tickets_please/config.yaml (idempotent)
+make init-data                    # creates .tickets_please/{agents,projects,.staging}
+ollama pull nomic-embed-text      # default embedding model (skip if using OpenAI provider)
+make build                        # produces ./tickets_please
+
+./tickets_please                  # default subcommand: `mcp` (stdio MCP server)
+./tickets_please check            # integrity check + exit
+./tickets_please init             # create the data-dir scaffold
+```
+
+Then register the resulting `tickets_please` binary with your MCP-capable client
+(Claude Desktop, Claude Code, Cursor, etc.) as a stdio MCP server.
+
+The `.tickets_please/` directory IS the data — it's committed to git, so cloning
+a repo brings its full ticket history with you. Only `.tickets_please/.staging/`
+is gitignored (it holds transient half-applied writes).
+
 ## Where to go next
 
 - **[`SPEC.md`](SPEC.md)** — the full design. Every decision, every method signature, every file layout convention.
