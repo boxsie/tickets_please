@@ -2,11 +2,11 @@ id: 79edf265-8101-4eec-9e84-6bbc3d4e9821
 project_id: b7a1b0da-dfdd-4167-ab6d-11eeab0d05d6
 number: 3
 title: Add web agent attribution
-column: todo
+column: in_progress
 phase_id: ac55d653-fa4f-49be-8c44-ab218a5e623e
 wave: 1
 depends_on:
     - f634441a-8147-4138-ada1-651742df70b2
 created_by: f7e33c27-733c-4f6f-a2b2-2e0c699db2d5
 created_at: 2026-05-02T20:00:15.000652388+01:00
-updated_at: 2026-05-02T20:00:15.000652388+01:00
+updated_at: 2026-05-02T20:09:02.448376355+01:00
