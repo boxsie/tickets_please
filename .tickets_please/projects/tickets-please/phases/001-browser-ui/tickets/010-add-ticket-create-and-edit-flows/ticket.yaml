@@ -1,0 +1,12 @@
+id: 78d8d97d-1ad2-49ba-aa3d-e9a13c198cb2
+project_id: b7a1b0da-dfdd-4167-ab6d-11eeab0d05d6
+number: 10
+title: Add ticket create and edit flows
+column: todo
+phase_id: ac55d653-fa4f-49be-8c44-ab218a5e623e
+wave: 3
+depends_on:
+    - 3e86eeca-87c4-4a7f-ad8a-a4db4b1c9d5f
+created_by: f7e33c27-733c-4f6f-a2b2-2e0c699db2d5
+created_at: 2026-05-02T20:00:54.831786215+01:00
+updated_at: 2026-05-02T20:00:54.831786215+01:00
