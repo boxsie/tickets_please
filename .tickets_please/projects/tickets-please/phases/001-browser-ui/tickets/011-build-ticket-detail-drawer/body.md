@@ -1,0 +1,1 @@
+Implement a ticket drawer or sheet with body markdown, column, phase, wave, dependencies, blockers, attribution, timestamps, comments entry point, and completion fields when a ticket is done. Acceptance criteria: opening any card shows full ticket details; blocked_by and dependencies are readable; completion fields render only when present; drawer state can be linked or restored.
