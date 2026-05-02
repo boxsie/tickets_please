@@ -1,0 +1,12 @@
+id: edfb2ea5-ad6b-450c-8345-c3a97e695005
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+number: 2
+title: Split agents store from project store; relocate to central data root
+column: in_progress
+phase_id: 4d573198-60c5-4013-be07-1d38a2302a65
+wave: 1
+depends_on:
+    - 9d0215ad-15d6-4d34-86c9-a2af7aae18a7
+created_by: 1d9de123-3477-4003-9a8c-5f7d8f55dda4
+created_at: 2026-05-02T20:56:22.11833597+01:00
+updated_at: 2026-05-02T21:22:48.464302117+01:00
