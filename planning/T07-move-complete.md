@@ -1,8 +1,8 @@
 ---
 id: T07
 title: MoveTicket + CompleteTicket
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T07
 depends_on: [T05, T06]
 parallelizable_with: [T16]
 wave: 5

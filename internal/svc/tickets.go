@@ -3,6 +3,7 @@ package svc
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -393,6 +394,324 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 	cp.BlockedBy = computeBlockedBy(cp.DependsOn, lp.Tickets)
 	return cp, nil
 }
+
+// completionMinLen is the SPEC-mandated minimum length (after trim) for each
+// of the three CompleteTicket fields — testing_evidence, work_summary,
+// learnings. Prevents a one-character "." from satisfying the rule.
+const completionMinLen = 10
+
+// MoveTicket transitions a ticket between columns under the project's flock.
+// Every move requires a non-empty comment (audit trail) and rejects ColumnDone
+// targets — done is reachable only via CompleteTicket, and once-done tickets
+// cannot be reopened.
+//
+// Dependency enforcement only fires when target == ColumnInProgress: a
+// non-empty BlockedBy with cfg.EnforceDependencies=true returns
+// ErrFailedPrecondition; with enforcement off, we log a warning and prepend
+// "⚠ moved with unmet deps: [...]" to the move comment body so the audit
+// trail records the policy choice.
+//
+// Both the updated ticket.yaml and the new system_move comment file are
+// written via a single StageOp, so a partial state can never be observed:
+// either both land or neither does (per SPEC §Atomicity).
+func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain.Column, comment string) (*domain.Ticket, error) {
+	ctx, agent, err := s.requireSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(ticketID) == "" {
+		return nil, fmt.Errorf("%w: ticket id required", domain.ErrInvalidArgument)
+	}
+	if err := requireMoveTargetColumn(target); err != nil {
+		return nil, err
+	}
+	if err := requireNonEmptyTrimmed("comment", comment); err != nil {
+		return nil, err
+	}
+
+	slug, err := s.resolveTicketProject(ticketID)
+	if err != nil {
+		return nil, err
+	}
+	lp, _, err := s.Cache.Get(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+
+	lp.Lock.Lock()
+	defer lp.Lock.Unlock()
+
+	t, ok := lp.Tickets[ticketID]
+	if !ok {
+		return nil, fmt.Errorf("%w: ticket %s", domain.ErrNotFound, ticketID)
+	}
+	if t.Column == domain.ColumnDone {
+		return nil, fmt.Errorf("%w: ticket %s is done; reopening is not allowed", domain.ErrFailedPrecondition, ticketID)
+	}
+
+	// Dependency enforcement only fires on transitions to in_progress. Other
+	// transitions (e.g. todo→testing, in_progress→testing) don't gate on deps.
+	commentBody := strings.TrimSpace(comment)
+	if target == domain.ColumnInProgress {
+		blocked := computeBlockedBy(t.DependsOn, lp.Tickets)
+		if len(blocked) > 0 {
+			if s.Cfg.EnforceDependencies {
+				return nil, fmt.Errorf("%w: ticket %s has unmet dependencies: %v", domain.ErrFailedPrecondition, ticketID, blocked)
+			}
+			s.Logger.Warn("MoveTicket: unmet deps but enforce_dependencies=false; proceeding",
+				"ticket_id", ticketID, "blocked_by", blocked)
+			commentBody = fmt.Sprintf("⚠ moved with unmet deps: %v\n\n%s", blocked, commentBody)
+		}
+	}
+
+	// Resolve the on-disk ticket dir + number for the StageOp paths and the
+	// auto-commit caption. This walks the project tree but is cheap at hobby
+	// scale and matches the pattern T05 uses elsewhere in this file.
+	relTicketDir, ticketNumber, err := s.findTicketDirAndNumber(slug, ticketID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Re-read the on-disk record so we don't drop fields the cache doesn't
+	// model (forward-compat: another agent's binary may write fields ours
+	// doesn't recognize).
+	rec := &store.TicketRecord{}
+	absYAML := filepath.Join(s.Store.Root, relTicketDir, "ticket.yaml")
+	if err := store.ReadYAML(absYAML, rec); err != nil {
+		return nil, fmt.Errorf("read ticket: %w", err)
+	}
+	oldColumn := rec.Column
+	now := time.Now()
+	rec.Column = target
+	rec.UpdatedAt = now
+	yamlBytes, err := store.MarshalYAML(rec)
+	if err != nil {
+		return nil, err
+	}
+
+	// system_move comment — same filename convention T06's CreateComment uses.
+	commentID := uuid.New()
+	createdAt := now.UTC()
+	cRec := &store.CommentRecord{
+		ID:            commentID.String(),
+		TicketID:      ticketID,
+		Kind:          domain.CommentKindSystemMove,
+		AuthorAgentID: &agent.ID,
+		FromColumn:    &oldColumn,
+		ToColumn:      &target,
+		CreatedAt:     createdAt,
+	}
+	shortID := hex.EncodeToString(commentID[:4])
+	commentFilename := fmt.Sprintf("%s-%s-%s.md", createdAt.Format(commentTimestampLayout), shortID, string(cRec.Kind))
+	commentBodyOut := ensureTrailingNewline(commentBody)
+	commentBytes, err := store.EncodeMarkdown(cRec, commentBodyOut)
+	if err != nil {
+		return nil, fmt.Errorf("encode system_move comment: %w", err)
+	}
+	relCommentPath := filepath.Join(relTicketDir, "comments", commentFilename)
+
+	// Single StageOp stages BOTH writes; Commit applies them under the
+	// per-project flock, so a reader observes either old-state or new-state —
+	// never a half-applied move.
+	op, err := s.Store.BeginOp()
+	if err != nil {
+		return nil, err
+	}
+	defer op.Abort()
+	if err := op.Write(filepath.Join(relTicketDir, "ticket.yaml"), yamlBytes); err != nil {
+		return nil, err
+	}
+	if err := op.Write(relCommentPath, commentBytes); err != nil {
+		return nil, err
+	}
+	caption := fmt.Sprintf("move ticket %s/%03d %s→%s", slug, ticketNumber, oldColumn, target)
+	if err := op.Commit(ctx, store.LockProject(slug), agent, caption); err != nil {
+		return nil, fmt.Errorf("commit move ticket: %w", err)
+	}
+
+	// T10: enqueue JobComment for system_move here
+
+	// Apply mutations to the cached state. Lock is held above.
+	t.Column = target
+	t.UpdatedAt = rec.UpdatedAt
+	domComment := &domain.Comment{
+		ID:         cRec.ID,
+		TicketID:   cRec.TicketID,
+		Kind:       cRec.Kind,
+		Body:       commentBodyOut,
+		FromColumn: cRec.FromColumn,
+		ToColumn:   cRec.ToColumn,
+		Author:     hydrateAgentRef(s.Store, agent.ID, agent.Name),
+		CreatedAt:  cRec.CreatedAt,
+	}
+	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
+
+	cp := cloneTicket(t)
+	cp.BlockedBy = computeBlockedBy(cp.DependsOn, lp.Tickets)
+	return cp, nil
+}
+
+// CompleteTicket is the only path that can move a ticket into ColumnDone.
+// All three structured fields (testing_evidence, work_summary, learnings) are
+// required and must be ≥10 chars after trim — SPEC §Validation prevents thin
+// "." satisfactions of the contract.
+//
+// Three files are staged in a single StageOp: the updated ticket.yaml (with
+// CompletedAt, CompletedByAgentID, populated completion strings), a fresh
+// completion.md with the canonical three-section markdown, and a
+// system_completion comment whose body inlines the same content so
+// ListComments shows it without extra plumbing.
+//
+// "Done" is sticky — re-completing an already-done ticket returns
+// ErrFailedPrecondition (the no-reopen rule from SPEC §Design decisions).
+func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence, workSummary, learnings string) (*domain.Ticket, error) {
+	ctx, agent, err := s.requireSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(ticketID) == "" {
+		return nil, fmt.Errorf("%w: ticket id required", domain.ErrInvalidArgument)
+	}
+	if err := requireMinLen("testing_evidence", testingEvidence, completionMinLen); err != nil {
+		return nil, err
+	}
+	if err := requireMinLen("work_summary", workSummary, completionMinLen); err != nil {
+		return nil, err
+	}
+	if err := requireMinLen("learnings", learnings, completionMinLen); err != nil {
+		return nil, err
+	}
+
+	slug, err := s.resolveTicketProject(ticketID)
+	if err != nil {
+		return nil, err
+	}
+	lp, _, err := s.Cache.Get(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+
+	lp.Lock.Lock()
+	defer lp.Lock.Unlock()
+
+	t, ok := lp.Tickets[ticketID]
+	if !ok {
+		return nil, fmt.Errorf("%w: ticket %s", domain.ErrNotFound, ticketID)
+	}
+	if t.Column == domain.ColumnDone {
+		return nil, fmt.Errorf("%w: ticket %s is already done", domain.ErrFailedPrecondition, ticketID)
+	}
+
+	relTicketDir, ticketNumber, err := s.findTicketDirAndNumber(slug, ticketID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Trimmed values land in storage (the loader strip-trims when it parses
+	// completion.md sections back, so this keeps the round-trip stable).
+	teTrim := strings.TrimSpace(testingEvidence)
+	wsTrim := strings.TrimSpace(workSummary)
+	lnTrim := strings.TrimSpace(learnings)
+
+	// Re-read on-disk record to preserve any fields the cache doesn't model.
+	rec := &store.TicketRecord{}
+	absYAML := filepath.Join(s.Store.Root, relTicketDir, "ticket.yaml")
+	if err := store.ReadYAML(absYAML, rec); err != nil {
+		return nil, fmt.Errorf("read ticket: %w", err)
+	}
+	now := time.Now()
+	rec.Column = domain.ColumnDone
+	rec.CompletedAt = &now
+	rec.CompletedByAgentID = &agent.ID
+	rec.UpdatedAt = now
+	yamlBytes, err := store.MarshalYAML(rec)
+	if err != nil {
+		return nil, err
+	}
+
+	// Canonical three-section completion.md. The cache loader's
+	// splitCompletionSections matches "## Testing evidence", "## Work summary",
+	// and "## Learnings" headings exactly.
+	completionMD := fmt.Sprintf(
+		"## Testing evidence\n%s\n\n## Work summary\n%s\n\n## Learnings\n%s\n",
+		teTrim, wsTrim, lnTrim,
+	)
+
+	// system_completion comment — body is the formatted multi-section text the
+	// SPEC example shows so list_comments surfaces it inline without re-reading
+	// completion.md.
+	commentID := uuid.New()
+	createdAt := now.UTC()
+	cRec := &store.CommentRecord{
+		ID:            commentID.String(),
+		TicketID:      ticketID,
+		Kind:          domain.CommentKindSystemCompletion,
+		AuthorAgentID: &agent.ID,
+		FromColumn:    nil,
+		ToColumn:      nil,
+		CreatedAt:     createdAt,
+	}
+	shortID := hex.EncodeToString(commentID[:4])
+	commentFilename := fmt.Sprintf("%s-%s-%s.md", createdAt.Format(commentTimestampLayout), shortID, string(cRec.Kind))
+	commentBody := fmt.Sprintf(
+		"✅ Ticket completed.\n\nTesting evidence:\n%s\n\nWork summary:\n%s\n\nLearnings:\n%s\n",
+		teTrim, wsTrim, lnTrim,
+	)
+	commentBytes, err := store.EncodeMarkdown(cRec, commentBody)
+	if err != nil {
+		return nil, fmt.Errorf("encode system_completion comment: %w", err)
+	}
+
+	op, err := s.Store.BeginOp()
+	if err != nil {
+		return nil, err
+	}
+	defer op.Abort()
+	if err := op.Write(filepath.Join(relTicketDir, "ticket.yaml"), yamlBytes); err != nil {
+		return nil, err
+	}
+	if err := op.Write(filepath.Join(relTicketDir, "completion.md"), []byte(completionMD)); err != nil {
+		return nil, err
+	}
+	if err := op.Write(filepath.Join(relTicketDir, "comments", commentFilename), commentBytes); err != nil {
+		return nil, err
+	}
+	caption := fmt.Sprintf("complete ticket %s/%03d", slug, ticketNumber)
+	if err := op.Commit(ctx, store.LockProject(slug), agent, caption); err != nil {
+		return nil, fmt.Errorf("commit complete ticket: %w", err)
+	}
+
+	// T10: enqueue JobTicketLearnings here
+	// T10: enqueue JobComment for system_completion here
+
+	// Apply mutations to the cached state. Lock is held above.
+	t.Column = domain.ColumnDone
+	t.TestingEvidence = strPtr(teTrim)
+	t.WorkSummary = strPtr(wsTrim)
+	t.Learnings = strPtr(lnTrim)
+	t.CompletedAt = &now
+	t.CompletedBy = hydrateAgentRef(s.Store, agent.ID, agent.Name)
+	t.UpdatedAt = rec.UpdatedAt
+	domComment := &domain.Comment{
+		ID:         cRec.ID,
+		TicketID:   cRec.TicketID,
+		Kind:       cRec.Kind,
+		Body:       commentBody,
+		FromColumn: cRec.FromColumn,
+		ToColumn:   cRec.ToColumn,
+		Author:     hydrateAgentRef(s.Store, agent.ID, agent.Name),
+		CreatedAt:  cRec.CreatedAt,
+	}
+	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
+
+	cp := cloneTicket(t)
+	cp.BlockedBy = computeBlockedBy(cp.DependsOn, lp.Tickets)
+	return cp, nil
+}
+
+// strPtr returns a pointer to s. Used for setting *string fields on
+// domain.Ticket without an extra named local.
+func strPtr(s string) *string { return &s }
 
 // resolvePhase looks up a phase by id or slug in the loaded project. Returns
 // (phase, true) on hit.
