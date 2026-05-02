@@ -1,0 +1,1 @@
+Add a comment list and add-comment form in the ticket drawer. Show user comments and system_move or system_completion entries chronologically with author attribution. Acceptance criteria: list_comments renders all comment kinds; add_comment creates immutable user comments; failed empty comment submissions show errors; newly added comments appear without a full page reload.
