@@ -1,0 +1,9 @@
+id: 4d573198-60c5-4013-be07-1d38a2302a65
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+slug: centralise-mcp-server
+number: 1
+name: Centralise MCP server
+description: HTTP transport, repo-local project data, central agent registry, richer attribution
+created_by: 1d9de123-3477-4003-9a8c-5f7d8f55dda4
+created_at: 2026-05-02T20:55:26.132205313+01:00
+updated_at: 2026-05-02T20:55:26.132205313+01:00
