@@ -1,0 +1,8 @@
+## Testing evidence
+Installed npm dependencies and generated package-lock.json. Ran npm --prefix frontend run typecheck successfully, npm --prefix frontend run test -- --run successfully, npm --prefix frontend run build successfully, go test ./... successfully, and make build successfully. The Vite production build outputs static assets under internal/web/static/dist for embedding.
+
+## Work summary
+Scaffolded a frontend/ Vite React TypeScript app with Tailwind, Radix Select/Tabs primitives, TanStack Query, lucide icons, dnd-kit dependencies, Vitest setup, API client types, and an initial browser UI shell. Added npm scripts for dev, build, typecheck, and test plus Makefile frontend targets.
+
+## Learnings
+Vite can build directly into the Go package's embedded static directory, which keeps the serving path simple. Keeping the first UI shell data-backed but not yet a full board lets later tickets replace the ticket list with columns without reworking navigation state.
