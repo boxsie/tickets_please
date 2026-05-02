@@ -1,0 +1,12 @@
+id: e6aa339e-d868-4f0f-8d43-3f6fa8607b11
+project_id: b7a1b0da-dfdd-4167-ab6d-11eeab0d05d6
+number: 8
+title: Add semantic search panel
+column: todo
+phase_id: ac55d653-fa4f-49be-8c44-ab218a5e623e
+wave: 4
+depends_on:
+    - a225b544-dbce-4e79-8f1c-0ad3d48f8f50
+created_by: f7e33c27-733c-4f6f-a2b2-2e0c699db2d5
+created_at: 2026-05-02T20:00:40.4547774+01:00
+updated_at: 2026-05-02T20:00:40.4547774+01:00
