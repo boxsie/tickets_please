@@ -90,7 +90,11 @@ func runMCP(cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("register mcp agent: %w", err)
 	}
 
-	server := mcpserver.NewMCPServer("tickets_please", version)
+	server := mcpserver.NewMCPServer(
+		"tickets_please",
+		version,
+		mcpserver.WithInstructions(mcptools.ServerInstructions),
+	)
 	tools := mcptools.NewTools(s, &identity, log)
 	tools.RegisterAll(server)
 

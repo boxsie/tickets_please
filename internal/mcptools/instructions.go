@@ -1,0 +1,35 @@
+package mcptools
+
+// ServerInstructions is the persistent guidance surfaced to LLM clients via the
+// MCP `initialize` response. Most MCP clients (Claude Desktop, Claude Code, etc.)
+// inject this into the model's context every turn so it survives across tool calls.
+//
+// Keep it tight. Cross-tool workflow reflexes belong here; per-tool details
+// belong on the tool's own description.
+const ServerInstructions = `tickets_please is a Trello-shaped, LLM-first ticketing system. Projects organize work; tickets flow through ` + "`todo` → `in_progress` → `testing` → `done`" + `. The system feeds itself: every completed ticket leaves searchable learnings for future work.
+
+## Workflow reflexes
+
+- **Before working in a project**, read its summary with ` + "`get_project_summary`" + `. The summary is a load-bearing context document — goals, constraints, key components — written by whoever scoped the project.
+- **Before starting any non-trivial ticket**, run ` + "`search_learnings`" + ` with relevant terms. Past work may have left notes about gotchas. Skipping this is the most common avoidable mistake.
+- **To find unblocked work**: ` + "`list_tickets`" + ` with ` + "`ready_only=true`" + `. This filters to tickets whose ` + "`depends_on`" + ` are all done.
+- **When picking up a ticket**, move it to ` + "`in_progress`" + ` with a brief comment via ` + "`move_ticket`" + ` explaining what you're starting on.
+- **When done**, call ` + "`complete_ticket`" + ` with substantive ` + "`testing_evidence`, `work_summary`, and `learnings`" + ` (each ≥10 chars). Learnings are searchable — write them for future-you.
+
+## Hard rules (enforced server-side)
+
+- **Every column move requires a non-empty comment.** No silent moves; the comment becomes part of the audit trail.
+- **The ` + "`done`" + ` column is reachable only via ` + "`complete_ticket`" + `**, never ` + "`move_ticket`" + `. Attempts to move-to-done are rejected with an error pointing at the right tool.
+- **Once a ticket is ` + "`done`" + `, it's frozen.** No reopen, no edits to completion fields. If work resurfaces, create a new ticket — past learnings still surface via search.
+- **Comments are immutable** once written. Typos get a follow-up comment, not an edit.
+
+## Optional structure
+
+- **Phases** are sub-projects for bigger bodies of work. When entering one, read ` + "`get_phase_summary`" + ` the same way you'd read a project summary.
+- **Waves** are soft integer groupings inside a phase or project. Use ` + "`list_waves`" + ` to see how a body of work decomposes; ` + "`list_tickets`" + ` accepts a ` + "`wave`" + ` filter. Waves don't gate execution — they're an organizational hint.
+- **` + "`depends_on`" + `** is a hard prerequisite (gates ` + "`ready_only`" + `). **` + "`parallelizable_with`" + `** is purely advisory.
+
+## Identity
+
+You are already registered as an agent for this session — the MCP binary handled this on startup. Your identity travels with every mutation as ` + "`created_by` / `completed_by` / `author_id`" + `. No need to re-introduce yourself. ` + "`who_am_i`" + ` shows the registered identity if you want to confirm.
+`
