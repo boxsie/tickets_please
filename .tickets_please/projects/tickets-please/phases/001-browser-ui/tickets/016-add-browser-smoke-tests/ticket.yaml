@@ -1,0 +1,13 @@
+id: f049cb7b-01d4-4210-af1a-27b2b6d10189
+project_id: b7a1b0da-dfdd-4167-ab6d-11eeab0d05d6
+number: 16
+title: Add browser smoke tests
+column: todo
+phase_id: ac55d653-fa4f-49be-8c44-ab218a5e623e
+wave: 5
+depends_on:
+    - fe53dcfd-abc6-44a0-89a3-4905bf8b9e9e
+    - ac1212e1-0e18-4116-90de-b3c9c63bf7a8
+created_by: f7e33c27-733c-4f6f-a2b2-2e0c699db2d5
+created_at: 2026-05-02T20:01:39.192124316+01:00
+updated_at: 2026-05-02T20:01:39.192124316+01:00
