@@ -1,8 +1,8 @@
 ---
 id: T08
 title: Embedding providers (Ollama, OpenAI)
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T08
 depends_on: [T01]
 parallelizable_with: [T02, T03]
 wave: 1

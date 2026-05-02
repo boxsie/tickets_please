@@ -1,0 +1,59 @@
+package embed
+
+import (
+	"context"
+	"fmt"
+
+	openai "github.com/sashabaranov/go-openai"
+
+	"tickets_please/internal/config"
+)
+
+// openAIDim is the embedding dimensionality of text-embedding-3-small.
+const openAIDim = 1536
+
+// openAIModel is the embedding model used. Hardcoded by spec.
+const openAIModel = openai.SmallEmbedding3
+
+// OpenAI is the embed.Provider backed by the OpenAI embeddings API.
+type OpenAI struct {
+	client *openai.Client
+}
+
+// NewOpenAI constructs an OpenAI provider from cfg. The factory (New) checks
+// for an empty API key; this constructor does not.
+func NewOpenAI(cfg config.Config) *OpenAI {
+	return &OpenAI{client: openai.NewClient(cfg.OpenAIKey)}
+}
+
+// newOpenAIWithBaseURL is a test helper that points the client at an alternate
+// base URL (e.g. httptest.Server). Production code should use NewOpenAI / New.
+func newOpenAIWithBaseURL(apiKey, baseURL string) *OpenAI {
+	c := openai.DefaultConfig(apiKey)
+	c.BaseURL = baseURL
+	return &OpenAI{client: openai.NewClientWithConfig(c)}
+}
+
+// Dim returns 1536 (text-embedding-3-small).
+func (o *OpenAI) Dim() int { return openAIDim }
+
+// Name returns "openai".
+func (o *OpenAI) Name() string { return "openai" }
+
+// Embed calls the OpenAI embeddings endpoint and returns the resulting vector.
+func (o *OpenAI) Embed(ctx context.Context, text string) ([]float32, error) {
+	resp, err := o.client.CreateEmbeddings(ctx, openai.EmbeddingRequest{
+		Input: []string{text},
+		Model: openAIModel,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("openai: create embedding: %w", err)
+	}
+	if len(resp.Data) == 0 {
+		return nil, fmt.Errorf("openai: empty data in embedding response")
+	}
+	if len(resp.Data[0].Embedding) == 0 {
+		return nil, fmt.Errorf("openai: empty embedding vector")
+	}
+	return resp.Data[0].Embedding, nil
+}
