@@ -1,8 +1,8 @@
 ---
 id: T05
 title: Ticket CRUD methods
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T05
 depends_on: [T02, T03, T04, T15]
 parallelizable_with: [T06]
 wave: 4
