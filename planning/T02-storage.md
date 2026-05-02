@@ -1,8 +1,8 @@
 ---
 id: T02
 title: Storage primitives & integrity check
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T02
 depends_on: [T01]
 parallelizable_with: [T03, T08, T15]
 wave: 1
