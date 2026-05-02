@@ -1,8 +1,8 @@
 ---
 id: T06
 title: Comment methods
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T06
 depends_on: [T02, T03, T04, T15]
 parallelizable_with: [T05]
 wave: 4
