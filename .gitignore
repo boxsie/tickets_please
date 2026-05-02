@@ -18,3 +18,7 @@ coverage.html
 
 # Transient atomicity scratch — never commit partial writes
 .tickets_please/.staging/
+
+# flock files for per-project mutation serialization (held while a process is alive)
+.tickets_please/.lock
+.tickets_please/projects/*/.lock
