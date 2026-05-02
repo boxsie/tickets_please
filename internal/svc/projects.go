@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -17,16 +16,6 @@ import (
 	"tickets_please/internal/store"
 	"tickets_please/internal/worker"
 )
-
-// projectSlugRE is the server-side validation for project slugs. SPEC §
-// Project loading: lowercase letters, digits, dashes, underscores; must
-// start and end with [a-z0-9]; 2-64 chars total.
-var projectSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$`)
-
-// minProjectSummaryLen is the SPEC-mandated minimum length of project
-// summary text (after trim). Mirrored on phase summaries — same load-bearing
-// context-doc role per SPEC §Project summary.
-const minProjectSummaryLen = 200
 
 // LoadProjectResult is what Service.LoadProject returns. Handle is purely
 // diagnostic: subsequent calls just pass slug-or-id, and the cache key is
@@ -51,15 +40,14 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 
 	slug = strings.TrimSpace(slug)
 	name = strings.TrimSpace(name)
-	if !projectSlugRE.MatchString(slug) {
-		return nil, fmt.Errorf("%w: slug %q does not match ^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$", domain.ErrInvalidArgument, slug)
+	if err := requireSlug("slug", slug); err != nil {
+		return nil, err
 	}
-	if name == "" {
-		return nil, fmt.Errorf("%w: name required", domain.ErrInvalidArgument)
+	if err := requireNonEmptyTrimmed("name", name); err != nil {
+		return nil, err
 	}
-	trimmedSummary := strings.TrimSpace(summary)
-	if len(trimmedSummary) < minProjectSummaryLen {
-		return nil, fmt.Errorf("%w: summary must be at least %d characters of meaningful project context", domain.ErrInvalidArgument, minProjectSummaryLen)
+	if err := requireSummary("summary", summary); err != nil {
+		return nil, err
 	}
 
 	// Slug uniqueness — cheap walk; the global flock during commit prevents
@@ -204,9 +192,8 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	// Validate summary length before any disk work.
 	var newSummary *string
 	if in.Summary != nil {
-		t := strings.TrimSpace(*in.Summary)
-		if len(t) < minProjectSummaryLen {
-			return nil, fmt.Errorf("%w: summary must be at least %d characters of meaningful project context", domain.ErrInvalidArgument, minProjectSummaryLen)
+		if err := requireSummary("summary", *in.Summary); err != nil {
+			return nil, err
 		}
 		newSummary = in.Summary
 	}

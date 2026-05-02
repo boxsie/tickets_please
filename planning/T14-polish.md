@@ -1,8 +1,8 @@
 ---
 id: T14
 title: Polish (input validators, pagination, README quickstart)
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T14
 depends_on: [T07, T12]
 parallelizable_with: [T13]
 wave: 9
