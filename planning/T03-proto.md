@@ -95,6 +95,13 @@ type Ticket struct {
     ParallelizableWith []string
     BlockedBy          []string  // computed at read
     PhaseID            *string
+    Wave               int       // 0 = unassigned; soft grouping inside its phase or project
+}
+
+type WaveSummary struct {
+    Wave              int
+    TicketCount       int
+    ActiveTicketCount int   // not done
 }
 
 type Comment struct {
@@ -121,18 +128,22 @@ type CreateTicketInput struct {
     DependsOn          []string
     ParallelizableWith []string
     PhaseIDOrSlug      *string  // nil = no phase
+    Wave               int      // 0 = unassigned
 }
 
 type UpdateTicketInput struct {
     Title *string
     Body  *string
+    Wave  *int   // nil = leave unchanged; *int(0) = set to unassigned
     // No column field — that's what MoveTicket / CompleteTicket are for.
+    // No phase field — that's AssignTicketToPhase.
 }
 
 type ListTicketsInput struct {
     ProjectIDOrSlug string
     Column          *Column   // nil = any column
     PhaseIDOrSlug   *string   // nil = any; empty string = phase-less only (sentinel)
+    Wave            *int      // nil = any wave; *int(N) = exactly that wave; *int(0) = unassigned only
     ReadyOnly       bool
     Limit           int       // 0 = default 50; capped at 200
     Cursor          string
@@ -159,7 +170,7 @@ This ticket can ship a `tools.txt` or a Go file `internal/domain/tool_schemas.go
 - [ ] `internal/domain/types.go` compiles and has all entity structs.
 - [ ] `internal/domain/errors.go` compiles; `errors.Is(someErr, domain.ErrNotFound)` works for sentinel values.
 - [ ] Input structs cover every `svc.Service` method that other tickets reference.
-- [ ] Tool schemas table covers all **27 tools** listed in the **MCP server** section of [`../SPEC.md`](../SPEC.md): 7 project tools, 6 phase tools, 7 ticket tools, 2 comment tools, 4 search tools, 1 introspection tool.
+- [ ] Tool schemas table covers all **28 tools** listed in the **MCP server** section of [`../SPEC.md`](../SPEC.md): 7 project tools, 7 phase tools, 7 ticket tools, 2 comment tools, 4 search tools, 1 introspection tool.
 
 ## Notes
 

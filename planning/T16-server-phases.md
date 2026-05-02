@@ -1,6 +1,6 @@
 ---
 id: T16
-title: Phase methods + AssignTicketToPhase
+title: Phase methods + AssignTicketToPhase + ListWaves
 status: TODO
 owner: ""
 depends_on: [T02, T03, T04, T05, T15]
@@ -8,6 +8,7 @@ parallelizable_with: [T07]
 wave: 5
 files:
   - internal/svc/phases.go
+  - internal/svc/waves.go
   - internal/svc/tickets.go
   - internal/store/phases.go
   - internal/store/tickets.go
@@ -86,6 +87,20 @@ updated_at: 2026-05-02T15:00:00.000Z
 
 **`DeletePhase(id)`** — refuse if any tickets are still assigned to the phase (`FailedPrecondition` listing `<N>` tickets blocking). To delete, agents must reassign the tickets first.
 
+**`ListWaves(ctx, projectIDOrSlug, phaseIDOrSlug *string)`**
+
+Returns `[]domain.WaveSummary` for the chosen scope:
+- `phaseIDOrSlug == nil` → waves over **phase-less** tickets in the project.
+- `phaseIDOrSlug == *"foo"` → waves inside phase `foo`.
+
+Implementation:
+1. Lazy-load project; resolve phase if specified.
+2. Walk `loaded.Tickets`, filter to in-scope tickets.
+3. Bucket by `t.Wave`; count total + active (not done).
+4. Return sorted by `Wave` ascending; **include wave 0 (unassigned) last** so an orchestrator naturally walks structured waves first.
+
+Lives in `internal/svc/waves.go` to keep `phases.go` focused on the phase entity.
+
 **`AssignTicketToPhase(ticket_id, phase_id?, comment)`**
 - `phase_id` empty → move to phase-less (under `projects/<slug>/tickets/`).
 - Validate `comment` non-empty (non-trim).
@@ -121,19 +136,23 @@ Loader walks both `projects/<slug>/tickets/` and `projects/<slug>/phases/*/ticke
 
 (T12 implements these — descriptions canonical in [`../SPEC.md`](../SPEC.md).)
 
-| Tool | Backing RPC |
+| Tool | Backing method |
 |---|---|
-| `create_phase` | `PhaseService.CreatePhase` |
-| `list_phases` | `PhaseService.ListPhases` |
-| `get_phase_summary` | `PhaseService.GetPhase` (returns just `summary`) |
-| `update_phase` | `PhaseService.UpdatePhase` |
-| `assign_ticket_to_phase` | `TicketService.AssignTicketToPhase` |
+| `create_phase` | `Service.CreatePhase` |
+| `list_phases` | `Service.ListPhases` |
+| `get_phase_summary` | `Service.GetPhase` (returns just `summary`) |
+| `update_phase` | `Service.UpdatePhase` |
+| `assign_ticket_to_phase` | `Service.AssignTicketToPhase` |
+| `list_waves` | `Service.ListWaves` |
 
 ## Acceptance criteria
 
 - [ ] `Service.CreatePhase` with summary < 200 chars → `domain.ErrInvalidArgument`.
 - [ ] Successful `CreatePhase` writes `projects/<slug>/phases/<NNN>-<phase-slug>/{phase.yaml,summary.md}` with the expected number prefix.
 - [ ] `ListPhases` returns phases ordered by number with correct ticket counts.
+- [ ] `ListWaves(project, phase=foo)` returns `[]WaveSummary` covering every distinct `Wave` value among phase-foo tickets, with correct totals and active counts; wave 0 (unassigned) sorts last.
+- [ ] `ListWaves(project, phase=nil)` returns waves over phase-less tickets only.
+- [ ] `ListTickets` with `Wave=*int(2)` returns only wave-2 tickets; with `Wave=nil` returns all; with `Wave=*int(0)` returns only unassigned.
 - [ ] `AssignTicketToPhase` with empty comment → `domain.ErrInvalidArgument`.
 - [ ] `AssignTicketToPhase(ticket_id, phase_id=nil, comment=…)` moves a phased ticket back to project-level (`projects/<slug>/tickets/`); on-disk dir is renamed atomically; `ticket.yaml.phase_id = null`.
 - [ ] `AssignTicketToPhase` produces a `system_move` comment with the supplied body and the agent recorded as author.

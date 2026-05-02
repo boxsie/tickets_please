@@ -22,8 +22,8 @@ A single Go binary that runs as an MCP stdio server. Data lives as a plain direc
 - **Filesystem-backed.** Projects, phases, tickets, comments, agents — all yaml + markdown files in a normal directory. Hand-edit-friendly. Diffable.
 - **Vector search.** Ollama (default, local) or OpenAI. Embeddings live as `*.embedding.json` sidecars next to their source. Brute-force cosine in-memory; pluggable for HNSW.
 - **Agent identity.** Every mutating call is attributed. Sessions have a TTL. Audit who-did-what across past work.
-- **Phases.** Optional sub-projects for bigger bodies of work. Each phase carries its own ≥200-character markdown summary so an LLM can context-load the slice it's about to work on.
-- **Subagent-orchestratable.** Tickets carry `depends_on` / `parallelizable_with` / `blocked_by` so a swarm of agents can pick ready work without stepping on each other.
+- **Phases & waves.** Optional sub-projects for bigger bodies of work; each phase has a ≥200-char markdown summary an LLM can context-load. Waves are a soft int grouping inside a phase or project — cluster tickets into ordered batches without committing to hard `depends_on` edges.
+- **Subagent-orchestratable.** Tickets carry `depends_on` / `parallelizable_with` / `blocked_by` (computed) plus `wave`, so a swarm of agents can pick ready work in batches without stepping on each other.
 - **Concurrency-safe across processes.** Per-project flock for mutations + fsnotify for cross-process cache invalidation. Two MCP clients on the same data dir don't corrupt each other.
 - **MCP-native.** ~24 tools tuned for LLM ergonomics, including the load-bearing `search_learnings` and `get_project_summary`.
 

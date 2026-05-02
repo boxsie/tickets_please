@@ -31,33 +31,36 @@ Implement the **non-rule-bearing** ticket methods on `svc.Service`: `Create`, `G
 
 ## Details
 
-### `CreateTicket(project_id_or_slug, title, body, depends_on?, parallelizable_with?)`
+### `CreateTicket(in CreateTicketInput)`
 
-1. Reject empty `title` (after trim).
+1. Reject empty `Title` (after trim).
 2. Lazy-load the project via `s.Cache.Get(ctx, slug)`.
 3. Take `loaded.Lock.Lock()`.
-4. Validate every entry in `depends_on` and `parallelizable_with` references an existing ticket id in this project. Cross-project deps rejected with `InvalidArgument`.
-5. Compute the next `number` = `len(loaded.Tickets) + 1` (nominal — guard against gaps later if any are deleted).
-6. Compute the directory name: `fmt.Sprintf("%03d-%s", number, slug.Make(title))` (use `gosimple/slug` or a hand-rolled slugifier; lowercase, dash-separated, ASCII).
-7. `StageOp` writing `tickets/<dir>/ticket.yaml` (with `depends_on` / `parallelizable_with` arrays) and `tickets/<dir>/body.md`.
-8. Commit the StageOp. Auto-commit caption: `[tickets_please] create ticket <slug>/<NNN> [<agent>]`.
-9. Insert into `loaded.Tickets`.
-10. Enqueue `JobTicketBody` (T10 marker).
-11. Return the new `Ticket` (with `blocked_by` computed against current ticket states).
+4. Validate every entry in `DependsOn` and `ParallelizableWith` references an existing ticket id in this project. Cross-project deps rejected with `ErrInvalidArgument`.
+5. Validate `Wave >= 0` (negative numbers rejected; `0` = unassigned is fine).
+6. Compute the next `number` = `len(loaded.Tickets) + 1` (nominal — guard against gaps later if any are deleted).
+7. Compute the directory name: `fmt.Sprintf("%03d-%s", number, slug.Make(title))` (use `gosimple/slug` or a hand-rolled slugifier; lowercase, dash-separated, ASCII).
+8. `StageOp` writing `tickets/<dir>/ticket.yaml` (with `depends_on` / `parallelizable_with` / `wave` / `phase_id` fields) and `tickets/<dir>/body.md`.
+9. Commit the StageOp. Auto-commit caption: `[tickets_please] create ticket <slug>/<NNN> [<agent>]`.
+10. Insert into `loaded.Tickets`.
+11. Enqueue `JobTicketBody` (T10 marker).
+12. Return the new `Ticket` (with `blocked_by` computed against current ticket states).
 
-`column` always starts as `todo`. `created_by = agent.id` from the context.
+`Column` always starts as `ColumnTodo`. `CreatedBy = agent.id` from the context.
 
 ### `GetTicket(id)`
 
 `s.Cache.Get` for the ticket's project (resolve via `WalkProjects` if id is unknown — but in practice the caller usually has the slug in scope from MCP). Read from `loaded.Tickets[id]`.
 
-### `ListTickets(project_id_or_slug, column?, limit, cursor, ready_only)`
+### `ListTickets(in ListTicketsInput)`
 
 - Lazy-load.
-- Filter by `column` if specified (UNSPECIFIED = no filter).
-- If `ready_only` is true, post-filter to tickets where `blocked_by` is empty AND `column ∈ {todo, in_progress}` (let agents pick something to actively work). When combined with `column=todo`, this is the orchestrator's "what's ready to be claimed" query.
-- Order: `ORDER BY created_at ASC` (or by directory name, which encodes the same since numbers are zero-padded).
-- Pagination with cursor `<created_at>|<id>` base64'd, descending compare. Default `limit=50`, cap `200`.
+- Filter by `Column` if specified (`nil` = no filter).
+- Filter by `PhaseIDOrSlug`: `nil` = any; `*string("")` (sentinel) = phase-less only; `*string("foo")` = that phase.
+- Filter by `Wave`: `nil` = any wave; `*int(N)` for `N >= 0` = exactly that wave (0 means unassigned).
+- If `ReadyOnly` is true, post-filter to tickets where `BlockedBy` is empty AND `Column ∈ {todo, in_progress}`.
+- Order: `ORDER BY (Wave, CreatedAt)` — tickets within a wave ordered by creation time; wave 0 (unassigned) sorts first or last depending on caller preference (default: last, so the orchestrator sees structured waves before unstructured tickets).
+- Pagination with cursor `<created_at>|<id>` base64'd. Default `Limit=50`, cap `200`.
 
 ### Computing `blocked_by`
 
@@ -75,15 +78,16 @@ for _, depID := range t.DependsOn {
 
 Computed every time a ticket is converted to its `domain.Ticket` value.
 
-### `UpdateTicket(id, title?, body?)`
+### `UpdateTicket(id, in UpdateTicketInput)`
 
 - Load project; take `loaded.Lock.Lock()`.
-- Mutate `loaded.Tickets[id]` (only the supplied fields).
+- Mutate `loaded.Tickets[id]` (only the supplied fields — `Title`, `Body`, `Wave`).
 - `StageOp` rewriting `ticket.yaml` and (if body changed) `body.md`.
 - Commit. Caption: `[tickets_please] update ticket <slug>/<NNN> [<agent>]`.
 - If title or body changed, enqueue `JobTicketBody`.
 - Update `updated_at` to now.
 - **Reject** any column-related field (`UpdateTicketInput` doesn't have one per T03; this is a defensive belt-and-braces note for the implementer).
+- `Wave` accepts `*int`. `nil` = leave unchanged. `*int(N)` for any `N >= 0` sets the wave (0 = unassigned).
 
 ### Slugification
 

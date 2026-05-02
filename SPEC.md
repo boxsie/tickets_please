@@ -302,6 +302,21 @@ A phase carries the same kind of context that makes projects useful, scaled down
 - **No column / state.** Phases are organizational, not lifecycle-managed. "Phase done" is implicit ("all my tickets are done"). No `CompletePhase` RPC, no required retrospective, no frozen state.
 - **No nested phases.** Two levels is plenty (project → phase → ticket). Anything deeper should be a separate project linked from the parent's summary.
 
+### Waves (soft grouping inside a phase or project)
+
+A **wave** is a soft integer tag on a ticket that lets a planner cluster tickets into ordered batches without committing to hard `depends_on` edges. Waves are organizational, exactly like phases: no enforcement, no schema, no separate file.
+
+- `Ticket.Wave int` (default `0` = "unassigned").
+- Scope: a wave number is meaningful within whatever organizes the ticket — its phase if phased, its project if phase-less. Wave 1 of phase A is unrelated to wave 1 of phase B.
+- Hard ordering still belongs in `depends_on`; waves are a hint for *grouping*, not a constraint for *gating*.
+
+Use cases:
+- A planning agent breaks a phase into "research wave 1", "build wave 2", "ship wave 3" without writing every dep edge between them.
+- An orchestrator agent works wave-by-wave, fanning subagents across all tickets in the same wave.
+- A human glances at `list_waves` to see how a phase decomposes.
+
+`ListTickets` gains an optional `wave` filter. `list_waves` is an MCP tool that returns wave-level summaries (count, active count) for the chosen scope.
+
 ### Tickets and phases
 
 `Ticket.phase_id` is optional. A ticket either belongs to a phase or sits directly under its project. `AssignTicketToPhase(ticket_id, phase_id?, comment)` moves tickets between phases (or to no phase) — requires a comment, mirroring `MoveTicket` semantics.
@@ -342,6 +357,7 @@ Ticket `number` is **project-level** — i.e. one global sequence across phased 
 | `get_phase_summary` | Fetch a phase's full summary markdown. Read this when entering a phase, the same way you'd read a project summary. |
 | `update_phase` | Edit a phase's name/description/summary. |
 | `assign_ticket_to_phase` | Move a ticket between phases (or to no phase). Requires a comment explaining why — same audit-trail rule as `move_ticket`. |
+| `list_waves` | List the waves in a phase (or in the phase-less area of a project) with per-wave ticket counts. Use this to see how a body of work decomposes before picking what to start. |
 
 The two summary-reading tool descriptions (`get_project_summary` and `get_phase_summary`) form a hierarchy the LLM should walk: read project summary → read phase summary (if applicable) → read ticket body.
 
@@ -684,11 +700,12 @@ func New(cfg config.Config) (*Service, error)
 - `ListPhases(ctx, projectIDOrSlug string) ([]*domain.Phase, error)`
 - `UpdatePhase(ctx, projectIDOrSlug, phaseIDOrSlug string, p UpdatePhaseInput) (*domain.Phase, error)`
 - `DeletePhase(ctx, projectIDOrSlug, phaseIDOrSlug string) error` — refuses if any tickets are still assigned
+- `ListWaves(ctx, projectIDOrSlug string, phaseIDOrSlug *string) ([]WaveSummary, error)` — `nil` phase = phase-less area
 
 ### Tickets
-- `CreateTicket(ctx, in CreateTicketInput) (*domain.Ticket, error)` — always lands in `todo`. Carries optional `phase_id_or_slug`, `depends_on`, `parallelizable_with`.
+- `CreateTicket(ctx, in CreateTicketInput) (*domain.Ticket, error)` — always lands in `todo`. Carries optional `phase_id_or_slug`, `wave`, `depends_on`, `parallelizable_with`.
 - `GetTicket(ctx, id string) (*domain.Ticket, error)`
-- `ListTickets(ctx, in ListTicketsInput) (tickets []*domain.Ticket, nextCursor string, err error)` — supports `phase_id_or_slug`, `column`, `ready_only`, pagination.
+- `ListTickets(ctx, in ListTicketsInput) (tickets []*domain.Ticket, nextCursor string, err error)` — supports `phase_id_or_slug`, `column`, `ready_only`, `wave` filter, pagination.
 - `UpdateTicket(ctx, id string, in UpdateTicketInput) (*domain.Ticket, error)` — title/body only; no column.
 - `MoveTicket(ctx, id string, target domain.Column, comment string) (*domain.Ticket, error)` — both required; rejects `done`.
 - `CompleteTicket(ctx, id string, testingEvidence, workSummary, learnings string) (*domain.Ticket, error)` — all three required, ≥10 chars each.
@@ -710,7 +727,8 @@ Hand-written Go structs in `internal/domain/`. No code generation. Field semanti
 
 - `Project { ID, Slug, Name, Description, Summary string; CreatedBy *AgentRef; CreatedAt, UpdatedAt time.Time }`
 - `Phase { ID, ProjectID, Slug string; Number int; Name, Description, Summary string; CreatedBy *AgentRef; CreatedAt, UpdatedAt time.Time; TicketCount, ActiveTicketCount int }`
-- `Ticket { ID, ProjectID, Title, Body string; Column Column; TestingEvidence, WorkSummary, Learnings *string; CompletedAt *time.Time; CreatedBy, CompletedBy *AgentRef; CreatedAt, UpdatedAt time.Time; DependsOn, ParallelizableWith, BlockedBy []string; PhaseID *string }`
+- `Ticket { ID, ProjectID, Title, Body string; Column Column; TestingEvidence, WorkSummary, Learnings *string; CompletedAt *time.Time; CreatedBy, CompletedBy *AgentRef; CreatedAt, UpdatedAt time.Time; DependsOn, ParallelizableWith, BlockedBy []string; PhaseID *string; Wave int }`
+- `WaveSummary { Wave int; TicketCount int; ActiveTicketCount int }`
 - `Comment { ID, TicketID string; Kind CommentKind; Body string; FromColumn, ToColumn *Column; Author *AgentRef; CreatedAt time.Time }`
 - `Agent { ID, Key, Name string; Metadata map[string]string; CreatedAt, ExpiresAt, LastSeenAt time.Time }`
 - `AgentRef { ID, Name string }`
@@ -827,7 +845,7 @@ Cosine similarity assumes vectors are L2-normalized. Both Ollama (`nomic-embed-t
 
 When the LLM client spawns `tickets_please mcp` (the default subcommand of the single binary), the process: builds an in-process `svc.Service`, registers itself as an agent against that service, registers MCP tools that wrap the service methods, then serves stdio. Session lifecycle is handled internally — if the session expires mid-conversation the binary auto-re-registers; the LLM never sees session plumbing.
 
-Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **27 tools** across projects, phases, tickets, comments, search, and introspection.
+Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **28 tools** across projects, phases, tickets, comments, search, and introspection.
 
 ### Projects (7)
 
@@ -841,7 +859,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `update_project` | Edit a project's name, description, or summary. Summary edits trigger re-embedding. |
 | `delete_project` | Delete a project. Refuses if any tickets are still active. |
 
-### Phases (6)
+### Phases (7)
 
 | Tool | Description |
 |---|---|
@@ -851,6 +869,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `get_phase_summary` | Fetch a phase's full summary markdown. Read this when entering a phase, the same way you'd read a project summary. |
 | `update_phase` | Edit a phase's name, description, or summary. |
 | `delete_phase` | Delete a phase. Refuses if any tickets are still assigned to it. |
+| `list_waves` | List the waves in a phase (or in the phase-less area of a project) with per-wave ticket counts. A wave is a soft integer grouping on tickets — no enforcement, just organization. Use this to see how a body of work decomposes. |
 
 ### Tickets (7)
 

@@ -124,12 +124,12 @@ Error mapping (`format.go`):
 | `ErrFailedPrecondition` | `precondition failed: <message>` |
 | `ErrUnauthenticated` | `unauthenticated; re-registering...` (caller retries) |
 
-### Tool list (27 total — canonical)
+### Tool list (28 total — canonical)
 
 All from the spec's **MCP server** section. Counted by category:
 
 - **Projects (7)**: `list_projects`, `create_project`, `get_project`, `get_project_summary`, `load_project`, `update_project`, `delete_project`
-- **Phases (6)**: `list_phases`, `create_phase`, `get_phase`, `get_phase_summary`, `update_phase`, `delete_phase`
+- **Phases (7)**: `list_phases`, `create_phase`, `get_phase`, `get_phase_summary`, `update_phase`, `delete_phase`, `list_waves`
 - **Tickets (7)**: `list_tickets`, `create_ticket`, `get_ticket`, `update_ticket`, `move_ticket`, `complete_ticket`, `assign_ticket_to_phase`
 - **Comments (2)**: `add_comment`, `list_comments`
 - **Search (4)**: `search_projects`, `search_tickets`, `search_learnings`, `search_comments`
@@ -184,7 +184,7 @@ Include a "First run" recipe: ask Claude to "create a project called 'demo' with
 - [ ] `./tickets_please check` runs the integrity walk and exits cleanly.
 - [ ] `./tickets_please init` creates the data dir scaffold idempotently.
 - [ ] LLM end-to-end (in a Claude Code chat with the MCP registered):
-  - All 27 tools listed.
+  - All 28 tools listed.
   - `create_project` rejects when summary < 200 chars.
   - `create_ticket` works.
   - `move_ticket` rejects without a comment, succeeds with one.
