@@ -1,0 +1,14 @@
+id: 251f3ad6-545d-4918-b246-934d88574a58
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+number: 7
+title: 'Add serve subcommand: HTTP transport via StreamableHTTPServer'
+column: todo
+phase_id: 4d573198-60c5-4013-be07-1d38a2302a65
+wave: 3
+depends_on:
+    - b8b70091-38b5-4696-a6b5-c4b5f2197ba8
+parallelizable_with:
+    - 9b39533a-b49c-4b60-9201-558566a2af89
+created_by: 1d9de123-3477-4003-9a8c-5f7d8f55dda4
+created_at: 2026-05-02T20:58:29.820894307+01:00
+updated_at: 2026-05-02T20:58:29.820894307+01:00
