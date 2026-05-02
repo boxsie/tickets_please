@@ -1,8 +1,8 @@
 ---
 id: T09
 title: Vector index (in-memory)
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T09
 depends_on: [T02]
 parallelizable_with: [T15]
 wave: 2
