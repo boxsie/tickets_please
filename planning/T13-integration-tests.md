@@ -1,8 +1,8 @@
 ---
 id: T13
 title: Integration tests
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T13
 depends_on: [T07, T11, T15]
 parallelizable_with: [T12, T14]
 wave: 9
