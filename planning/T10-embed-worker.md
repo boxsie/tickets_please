@@ -1,8 +1,8 @@
 ---
 id: T10
 title: Embedding worker (JSON sidecars + vec index)
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T10
 depends_on: [T07, T08, T09]
 parallelizable_with: []
 wave: 6

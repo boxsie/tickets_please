@@ -12,6 +12,7 @@ import (
 
 	"tickets_please/internal/domain"
 	"tickets_please/internal/store"
+	"tickets_please/internal/worker"
 )
 
 // AssignTicketToPhase moves a ticket between phases (or to phase-less). The
@@ -177,7 +178,19 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], dc)
 
-	// T10: enqueue embed job here for the comment
+	// Async embed: the system_move comment for the phase reassignment.
+	if s.Worker != nil {
+		commentAbs := filepath.Join(s.Store.Root, commentRel)
+		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
+		s.Worker.Enqueue(worker.Job{
+			Kind:        worker.JobComment,
+			SourcePath:  commentAbs,
+			SidecarPath: filepath.Join(filepath.Dir(commentAbs), stem+".embedding.json"),
+			EntryID:     commentRec.ID,
+			Owner:       lp.Project.Slug,
+			Text:        commentBody,
+		})
+	}
 
 	out := cloneTicket(t)
 	out.BlockedBy = computeBlockedBy(out.DependsOn, lp.Tickets)

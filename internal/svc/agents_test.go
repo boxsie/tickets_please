@@ -24,10 +24,11 @@ func freshService(t *testing.T) *Service {
 		AgentSessionTTLMinutes: 60,
 		AgentSessionMaxMinutes: 240,
 	}
-	s, err := New(cfg)
+	s, err := NewWithEmbed(cfg, newFakeEmbed())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(s.Close)
 	return s
 }
 

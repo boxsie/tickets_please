@@ -18,7 +18,9 @@ import (
 )
 
 // freshServiceWithCfg lets individual tests tune cache + git behavior without
-// each redeclaring the full config block.
+// each redeclaring the full config block. Tests use the deterministic fake
+// embedding provider so the worker can run end-to-end without an Ollama
+// sidecar process.
 func freshServiceWithCfg(t *testing.T, cfg config.Config) *Service {
 	t.Helper()
 	if cfg.DataDir == "" {
@@ -33,7 +35,7 @@ func freshServiceWithCfg(t *testing.T, cfg config.Config) *Service {
 	if cfg.AgentSessionMaxMinutes == 0 {
 		cfg.AgentSessionMaxMinutes = 240
 	}
-	s, err := New(cfg)
+	s, err := NewWithEmbed(cfg, newFakeEmbed())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

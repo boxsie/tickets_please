@@ -13,6 +13,7 @@ import (
 
 	"tickets_please/internal/domain"
 	"tickets_please/internal/store"
+	"tickets_please/internal/worker"
 )
 
 // commentTimestampLayout is the sortable, nanosecond-precision UTC layout used
@@ -109,7 +110,19 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 		return nil, fmt.Errorf("commit create comment: %w", err)
 	}
 
-	// T10: enqueue embed job here
+	// Async embed: the comment body → resident CommentsIdx.
+	if s.Worker != nil {
+		commentAbs := filepath.Join(s.Store.Root, relCommentPath)
+		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
+		s.Worker.Enqueue(worker.Job{
+			Kind:        worker.JobComment,
+			SourcePath:  commentAbs,
+			SidecarPath: filepath.Join(filepath.Dir(commentAbs), stem+".embedding.json"),
+			EntryID:     rec.ID,
+			Owner:       slug,
+			Text:        bodyOut,
+		})
+	}
 
 	// Hydrate the in-memory comment, append to the cache, and return a copy
 	// to the caller. Author is best-effort: any agent-lookup failure leaves

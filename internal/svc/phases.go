@@ -16,6 +16,7 @@ import (
 	"tickets_please/internal/cache"
 	"tickets_please/internal/domain"
 	"tickets_please/internal/store"
+	"tickets_please/internal/worker"
 )
 
 // minPhaseSummaryLen is the SPEC-mandated minimum length of phase summary
@@ -102,7 +103,19 @@ func (s *Service) CreatePhase(ctx context.Context, projectIDOrSlug, name, descri
 		return nil, fmt.Errorf("commit create phase: %w", err)
 	}
 
-	// T10: enqueue summary embed job here
+	// Async embed: phase summary → resident SummaryIdx (phase summaries
+	// share the same kind as project summaries — see SPEC §Vector search).
+	if s.Worker != nil {
+		phaseDirAbs := filepath.Join(s.Store.Root, phaseDirRel)
+		s.Worker.Enqueue(worker.Job{
+			Kind:        worker.JobProjectSummary,
+			SourcePath:  filepath.Join(phaseDirAbs, "summary.md"),
+			SidecarPath: filepath.Join(phaseDirAbs, "summary.embedding.json"),
+			EntryID:     rec.ID,
+			Owner:       lp.Project.Slug,
+			Text:        summary,
+		})
+	}
 
 	ph := &domain.Phase{
 		ID:          rec.ID,
@@ -240,7 +253,17 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 	ph.UpdatedAt = rec.UpdatedAt
 	if newSummary != nil {
 		ph.Summary = *newSummary
-		// T10: enqueue embed job here if summary changed
+		if s.Worker != nil {
+			phaseDirAbs := filepath.Join(s.Store.Root, phaseDirRel)
+			s.Worker.Enqueue(worker.Job{
+				Kind:        worker.JobProjectSummary,
+				SourcePath:  filepath.Join(phaseDirAbs, "summary.md"),
+				SidecarPath: filepath.Join(phaseDirAbs, "summary.embedding.json"),
+				EntryID:     rec.ID,
+				Owner:       lp.Project.Slug,
+				Text:        *newSummary,
+			})
+		}
 	}
 
 	out := hydratePhaseWithSummary(s.Store, lp, ph)
@@ -284,6 +307,12 @@ func (s *Service) DeletePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 
 	phaseDirName := fmt.Sprintf("%03d-%s", ph.Number, ph.Slug)
 	phaseDirRel := filepath.Join("projects", lp.Project.Slug, "phases", phaseDirName)
+
+	// Drain pending embed jobs so the worker doesn't recreate the phase
+	// dir with a freshly-written sidecar after the upcoming RemovePath.
+	if s.Worker != nil {
+		s.Worker.Flush(ctx)
+	}
 
 	op, err := s.Store.BeginOp()
 	if err != nil {

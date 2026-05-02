@@ -15,6 +15,7 @@ import (
 	"tickets_please/internal/cache"
 	"tickets_please/internal/domain"
 	"tickets_please/internal/store"
+	"tickets_please/internal/worker"
 )
 
 // listTicketsDefaultLimit / listTicketsMaxLimit cap pagination per T05 SPEC.
@@ -136,7 +137,18 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		return nil, fmt.Errorf("commit create ticket: %w", err)
 	}
 
-	// T10: enqueue embed job here
+	// Async embed: title + body → resident TicketsIdx.
+	if s.Worker != nil {
+		ticketDirAbs := filepath.Join(s.Store.Root, ticketDirRel)
+		s.Worker.Enqueue(worker.Job{
+			Kind:        worker.JobTicketBody,
+			SourcePath:  filepath.Join(ticketDirAbs, "body.md"),
+			SidecarPath: filepath.Join(ticketDirAbs, "body.embedding.json"),
+			EntryID:     rec.ID,
+			Owner:       lp.Project.Slug,
+			Text:        title + "\n\n" + in.Body,
+		})
+	}
 
 	t := &domain.Ticket{
 		ID:                 rec.ID,
@@ -378,8 +390,16 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 		return nil, fmt.Errorf("commit update ticket: %w", err)
 	}
 
-	if titleChanged || bodyChanged {
-		// T10: enqueue embed job here
+	if (titleChanged || bodyChanged) && s.Worker != nil {
+		ticketDirAbs := filepath.Join(s.Store.Root, ticketDirRel)
+		s.Worker.Enqueue(worker.Job{
+			Kind:        worker.JobTicketBody,
+			SourcePath:  filepath.Join(ticketDirAbs, "body.md"),
+			SidecarPath: filepath.Join(ticketDirAbs, "body.embedding.json"),
+			EntryID:     rec.ID,
+			Owner:       lp.Project.Slug,
+			Text:        newTitle + "\n\n" + newBody,
+		})
 	}
 
 	// Apply mutations to the cached ticket in place. Lock is held.
@@ -529,7 +549,19 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 		return nil, fmt.Errorf("commit move ticket: %w", err)
 	}
 
-	// T10: enqueue JobComment for system_move here
+	// Async embed: system_move comment.
+	if s.Worker != nil {
+		commentAbs := filepath.Join(s.Store.Root, relCommentPath)
+		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
+		s.Worker.Enqueue(worker.Job{
+			Kind:        worker.JobComment,
+			SourcePath:  commentAbs,
+			SidecarPath: filepath.Join(filepath.Dir(commentAbs), stem+".embedding.json"),
+			EntryID:     cRec.ID,
+			Owner:       slug,
+			Text:        commentBodyOut,
+		})
+	}
 
 	// Apply mutations to the cached state. Lock is held above.
 	t.Column = target
@@ -681,8 +713,29 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		return nil, fmt.Errorf("commit complete ticket: %w", err)
 	}
 
-	// T10: enqueue JobTicketLearnings here
-	// T10: enqueue JobComment for system_completion here
+	// Async embed: learnings → resident LearningsIdx, plus the
+	// system_completion comment → resident CommentsIdx.
+	if s.Worker != nil {
+		ticketDirAbs := filepath.Join(s.Store.Root, relTicketDir)
+		s.Worker.Enqueue(worker.Job{
+			Kind:        worker.JobTicketLearnings,
+			SourcePath:  filepath.Join(ticketDirAbs, "completion.md"),
+			SidecarPath: filepath.Join(ticketDirAbs, "learnings.embedding.json"),
+			EntryID:     rec.ID,
+			Owner:       slug,
+			Text:        lnTrim,
+		})
+		commentAbs := filepath.Join(ticketDirAbs, "comments", commentFilename)
+		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
+		s.Worker.Enqueue(worker.Job{
+			Kind:        worker.JobComment,
+			SourcePath:  commentAbs,
+			SidecarPath: filepath.Join(filepath.Dir(commentAbs), stem+".embedding.json"),
+			EntryID:     cRec.ID,
+			Owner:       slug,
+			Text:        commentBody,
+		})
+	}
 
 	// Apply mutations to the cached state. Lock is held above.
 	t.Column = domain.ColumnDone

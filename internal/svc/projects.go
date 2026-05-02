@@ -15,6 +15,7 @@ import (
 	"tickets_please/internal/cache"
 	"tickets_please/internal/domain"
 	"tickets_please/internal/store"
+	"tickets_please/internal/worker"
 )
 
 // projectSlugRE is the server-side validation for project slugs. SPEC §
@@ -107,7 +108,18 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 		return nil, fmt.Errorf("commit create project: %w", err)
 	}
 
-	// T10: enqueue embed job here
+	// Async embed: project summary → resident SummaryIdx. Fire-and-forget;
+	// dropped jobs get picked up by backfill on the next boot.
+	if s.Worker != nil {
+		s.Worker.Enqueue(worker.Job{
+			Kind:        worker.JobProjectSummary,
+			SourcePath:  filepath.Join(s.Store.Root, "projects", slug, "summary.md"),
+			SidecarPath: filepath.Join(s.Store.Root, "projects", slug, "summary.embedding.json"),
+			EntryID:     rec.ID,
+			Owner:       slug,
+			Text:        summary,
+		})
+	}
 
 	proj := &domain.Project{
 		ID:          rec.ID,
@@ -244,7 +256,17 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	lp.Project.UpdatedAt = rec.UpdatedAt
 	if newSummary != nil {
 		lp.Project.Summary = *newSummary
-		// T10: enqueue embed job here if summary changed
+		// Re-embed the summary so SearchProjects reflects the edit.
+		if s.Worker != nil {
+			s.Worker.Enqueue(worker.Job{
+				Kind:        worker.JobProjectSummary,
+				SourcePath:  filepath.Join(s.Store.Root, "projects", slug, "summary.md"),
+				SidecarPath: filepath.Join(s.Store.Root, "projects", slug, "summary.embedding.json"),
+				EntryID:     rec.ID,
+				Owner:       slug,
+				Text:        *newSummary,
+			})
+		}
 	}
 
 	cp := *lp.Project
@@ -285,6 +307,14 @@ func (s *Service) DeleteProject(ctx context.Context, idOrSlug string) error {
 	// fsnotify event from the upcoming RemovePath doesn't try to flip
 	// Stale on a doomed entry.
 	s.Cache.Evict(slug)
+
+	// Drain pending embed jobs so the worker doesn't write a sidecar into
+	// the project dir we're about to RemovePath. Without this, RemoveAll
+	// can race a concurrent sidecar write and leave the project dir
+	// non-empty / partially-removed.
+	if s.Worker != nil {
+		s.Worker.Flush(ctx)
+	}
 
 	op, err := s.Store.BeginOp()
 	if err != nil {
