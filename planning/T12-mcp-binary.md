@@ -1,8 +1,8 @@
 ---
 id: T12
 title: MCP binary entry point
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T12
 depends_on: [T03, T04, T05, T06, T07, T11, T15, T16]
 parallelizable_with: []
 wave: 8
