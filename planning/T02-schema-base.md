@@ -212,18 +212,21 @@ func ReadMarkdown(path string) (Frontmatter, string, error)
 
 ### Walk helpers
 
-- `WalkProjects(func(slug, *Project) error)` — iterates `projects/*/project.yaml`.
-- `WalkTickets(slug string, func(*Ticket) error)` — iterates `projects/<slug>/tickets/*/ticket.yaml`, ordered by directory name.
-- `WalkComments(ticketDir, func(*Comment) error)` — iterates the comments subdir, ordered by filename (which encodes timestamp).
-- `WalkAgents(func(*Agent) error)` — iterates `agents/*.yaml`.
+Walks return **record** types from `internal/store/` — never the hydrated `domain.*` types (those are assembled by the cache layer in T04 from records + sibling markdown files).
+
+- `WalkProjects(func(slug string, rec *ProjectRecord) error)` — iterates `projects/*/project.yaml`.
+- `WalkPhases(slug string, func(rec *PhaseRecord) error)` — iterates `projects/<slug>/phases/*/phase.yaml`.
+- `WalkTickets(slug string, func(rec *TicketRecord) error)` — iterates both `projects/<slug>/tickets/*/ticket.yaml` and `projects/<slug>/phases/*/tickets/*/ticket.yaml`, ordered by directory name within each tree.
+- `WalkComments(ticketDir string, func(rec *CommentRecord, body string) error)` — iterates the comments subdir, ordered by filename (which encodes timestamp); returns the parsed frontmatter record plus the markdown body.
+- `WalkAgents(func(rec *AgentRecord) error)` — iterates `agents/*.yaml`.
 
 Each walk is a streaming iterator, not a slurp.
 
 ### Active-session uniqueness for agents
 
-`Store.RegisterAgent(agent *Agent)`:
-1. WalkAgents, collect any non-expired record with the same `key`. If found, return `ErrAgentKeyConflict`.
-2. Write `agents/<id>.yaml` via StageOp.
+`Store.RegisterAgent(rec *AgentRecord)`:
+1. `WalkAgents`, collect any non-expired record with the same `Key`. If found, return `domain.ErrAlreadyExists`.
+2. Write `agents/<id>.yaml` via `StageOp`.
 
 ### Integrity check
 
@@ -262,7 +265,7 @@ T07 (move/complete) and T15 (agent register) will call this with verbs like "mov
 - [ ] `StageOp` round-trip: writing two files via `BeginOp` + `Write` + `Commit` produces both at their final paths and leaves `.staging/` empty.
 - [ ] Killing the process between `Write` and `Commit` leaves `.staging/<op-id>/` populated; integrity at next startup logs the residual op.
 - [ ] `WriteMarkdown` + `ReadMarkdown` round-trips frontmatter and body losslessly.
-- [ ] `RegisterAgent` rejects a second active session with the same `key` (`ErrAgentKeyConflict`); accepts after the first record's `expires_at` passes.
+- [ ] `RegisterAgent` rejects a second active session with the same `key` (`domain.ErrAlreadyExists`); accepts after the first record's `expires_at` passes.
 - [ ] `WalkComments` returns comments in created-at order regardless of filesystem return order.
 - [ ] On a fresh git repo with `auto_commit: true`, calling `op.Commit(ctx, agent, "create project foo")` produces a single commit attributed to `agent.Name`.
 - [ ] On a non-git directory, auto-commit logs the warning once and the StageOp still succeeds.

@@ -150,9 +150,18 @@ The `key` is **agent-generated** — it's the agent's claim about who they are (
 | Read-only | Get/List/Search | No |
 | Agent management | Register/Heartbeat/GetAgent | No (Register is the entry point; Heartbeat self-identifies in the request) |
 
-### Schema for identity
+### Storage shape for identity
 
-The `agents` table and the attribution columns (`projects.created_by`, `tickets.created_by`, `tickets.completed_by`, `comments.author_id`) live in migration `0001_init.up.sql` — see the **Database schema** section for the full SQL. Attribution columns are nullable so the schema lands cleanly before the agent service (T15) is wired in. Once T15's interceptor is enforcing, every newly-created row populates them. Pre-existing rows keep `NULL` — no backfill, since there's no identity to backfill *to*.
+Each active or expired session is a yaml file at `.tickets_please/agents/<session-uuid>.yaml`. The full file format is in **Data layout** above; the record struct (`store.AgentRecord`) lives in `internal/store/`.
+
+Attribution refs on other entities are nullable string fields in their yaml:
+
+- `projects/<slug>/project.yaml` → `created_by: <agent-uuid>` (or `null`)
+- `projects/<slug>/tickets/<NNN>-…/ticket.yaml` → `created_by`, `completed_by` (each nullable)
+- `projects/<slug>/phases/<NNN>-…/phase.yaml` → `created_by` (nullable)
+- comment frontmatter → `author_id: <agent-uuid>` (or `null`)
+
+These ref fields are nullable so projects/tickets/comments can be created or hand-edited before T15's middleware is enforcing. Once T15 lands and the middleware runs, every newly-created row populates its attribution. Pre-existing entities keep `null` — no backfill, since there's no identity to backfill *to*. The integrity check (T02) warns on dangling refs (an `agent_id` that doesn't resolve to a file in `agents/`) but doesn't fail boot.
 
 ### Identity attached to context
 

@@ -22,7 +22,7 @@ The in-memory data structure that backs `SearchService`. Brute-force cosine top-
 
 **In:** `internal/vecindex/` package with `Index` type, sidecar load/save helpers, hot-path `Search` returning ranked hits.
 
-**Out:** No embedding generation (T08), no worker pipeline (T10), no gRPC handlers (T11). Just the index data structure and IO.
+**Out:** No embedding generation (T08), no worker pipeline (T10), no search methods (T11). Just the index data structure and IO.
 
 ## Files
 

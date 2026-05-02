@@ -105,7 +105,7 @@ If two tickets in the same project somehow produce the same slug (rare with the 
 - [ ] The on-disk dir name has the expected `NNN-slugified-title` form.
 - [ ] `Service.CreateTicket` with empty title → `domain.ErrInvalidArgument`.
 - [ ] `Service.GetTicket` on unknown id → `domain.ErrNotFound`.
-- [ ] `ListTickets` with `column = COLUMN_TODO` returns only todo tickets.
+- [ ] `ListTickets` with `Column = *domain.ColumnTodo` returns only todo tickets.
 - [ ] Pagination: with `limit=2` and 5 tickets, three pages walk the whole set; the third page's `next_cursor` returns empty.
 - [ ] `UpdateTicket` with only `title` doesn't blank the body.
 - [ ] Auto-commit: each Create/Update produces one git commit attributed to the calling agent.

@@ -24,7 +24,7 @@ The async embedding pipeline. Server handlers fire-and-forget enqueue jobs after
 
 **In:** Worker package, enqueue helpers in handlers, backfill walk on project load, lifecycle wiring in `cmd/tickets_please/main.go`.
 
-**Out:** No search SQL or RPCs — T11 reads what this writes.
+**Out:** No search methods — T11 reads what this writes.
 
 ## Files
 

@@ -79,4 +79,4 @@ The schema in T09 will declare `vector(768)`. T10's worker (or main startup) is 
 
 ## Notes
 
-See **Embedding pipeline** in the spec. The user-confirmed default is Ollama + `nomic-embed-text` — pick that as the factory default. Keep the implementations small; the cleverness lives in T10 (queueing) and T11 (search SQL).
+See **Embedding pipeline** in the spec. The user-confirmed default is Ollama + `nomic-embed-text` — pick that as the factory default. Keep the implementations small; the cleverness lives in T10 (queueing + sidecar writes) and T11 (in-memory cosine search).
