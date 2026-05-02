@@ -1,8 +1,8 @@
 ---
 id: T15
 title: Service skeleton + agent identity + in-process middleware
-status: TODO
-owner: ""
+status: DONE
+owner: subagent-T15
 depends_on: [T02, T03]
 parallelizable_with: [T09]
 wave: 2
