@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/store"
 	"tickets_please/internal/svc"
 )
 
@@ -241,10 +246,21 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
 	), t.handleSearchComments)
 
-	// Introspection (1)
+	// Introspection (2)
 	s.AddTool(mcp.NewTool("who_am_i",
 		mcp.WithDescription("Returns the current agent identity the MCP server has registered for this session. Useful for the LLM to confirm its own attribution before doing work."),
 	), t.handleWhoAmI)
+
+	s.AddTool(mcp.NewTool("register_agent",
+		mcp.WithDescription("Self-register this MCP session with the server: declare the model, client, and bound project. **HTTP clients should call this once on connection** before any other tool call. Stdio clients pre-register at startup and can skip unless they want to override the defaults. The `project_path` must be the absolute filesystem path to a repo containing `.tickets_please/project.yaml`."),
+		mcp.WithString("model", mcp.Required(), mcp.Description("Model identifier, e.g. \"claude-opus-4-7\"")),
+		mcp.WithString("model_version", mcp.Description("Optional model version string")),
+		mcp.WithString("client_name", mcp.Required(), mcp.Description("Client name, e.g. \"Claude Code\"")),
+		mcp.WithString("client_version", mcp.Description("Optional client version string")),
+		mcp.WithString("project_path", mcp.Required(), mcp.Description("Absolute path to the repo whose .tickets_please/project.yaml binds this session")),
+		mcp.WithString("agent_key", mcp.Description("Optional unique agent key; defaults to <client>:<rand>")),
+		mcp.WithString("agent_name", mcp.Description("Optional display name; defaults to client_name")),
+	), t.handleRegisterAgent)
 }
 
 // ---------------------------------------------------------------------------
@@ -1082,28 +1098,141 @@ func (t *Tools) handleWhoAmI(ctx context.Context, _ mcp.CallToolRequest) (*mcp.C
 	sess, ok := t.registry.Get(sessionID)
 	if !ok {
 		return jsonResult(map[string]any{
-			"session_id":  sessionID,
-			"registered":  false,
-			"key":         nil,
-			"name":        nil,
-			"expires_at":  nil,
+			"session_id": sessionID,
+			"registered": false,
+			"key":        nil,
+			"name":       nil,
+			"expires_at": nil,
 		})
 	}
 	out := map[string]any{
-		"session_id":  sessionID,
-		"registered":  true,
-		"key":         sess.AgentKey,
-		"name":        sess.AgentName,
-		"agent_id":    sess.AgentID,
-		"expires_at":  formatTime(sess.ExpiresAt),
+		"session_id": sessionID,
+		"registered": true,
+		"key":        sess.AgentKey,
+		"name":       sess.AgentName,
+		"agent_id":   sess.AgentID,
+		"expires_at": formatTime(sess.ExpiresAt),
 	}
 	if len(sess.Metadata) > 0 {
 		out["metadata"] = sess.Metadata
+		// Surface common metadata fields as top-level keys for convenience.
+		for _, k := range []string{"model", "model_version", "client_name", "client_version"} {
+			if v := sess.Metadata[k]; v != "" {
+				out[k] = v
+			}
+		}
 	}
 	if sess.ProjectSlug != "" {
 		out["project_slug"] = sess.ProjectSlug
 	}
+	if sess.ProjectPath != "" {
+		out["project_path"] = sess.ProjectPath
+	}
 	return jsonResult(out)
+}
+
+// handleRegisterAgent lets an MCP client self-identify after connecting. The
+// HTTP transport relies on this; stdio pre-registers at startup but can call
+// it to override the defaults. The handler creates a fresh AgentRecord on
+// every call (last-write-wins on the registry slot) so the audit trail
+// always reflects the most recently declared identity.
+func (t *Tools) handleRegisterAgent(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	model, err := req.RequireString("model")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	clientName, err := req.RequireString("client_name")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	projectPath, err := req.RequireString("project_path")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	model = strings.TrimSpace(model)
+	clientName = strings.TrimSpace(clientName)
+	projectPath = strings.TrimSpace(projectPath)
+	if model == "" {
+		return mcp.NewToolResultError("invalid argument: model required"), nil
+	}
+	if clientName == "" {
+		return mcp.NewToolResultError("invalid argument: client_name required"), nil
+	}
+	if projectPath == "" {
+		return mcp.NewToolResultError("invalid argument: project_path required"), nil
+	}
+	if !filepath.IsAbs(projectPath) {
+		return mcp.NewToolResultError("invalid argument: project_path must be absolute"), nil
+	}
+	if fi, statErr := os.Stat(projectPath); statErr != nil || !fi.IsDir() {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid argument: project_path %q does not exist or is not a directory", projectPath)), nil
+	}
+
+	projectYAML := filepath.Join(projectPath, ".tickets_please", "project.yaml")
+	projectRec := &store.ProjectRecord{}
+	if err := store.ReadYAML(projectYAML, projectRec); err != nil {
+		if os.IsNotExist(err) {
+			return mcp.NewToolResultError(fmt.Sprintf("no .tickets_please/project.yaml at %s", projectPath)), nil
+		}
+		return mcp.NewToolResultError("invalid argument: read project.yaml: " + err.Error()), nil
+	}
+
+	modelVersion := strings.TrimSpace(req.GetString("model_version", ""))
+	clientVersion := strings.TrimSpace(req.GetString("client_version", ""))
+	agentKey := strings.TrimSpace(req.GetString("agent_key", ""))
+	agentName := strings.TrimSpace(req.GetString("agent_name", ""))
+
+	if agentKey == "" {
+		slug := strings.ToLower(strings.ReplaceAll(clientName, " ", "_"))
+		agentKey = fmt.Sprintf("%s:%s", slug, randomHex(8))
+	}
+	if agentName == "" {
+		agentName = clientName
+	}
+
+	metadata := map[string]string{
+		"model":        model,
+		"client_name":  clientName,
+		"project_path": projectPath,
+	}
+	if modelVersion != "" {
+		metadata["model_version"] = modelVersion
+	}
+	if clientVersion != "" {
+		metadata["client_version"] = clientVersion
+	}
+	if host, hErr := os.Hostname(); hErr == nil && host != "" {
+		metadata["hostname"] = host
+	}
+
+	agentID, expiresAt, err := t.svc.RegisterAgent(ctx, agentKey, agentName, metadata, 0)
+	if err != nil {
+		return errorResult(err), nil
+	}
+
+	sessionID := t.sessionIDFromContext(ctx)
+	sess := &Session{
+		AgentID:     agentID,
+		AgentKey:    agentKey,
+		AgentName:   agentName,
+		Metadata:    metadata,
+		ProjectSlug: projectRec.Slug,
+		ProjectPath: projectPath,
+		ExpiresAt:   expiresAt,
+	}
+	if err := t.registry.Register(sessionID, sess); err != nil {
+		return mcp.NewToolResultError("internal: register session: " + err.Error()), nil
+	}
+
+	return jsonResult(map[string]any{
+		"session_id":   sessionID,
+		"agent_id":     agentID,
+		"agent_key":    agentKey,
+		"agent_name":   agentName,
+		"project_slug": projectRec.Slug,
+		"project_path": projectPath,
+		"expires_at":   expiresAt.UTC().Format(time.RFC3339),
+	})
 }
 
 // ---------------------------------------------------------------------------
