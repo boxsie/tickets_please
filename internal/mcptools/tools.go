@@ -1192,6 +1192,19 @@ func (t *Tools) handleRegisterAgent(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("invalid argument: read project.yaml: " + err.Error()), nil
 	}
 
+	// Mount the project in the Service registry so subsequent per-slug routing
+	// can find it. Slug-collision errors (a different repo already holding this
+	// slug) propagate to the user; idempotent re-registers are no-ops.
+	mountedSlug, err := t.svc.RegisterProjectMount(ctx, projectPath)
+	if err != nil {
+		return mcp.NewToolResultError("register project mount: " + err.Error()), nil
+	}
+	if mountedSlug != projectRec.Slug {
+		return mcp.NewToolResultError(fmt.Sprintf(
+			"internal: mounted slug %q does not match project.yaml slug %q", mountedSlug, projectRec.Slug,
+		)), nil
+	}
+
 	modelVersion := strings.TrimSpace(req.GetString("model_version", ""))
 	clientVersion := strings.TrimSpace(req.GetString("client_version", ""))
 	agentKey := strings.TrimSpace(req.GetString("agent_key", ""))
