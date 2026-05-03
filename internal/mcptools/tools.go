@@ -19,7 +19,7 @@ import (
 )
 
 // Tools wraps the in-process svc.Service plus the per-session Registry into a
-// single struct that registers all 28 tools against an *mcpserver.MCPServer.
+// single struct that registers all 29 tools against an *mcpserver.MCPServer.
 //
 // One Tools per process — the MCP binary builds it once, calls RegisterAll,
 // and hands the server off to ServeStdio.

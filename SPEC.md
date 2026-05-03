@@ -887,7 +887,7 @@ Cosine similarity assumes vectors are L2-normalized. Both Ollama (`nomic-embed-t
 
 When the LLM client spawns `tickets_please mcp` (the default subcommand of the single binary), the process: builds an in-process `svc.Service`, registers itself as an agent against that service, registers MCP tools that wrap the service methods, then serves stdio. Session lifecycle is handled internally — if the session expires mid-conversation the binary auto-re-registers; the LLM never sees session plumbing.
 
-Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **28 tools** across projects, phases, tickets, comments, search, and introspection.
+Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **29 tools** across projects, phases, tickets, comments, search, and introspection.
 
 ### Projects (7)
 

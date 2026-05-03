@@ -2,7 +2,7 @@
 
 A ticketing system designed for LLMs first, humans second. Trello-shaped, but every move requires a comment, every completion requires structured testing evidence and learnings, and every word of context is semantically searchable.
 
-> **Status: v1 shipped.** Single binary, 28 MCP tools, filesystem-backed. Hobby project — clone, build, run, point an MCP client at it. See [`SPEC.md`](SPEC.md) for design notes and [`planning/`](planning/) for the work queue (mostly DONE now).
+> **Status: v1 shipped.** Single binary, 29 MCP tools, filesystem-backed. Hobby project — clone, build, run, point an MCP client at it. See [`SPEC.md`](SPEC.md) for design notes and [`planning/`](planning/) for the work queue (mostly DONE now).
 
 ## What makes this different
 
@@ -91,7 +91,7 @@ That single conversation exercises `create_project` (≥200-char summary enforce
 
 ## Tools
 
-The MCP server exposes **28 tools** across six categories. The full table with per-tool descriptions lives in [`SPEC.md` § MCP server](SPEC.md#mcp-server). At a glance:
+The MCP server exposes **29 tools** across six categories. The full table with per-tool descriptions lives in [`SPEC.md` § MCP server](SPEC.md#mcp-server). At a glance:
 
 | Category | Count | Highlights |
 |---|---|---|
