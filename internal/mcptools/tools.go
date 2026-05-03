@@ -51,6 +51,21 @@ func (t *Tools) sessionIDFromContext(ctx context.Context) string {
 	return "stdio"
 }
 
+// resolveProjectSlug returns the project_id_or_slug to use for this call:
+// the explicit param if supplied, otherwise the session's bound ProjectSlug
+// (set by register_agent or the stdio MCP_PROJECT_SLUG default). Returns a
+// helpful error if neither is set.
+func (t *Tools) resolveProjectSlug(ctx context.Context, req mcp.CallToolRequest) (string, error) {
+	if v := req.GetString("project_id_or_slug", ""); v != "" {
+		return v, nil
+	}
+	sessionID := t.sessionIDFromContext(ctx)
+	if sess, ok := t.registry.Get(sessionID); ok && sess.ProjectSlug != "" {
+		return sess.ProjectSlug, nil
+	}
+	return "", fmt.Errorf("no project bound to this session — call register_agent or pass project_id_or_slug explicitly")
+}
+
 // RegisterAll attaches every tool's schema + handler to the supplied MCP
 // server. The server is then served over stdio by the caller.
 //
@@ -73,22 +88,22 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcp.NewTool("get_project",
 		mcp.WithDescription("Fetch a project's full record (counts, attribution, timestamps, summary)."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 	), t.handleGetProject)
 
 	s.AddTool(mcp.NewTool("get_project_summary",
 		mcp.WithDescription("Fetch just the project's summary markdown. **Read this before doing any non-trivial work in a project — it's the project's design context.**"),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 	), t.handleGetProjectSummary)
 
 	s.AddTool(mcp.NewTool("load_project",
 		mcp.WithDescription("Pre-warm a project into the server's in-memory cache. Useful before doing many operations against the same project. Optional — calls auto-load if needed."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 	), t.handleLoadProject)
 
 	s.AddTool(mcp.NewTool("update_project",
 		mcp.WithDescription("Edit a project's name, description, or summary. Summary edits trigger re-embedding."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("name", mcp.Description("New name (optional)")),
 		mcp.WithString("description", mcp.Description("New description (optional)")),
 		mcp.WithString("summary", mcp.Description("New summary markdown (optional, ≥200 chars when supplied)")),
@@ -96,18 +111,18 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcp.NewTool("delete_project",
 		mcp.WithDescription("Delete a project. Refuses if any tickets are still active."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 	), t.handleDeleteProject)
 
 	// Phases (7)
 	s.AddTool(mcp.NewTool("list_phases",
 		mcp.WithDescription("List phases in a project with active and total ticket counts."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 	), t.handleListPhases)
 
 	s.AddTool(mcp.NewTool("create_phase",
 		mcp.WithDescription("Add a phase to a project for bigger bodies of work. Requires a `summary` (≥200 chars) — same load-bearing context doc as projects, scoped to this phase."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Parent project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Parent project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("name", mcp.Required(), mcp.Description("Phase display name")),
 		mcp.WithString("description", mcp.Description("One-line description")),
 		mcp.WithString("summary", mcp.Required(), mcp.Description("Markdown summary (≥200 chars)")),
@@ -115,19 +130,19 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcp.NewTool("get_phase",
 		mcp.WithDescription("Fetch a phase's full record."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Parent project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Parent project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("phase_id_or_slug", mcp.Required(), mcp.Description("Phase id or slug")),
 	), t.handleGetPhase)
 
 	s.AddTool(mcp.NewTool("get_phase_summary",
 		mcp.WithDescription("Fetch a phase's full summary markdown. Read this when entering a phase, the same way you'd read a project summary."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Parent project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Parent project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("phase_id_or_slug", mcp.Required(), mcp.Description("Phase id or slug")),
 	), t.handleGetPhaseSummary)
 
 	s.AddTool(mcp.NewTool("update_phase",
 		mcp.WithDescription("Edit a phase's name, description, or summary."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Parent project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Parent project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("phase_id_or_slug", mcp.Required(), mcp.Description("Phase id or slug")),
 		mcp.WithString("name", mcp.Description("New name (optional)")),
 		mcp.WithString("description", mcp.Description("New description (optional)")),
@@ -136,20 +151,20 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcp.NewTool("delete_phase",
 		mcp.WithDescription("Delete a phase. Refuses if any tickets are still assigned to it."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Parent project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Parent project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("phase_id_or_slug", mcp.Required(), mcp.Description("Phase id or slug")),
 	), t.handleDeletePhase)
 
 	s.AddTool(mcp.NewTool("list_waves",
 		mcp.WithDescription("List the waves in a phase (or in the phase-less area of a project) with per-wave ticket counts. A wave is a soft integer grouping on tickets — no enforcement, just organization. Use this to see how a body of work decomposes."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("phase_id_or_slug", mcp.Description("Phase id or slug; omit to see waves in the phase-less area")),
 	), t.handleListWaves)
 
 	// Tickets (7)
 	s.AddTool(mcp.NewTool("list_tickets",
 		mcp.WithDescription("List tickets in a project, optionally filtered by column or phase. Use `ready_only=true` to surface only unblocked tickets."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("column", mcp.Description("Filter by column: todo | in_progress | testing | done")),
 		mcp.WithString("phase_id_or_slug", mcp.Description("Filter by phase id/slug; pass \"-\" for phase-less only")),
 		mcp.WithNumber("wave", mcp.Description("Filter by wave (0 = unassigned)")),
@@ -160,7 +175,7 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcp.NewTool("create_ticket",
 		mcp.WithDescription("Create a new ticket in a project. Tickets always start in the `todo` column. Provide a clear title and a body that describes the work; both will be searchable. Optional `phase_id_or_slug`, `depends_on`, `parallelizable_with`."),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Ticket title")),
 		mcp.WithString("body", mcp.Description("Ticket body markdown")),
 		mcp.WithString("phase_id_or_slug", mcp.Description("Optional phase id or slug")),
@@ -226,7 +241,7 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 	s.AddTool(mcp.NewTool("search_tickets",
 		mcp.WithDescription("Semantic search over ticket titles and bodies in a project. Use when looking for related work."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
-		mcp.WithString("project_id_or_slug", mcp.Required(), mcp.Description("Project id or slug to search inside")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug to search inside; optional if register_agent has bound a project to the session")),
 		mcp.WithArray("columns", mcp.Description("Optional column filter"), mcp.WithStringItems()),
 		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
 	), t.handleSearchTickets)
@@ -352,7 +367,7 @@ func (t *Tools) handleCreateProject(ctx context.Context, req mcp.CallToolRequest
 }
 
 func (t *Tools) handleGetProject(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	idOrSlug, err := req.RequireString("project_id_or_slug")
+	idOrSlug, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -372,7 +387,7 @@ func (t *Tools) handleGetProject(ctx context.Context, req mcp.CallToolRequest) (
 }
 
 func (t *Tools) handleGetProjectSummary(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	idOrSlug, err := req.RequireString("project_id_or_slug")
+	idOrSlug, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -395,7 +410,7 @@ func (t *Tools) handleGetProjectSummary(ctx context.Context, req mcp.CallToolReq
 }
 
 func (t *Tools) handleLoadProject(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	idOrSlug, err := req.RequireString("project_id_or_slug")
+	idOrSlug, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -421,7 +436,7 @@ func (t *Tools) handleLoadProject(ctx context.Context, req mcp.CallToolRequest) 
 }
 
 func (t *Tools) handleUpdateProject(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	idOrSlug, err := req.RequireString("project_id_or_slug")
+	idOrSlug, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -452,7 +467,7 @@ func (t *Tools) handleUpdateProject(ctx context.Context, req mcp.CallToolRequest
 }
 
 func (t *Tools) handleDeleteProject(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	idOrSlug, err := req.RequireString("project_id_or_slug")
+	idOrSlug, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -468,7 +483,7 @@ func (t *Tools) handleDeleteProject(ctx context.Context, req mcp.CallToolRequest
 // ---- Phases ----
 
 func (t *Tools) handleListPhases(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	idOrSlug, err := req.RequireString("project_id_or_slug")
+	idOrSlug, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -492,7 +507,7 @@ func (t *Tools) handleListPhases(ctx context.Context, req mcp.CallToolRequest) (
 }
 
 func (t *Tools) handleCreatePhase(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	idOrSlug, err := req.RequireString("project_id_or_slug")
+	idOrSlug, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -521,7 +536,7 @@ func (t *Tools) handleCreatePhase(ctx context.Context, req mcp.CallToolRequest) 
 }
 
 func (t *Tools) handleGetPhase(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pid, err := req.RequireString("project_id_or_slug")
+	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -545,7 +560,7 @@ func (t *Tools) handleGetPhase(ctx context.Context, req mcp.CallToolRequest) (*m
 }
 
 func (t *Tools) handleGetPhaseSummary(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pid, err := req.RequireString("project_id_or_slug")
+	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -573,7 +588,7 @@ func (t *Tools) handleGetPhaseSummary(ctx context.Context, req mcp.CallToolReque
 }
 
 func (t *Tools) handleUpdatePhase(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pid, err := req.RequireString("project_id_or_slug")
+	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -608,7 +623,7 @@ func (t *Tools) handleUpdatePhase(ctx context.Context, req mcp.CallToolRequest) 
 }
 
 func (t *Tools) handleDeletePhase(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pid, err := req.RequireString("project_id_or_slug")
+	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -629,7 +644,7 @@ func (t *Tools) handleDeletePhase(ctx context.Context, req mcp.CallToolRequest) 
 }
 
 func (t *Tools) handleListWaves(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pid, err := req.RequireString("project_id_or_slug")
+	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -660,7 +675,7 @@ func (t *Tools) handleListWaves(ctx context.Context, req mcp.CallToolRequest) (*
 // ---- Tickets ----
 
 func (t *Tools) handleListTickets(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pid, err := req.RequireString("project_id_or_slug")
+	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -716,7 +731,7 @@ func (t *Tools) handleListTickets(ctx context.Context, req mcp.CallToolRequest) 
 }
 
 func (t *Tools) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pid, err := req.RequireString("project_id_or_slug")
+	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -981,7 +996,7 @@ func (t *Tools) handleSearchTickets(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	pid, err := req.RequireString("project_id_or_slug")
+	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
