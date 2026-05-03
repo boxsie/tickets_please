@@ -73,6 +73,27 @@ func (i *Index) Delete(id string) {
 	delete(i.entries, id)
 }
 
+// RemoveByOwner drops every entry whose Owner matches owner and returns the
+// count removed. Used by the project mount registry so an evicted/unmounted
+// project's vectors don't keep showing up in cross-project searches. owner
+// must be non-empty — passing "" is a no-op (avoids accidentally wiping
+// entries from indexes that haven't been tagged yet).
+func (i *Index) RemoveByOwner(owner string) int {
+	if owner == "" {
+		return 0
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	var removed int
+	for id, e := range i.entries {
+		if e.Owner == owner {
+			delete(i.entries, id)
+			removed++
+		}
+	}
+	return removed
+}
+
 // Len returns the current entry count.
 func (i *Index) Len() int {
 	i.mu.RLock()

@@ -127,10 +127,13 @@ func formatAgent(a *domain.Agent) map[string]any {
 }
 
 // formatProjectHit wraps a search.ProjectHit with score + project shape.
+// project_slug is duplicated at the top level for cross-project searches so
+// the LLM doesn't have to descend into the project shape to read provenance.
 func formatProjectHit(h svc.ProjectHit) map[string]any {
 	return map[string]any{
-		"project": formatProject(h.Project),
-		"score":   h.Score,
+		"project":      formatProject(h.Project),
+		"project_slug": h.ProjectSlug,
+		"score":        h.Score,
 	}
 }
 
@@ -152,11 +155,13 @@ func formatCommentHit(h svc.CommentHit) map[string]any {
 	}
 }
 
-// formatLearningHit renders a search.LearningHit.
+// formatLearningHit renders a search.LearningHit. project_slug surfaces the
+// cross-mount provenance the resident learnings index now carries.
 func formatLearningHit(h svc.LearningHit) map[string]any {
 	return map[string]any{
 		"ticket_id":    h.TicketID,
 		"project_id":   h.ProjectID,
+		"project_slug": h.ProjectSlug,
 		"title":        h.Title,
 		"learnings":    h.Learnings,
 		"score":        h.Score,

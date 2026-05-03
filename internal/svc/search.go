@@ -29,10 +29,14 @@ const (
 	searchMaxLimit     = 50
 )
 
-// ProjectHit is one result from SearchProjects.
+// ProjectHit is one result from SearchProjects. ProjectSlug duplicates
+// Project.Slug at the top level so JSON consumers can read provenance without
+// having to descend into the embedded project shape — matches the convention
+// the LearningHit shape uses.
 type ProjectHit struct {
-	Project *domain.Project
-	Score   float32
+	Project     *domain.Project
+	ProjectSlug string
+	Score       float32
 }
 
 // TicketHit is one result from SearchTickets.
@@ -53,10 +57,12 @@ type CommentHit struct {
 // LearningHit is one result from SearchLearnings. Carries enough context to
 // render a result line ("[<project>/<title>]: <learnings excerpt>") without
 // re-fetching the ticket. Learnings is the raw section text from
-// `completion.md`.
+// `completion.md`. ProjectSlug carries the cross-project provenance the
+// resident index was tagged with at hydrate / upsert time.
 type LearningHit struct {
 	TicketID    string
 	ProjectID   string
+	ProjectSlug string
 	Title       string
 	Learnings   string
 	Score       float32
@@ -92,15 +98,35 @@ func (s *Service) SearchProjects(ctx context.Context, query string, limit int) (
 		return []ProjectHit{}, nil
 	}
 
-	// Build an id → slug index for projects on disk so we can both filter out
-	// phase hits and hydrate the matching project. A walk per call is cheap at
-	// hobby scale; if it ever isn't, we cache it.
+	// Build an id → slug index for every mounted project so we can both
+	// filter out phase hits (whose ids won't be in the map) and route
+	// each hit back to the right Store / cache for hydration.
 	idToSlug := make(map[string]string)
-	if err := s.Store.WalkProjects(func(slug string, rec *store.ProjectRecord) error {
-		idToSlug[rec.ID] = slug
+	walkErr := s.WalkProjectMounts(func(mountSlug string, mount *ProjectMount) error {
+		if mount == nil || mount.Store == nil {
+			return nil
+		}
+		// Each Store is single-project post-flatten; the slug we're given on
+		// the registry IS the on-disk project slug. Capture project IDs only;
+		// skip the per-project WalkProjects error so one broken mount
+		// doesn't sink the whole search.
+		_ = mount.Store.WalkProjects(func(_ string, rec *store.ProjectRecord) error {
+			idToSlug[rec.ID] = mountSlug
+			return nil
+		})
 		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("walk projects: %w", err)
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("walk project mounts: %w", walkErr)
+	}
+	// Stdio fallback: when the registry is empty (e.g. a test that built
+	// Service without an eager mount and never registered one), still consult
+	// the default Store so single-project tests/CLIs see their project.
+	if len(idToSlug) == 0 && s.Store != nil {
+		_ = s.Store.WalkProjects(func(slug string, rec *store.ProjectRecord) error {
+			idToSlug[rec.ID] = slug
+			return nil
+		})
 	}
 
 	out := make([]ProjectHit, 0, limit)
@@ -119,7 +145,7 @@ func (s *Service) SearchProjects(ctx context.Context, query string, limit int) (
 			// whole call.
 			continue
 		}
-		out = append(out, ProjectHit{Project: p, Score: h.Score})
+		out = append(out, ProjectHit{Project: p, ProjectSlug: slug, Score: h.Score})
 	}
 	return out, nil
 }
@@ -409,6 +435,7 @@ func (s *Service) hydrateLearningHit(ctx context.Context, slug string, h vecinde
 	return LearningHit{
 		TicketID:    t.ID,
 		ProjectID:   lp.Project.ID,
+		ProjectSlug: lp.Project.Slug,
 		Title:       t.Title,
 		Learnings:   *t.Learnings,
 		Score:       h.Score,
