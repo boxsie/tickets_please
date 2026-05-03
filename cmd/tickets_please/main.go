@@ -1,6 +1,7 @@
 // Single binary for tickets_please. Subcommands:
 //
 //	mcp     (default) — stdio MCP server. Wraps svc.Service as 28 MCP tools.
+//	serve            — long-running HTTP MCP server (StreamableHTTP transport).
 //	check            — integrity check + exit. Stub until T02.
 //	init             — create the .tickets_please/ data dir scaffold.
 //	migrate <repo>   — flatten a v0.1 layout (.tickets_please/projects/<slug>/*)
@@ -10,14 +11,17 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
@@ -28,7 +32,7 @@ import (
 
 // version is the MCP server version reported to clients. Bump when meaningful
 // behaviour changes; semver-ish.
-const version = "0.2.0"
+const version = "0.3.0"
 
 // totalTools is the canonical tool count exposed by the MCP server. Mirrored
 // in the SPEC.md "MCP server" section table; if you change this, update both.
@@ -70,6 +74,11 @@ func main() {
 			logger.Error("mcp failed", "err", err)
 			os.Exit(1)
 		}
+	case "serve":
+		if err := runServe(os.Args[2:], cfg, logger); err != nil {
+			logger.Error("serve failed", "err", err)
+			os.Exit(1)
+		}
 	case "check":
 		logger.Info("integrity check not implemented yet, see T02")
 	case "init":
@@ -80,7 +89,7 @@ func main() {
 	case "help", "-h", "--help":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown subcommand %q (use one of: mcp, check, init, migrate)\n", sub)
+		fmt.Fprintf(os.Stderr, "unknown subcommand %q (use one of: mcp, serve, check, init, migrate)\n", sub)
 		os.Exit(2)
 	}
 }
@@ -145,6 +154,93 @@ func runMCP(cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("serve stdio: %w", err)
 	}
 	return nil
+}
+
+// runServe boots the same Service + MCPServer wiring as runMCP but exposes it
+// over HTTP via mcp-go's StreamableHTTPServer. Per-connection sessions are
+// handled natively by the library (the MCP server's per-call context already
+// carries the client session — register_agent attaches the agent identity).
+//
+// HTTP layout:
+//
+//	/mcp      → mcp-go StreamableHTTP handler
+//	/healthz  → 200 "ok" plaintext liveness probe
+//
+// Localhost-only by default, no TLS, no auth — out of scope for v1.
+func runServe(args []string, cfg config.Config, log *slog.Logger) error {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	addr := fs.String("addr", ":8765", "HTTP listen address")
+	dataRoot := fs.String("data-root", "", "override central data root (default: cfg.DataRoot)")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("parse serve flags: %w", err)
+	}
+	if *dataRoot != "" {
+		cfg.DataRoot = *dataRoot
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	s, err := svc.New(cfg)
+	if err != nil {
+		return fmt.Errorf("build service: %w", err)
+	}
+	defer s.Close()
+
+	registry := mcptools.NewRegistry(cfg)
+
+	mcpServer := mcpserver.NewMCPServer(
+		"tickets_please",
+		version,
+		mcpserver.WithInstructions(mcptools.ServerInstructions),
+	)
+	tools := mcptools.NewTools(s, registry, log)
+	tools.RegisterAll(mcpServer)
+
+	httpMCP := mcpserver.NewStreamableHTTPServer(mcpServer)
+
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", httpMCP)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "ok")
+	})
+
+	srv := &http.Server{
+		Addr:              *addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	log.Info("http mcp server starting",
+		"addr", *addr,
+		"data_root", cfg.DataRoot,
+		"tools", totalTools,
+	)
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Info("shutting down")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("http shutdown: %w", err)
+		}
+		<-errCh
+		return nil
+	case err := <-errCh:
+		return fmt.Errorf("http listen: %w", err)
+	}
 }
 
 // runInit creates the per-repo data-dir scaffold under cfg.DataDir and the
@@ -436,6 +532,9 @@ Usage:
 
 Subcommands:
   mcp     Run the stdio MCP server (default if omitted).
+  serve   Run a long-running HTTP MCP server (StreamableHTTP transport).
+          Usage: tickets_please serve [--addr :8765] [--data-root <path>]
+          Mounts the MCP transport at /mcp and a /healthz liveness probe.
   check   Run an integrity walk over the data dir and exit.
   init    Create the .tickets_please/ data dir scaffold.
   migrate Flatten a legacy projects/<slug>/ layout into the v0.2 shape,
