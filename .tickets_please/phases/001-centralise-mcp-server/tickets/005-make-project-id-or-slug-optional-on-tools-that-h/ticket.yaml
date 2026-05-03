@@ -2,11 +2,13 @@ id: 7e0778e2-3944-41fb-bf26-c25662f74da9
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 5
 title: Make project_id_or_slug optional on tools that have a session default
-column: in_progress
+column: done
 phase_id: 4d573198-60c5-4013-be07-1d38a2302a65
 wave: 2
 depends_on:
     - 631f4c4d-cb0a-4742-a32a-ede98c4e7b01
 created_by: 1d9de123-3477-4003-9a8c-5f7d8f55dda4
+completed_by: 311e9ac4-3e14-4fb2-a993-cbcfa34776b0
+completed_at: 2026-05-03T08:36:49.472673464+01:00
 created_at: 2026-05-02T20:57:35.198224443+01:00
-updated_at: 2026-05-03T08:22:04.637485233+01:00
+updated_at: 2026-05-03T08:36:49.472673464+01:00
