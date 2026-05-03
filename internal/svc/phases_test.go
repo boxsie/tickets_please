@@ -35,7 +35,7 @@ func TestCreatePhase_Happy(t *testing.T) {
 	}
 
 	// Files exist on disk under the expected NNN-slug dir.
-	dir := filepath.Join(s.Store.Root, "projects", slug, "phases", "001-discovery-work")
+	dir := filepath.Join(s.Store.Root, "phases", "001-discovery-work")
 	for _, f := range []string{"phase.yaml", "summary.md"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Fatalf("missing %s: %v", f, err)
@@ -170,7 +170,7 @@ func TestUpdatePhase_NameAndSummary(t *testing.T) {
 	}
 
 	// Disk has the new summary.
-	dir := filepath.Join(s.Store.Root, "projects", slug, "phases", "001-discovery", "summary.md")
+	dir := filepath.Join(s.Store.Root, "phases", "001-discovery", "summary.md")
 	disk, err := os.ReadFile(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestDeletePhase_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(s.Store.Root, "projects", slug, "phases", "001-discovery")
+	dir := filepath.Join(s.Store.Root, "phases", "001-discovery")
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatal(err)
 	}

@@ -62,12 +62,12 @@ func TestAssignTicketToPhase_PhaselessToPhase_MovesDir(t *testing.T) {
 	}
 
 	// Old phase-less dir is gone.
-	oldDir := filepath.Join(s.Store.Root, "projects", slug, "tickets", "001-task")
+	oldDir := filepath.Join(s.Store.Root, "tickets", "001-task")
 	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
 		t.Fatalf("old dir still present: %v", err)
 	}
 	// New phased dir exists with same NNN-slug.
-	newDir := filepath.Join(s.Store.Root, "projects", slug, "phases", "001-discovery", "tickets", "001-task")
+	newDir := filepath.Join(s.Store.Root, "phases", "001-discovery", "tickets", "001-task")
 	for _, f := range []string{"ticket.yaml", "body.md"} {
 		if _, err := os.Stat(filepath.Join(newDir, f)); err != nil {
 			t.Fatalf("missing post-rename %s: %v", f, err)
@@ -120,11 +120,11 @@ func TestAssignTicketToPhase_PhaseToPhaseless_MovesBack(t *testing.T) {
 		t.Fatalf("expected PhaseID=nil, got %v", *updated.PhaseID)
 	}
 
-	oldDir := filepath.Join(s.Store.Root, "projects", slug, "phases", "001-discovery", "tickets", "001-task")
+	oldDir := filepath.Join(s.Store.Root, "phases", "001-discovery", "tickets", "001-task")
 	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
 		t.Fatalf("old phase dir still present: %v", err)
 	}
-	newDir := filepath.Join(s.Store.Root, "projects", slug, "tickets", "001-task")
+	newDir := filepath.Join(s.Store.Root, "tickets", "001-task")
 	if _, err := os.Stat(filepath.Join(newDir, "ticket.yaml")); err != nil {
 		t.Fatalf("expected ticket.yaml at %s: %v", newDir, err)
 	}

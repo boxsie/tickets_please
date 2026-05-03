@@ -33,7 +33,7 @@ func TestEmbed_CreateProject_WritesSummarySidecarAndIndex(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	side := filepath.Join(s.Store.Root, "projects", "alpha", "summary.embedding.json")
+	side := filepath.Join(s.Store.Root, "summary.embedding.json")
 	if !waitForFile(side, 5*time.Second) {
 		t.Fatalf("summary sidecar never written")
 	}
@@ -74,11 +74,11 @@ func TestEmbed_CreateTicket_WritesBodySidecar(t *testing.T) {
 
 	// The ticket sits under projects/alpha/tickets/<NNN>-<slug>/. We don't
 	// know the dir name without walking; the sidecar lives next to body.md.
-	dirEntries, _ := os.ReadDir(filepath.Join(s.Store.Root, "projects", "alpha", "tickets"))
+	dirEntries, _ := os.ReadDir(filepath.Join(s.Store.Root, "tickets"))
 	if len(dirEntries) == 0 {
 		t.Fatal("ticket dir missing")
 	}
-	tdir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", dirEntries[0].Name())
+	tdir := filepath.Join(s.Store.Root, "tickets", dirEntries[0].Name())
 	side := filepath.Join(tdir, "body.embedding.json")
 	if !waitForFile(side, 5*time.Second) {
 		t.Fatalf("body sidecar never written next to %s", filepath.Join(tdir, "body.md"))
@@ -108,8 +108,8 @@ func TestEmbed_UpdateTicket_RegeneratesBodySidecar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dirEntries, _ := os.ReadDir(filepath.Join(s.Store.Root, "projects", "alpha", "tickets"))
-	tdir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", dirEntries[0].Name())
+	dirEntries, _ := os.ReadDir(filepath.Join(s.Store.Root, "tickets"))
+	tdir := filepath.Join(s.Store.Root, "tickets", dirEntries[0].Name())
 	side := filepath.Join(tdir, "body.embedding.json")
 	if !waitForFile(side, 5*time.Second) {
 		t.Fatal("initial body sidecar missing")
@@ -152,8 +152,8 @@ func TestEmbed_CompleteTicket_WritesLearningsSidecar(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dirEntries, _ := os.ReadDir(filepath.Join(s.Store.Root, "projects", "alpha", "tickets"))
-	tdir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", dirEntries[0].Name())
+	dirEntries, _ := os.ReadDir(filepath.Join(s.Store.Root, "tickets"))
+	tdir := filepath.Join(s.Store.Root, "tickets", dirEntries[0].Name())
 	side := filepath.Join(tdir, "learnings.embedding.json")
 	if !waitForFile(side, 5*time.Second) {
 		t.Fatalf("learnings sidecar missing")
@@ -187,8 +187,8 @@ func TestEmbed_CreateComment_WritesSidecar(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dirEntries, _ := os.ReadDir(filepath.Join(s.Store.Root, "projects", "alpha", "tickets"))
-	tdir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", dirEntries[0].Name())
+	dirEntries, _ := os.ReadDir(filepath.Join(s.Store.Root, "tickets"))
+	tdir := filepath.Join(s.Store.Root, "tickets", dirEntries[0].Name())
 	commentsDir := filepath.Join(tdir, "comments")
 	deadline := time.Now().Add(5 * time.Second)
 	var found string
@@ -221,7 +221,7 @@ func TestEmbed_BackfillRecreatesAfterDeletingAll(t *testing.T) {
 	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
 		t.Fatal(err)
 	}
-	side := filepath.Join(s.Store.Root, "projects", "alpha", "summary.embedding.json")
+	side := filepath.Join(s.Store.Root, "summary.embedding.json")
 	if !waitForFile(side, 5*time.Second) {
 		t.Fatal("first sidecar missing")
 	}

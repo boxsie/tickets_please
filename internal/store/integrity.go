@@ -82,23 +82,15 @@ func (s *Store) Integrity(ctx context.Context) ([]Warning, []FatalError, error) 
 		})
 	}
 
-	// Walk projects.
-	projectDirs, err := os.ReadDir(s.projectsDir())
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, fmt.Errorf("read projects dir: %w", err)
-	}
-
-	for _, e := range projectDirs {
-		if !e.IsDir() {
-			continue
-		}
-		if strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		slug := e.Name()
+	// Walk the single project hosted at the data-dir root, if any. Post-
+	// flatten there's at most one project per Store.
+	if err := s.WalkProjects(func(slug string, _ *ProjectRecord) error {
 		w, f := s.checkProject(slug, knownAgents)
 		warnings = append(warnings, w...)
 		fatal = append(fatal, f...)
+		return nil
+	}); err != nil {
+		return nil, nil, fmt.Errorf("walk project: %w", err)
 	}
 
 	_ = ctx

@@ -62,7 +62,7 @@ func (s *Service) CreatePhase(ctx context.Context, projectIDOrSlug, name, descri
 	number := maxNumber + 1
 
 	phaseDirName := fmt.Sprintf("%03d-%s", number, phaseSlug)
-	phaseDirRel := filepath.Join("projects", lp.Project.Slug, "phases", phaseDirName)
+	phaseDirRel := filepath.Join("phases", phaseDirName)
 
 	now := time.Now()
 	rec := &store.PhaseRecord{
@@ -203,7 +203,7 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 	}
 
 	phaseDirName := fmt.Sprintf("%03d-%s", ph.Number, ph.Slug)
-	phaseDirRel := filepath.Join("projects", lp.Project.Slug, "phases", phaseDirName)
+	phaseDirRel := filepath.Join("phases", phaseDirName)
 
 	rec := &store.PhaseRecord{}
 	if err := store.ReadYAML(filepath.Join(s.Store.Root, phaseDirRel, "phase.yaml"), rec); err != nil {
@@ -299,7 +299,7 @@ func (s *Service) DeletePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 	}
 
 	phaseDirName := fmt.Sprintf("%03d-%s", ph.Number, ph.Slug)
-	phaseDirRel := filepath.Join("projects", lp.Project.Slug, "phases", phaseDirName)
+	phaseDirRel := filepath.Join("phases", phaseDirName)
 
 	// Drain pending embed jobs so the worker doesn't recreate the phase
 	// dir with a freshly-written sidecar after the upcoming RemovePath.
@@ -333,7 +333,7 @@ func hydratePhaseWithSummary(st *store.Store, lp *cache.LoadedProject, ph *domai
 	cp := *ph
 	if cp.Summary == "" {
 		phaseDirName := fmt.Sprintf("%03d-%s", ph.Number, ph.Slug)
-		path := filepath.Join(st.Root, "projects", lp.Project.Slug, "phases", phaseDirName, "summary.md")
+		path := filepath.Join(st.Root, "phases", phaseDirName, "summary.md")
 		if data, err := readMarkdownIfExists(path); err == nil {
 			cp.Summary = data
 		}

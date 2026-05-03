@@ -33,7 +33,7 @@ func seedTicket(t *testing.T, s *Service, slug string, number int, title string)
 		}
 	}
 
-	dir := filepath.Join(s.Store.Root, "projects", slug, "tickets", "001-stub")
+	dir := filepath.Join(s.Store.Root, "tickets", "001-stub")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestCreateComment_Happy(t *testing.T) {
 	}
 
 	// File appeared on disk under the ticket's comments dir.
-	commentsDir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", "001-stub", "comments")
+	commentsDir := filepath.Join(s.Store.Root, "tickets", "001-stub", "comments")
 	entries, err := os.ReadDir(commentsDir)
 	if err != nil {
 		t.Fatalf("read comments dir: %v", err)
@@ -218,7 +218,7 @@ func TestListComments_SurfacesAllKinds(t *testing.T) {
 
 	// Directly drop a system_move comment file with a slightly later
 	// timestamp so it sorts after the user one.
-	commentsDir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", "001-stub", "comments")
+	commentsDir := filepath.Join(s.Store.Root, "tickets", "001-stub", "comments")
 	now := time.Now().UTC().Add(time.Second)
 	from := domain.ColumnTodo
 	to := domain.ColumnInProgress
@@ -287,7 +287,7 @@ func TestCreateComment_RapidFireDistinctFilenames(t *testing.T) {
 		}
 	}
 
-	commentsDir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", "001-stub", "comments")
+	commentsDir := filepath.Join(s.Store.Root, "tickets", "001-stub", "comments")
 	entries, err := os.ReadDir(commentsDir)
 	if err != nil {
 		t.Fatal(err)

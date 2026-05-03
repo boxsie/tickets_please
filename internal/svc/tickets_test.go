@@ -51,7 +51,7 @@ func TestCreateTicket_HappyPath(t *testing.T) {
 	}
 
 	// Directory layout: projects/alpha/tickets/001-implement-login-flow/.
-	want := filepath.Join(s.Store.Root, "projects", slug, "tickets", "001-implement-login-flow")
+	want := filepath.Join(s.Store.Root, "tickets", "001-implement-login-flow")
 	for _, f := range []string{"ticket.yaml", "body.md"} {
 		if _, err := os.Stat(filepath.Join(want, f)); err != nil {
 			t.Fatalf("missing %s: %v", f, err)
@@ -103,7 +103,7 @@ func TestCreateTicket_NumbersAreSequential(t *testing.T) {
 
 	want := []string{"001-ticket-a", "002-ticket-b", "003-ticket-c"}
 	for _, dn := range want {
-		path := filepath.Join(s.Store.Root, "projects", slug, "tickets", dn)
+		path := filepath.Join(s.Store.Root, "tickets", dn)
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("missing dir %s: %v", dn, err)
 		}
@@ -342,7 +342,7 @@ func TestUpdateTicket_TitleOnly_KeepsBody(t *testing.T) {
 	}
 
 	// Disk: body.md still has the original content.
-	dir := filepath.Join(s.Store.Root, "projects", slug, "tickets", "001-old-title")
+	dir := filepath.Join(s.Store.Root, "tickets", "001-old-title")
 	disk, err := os.ReadFile(filepath.Join(dir, "body.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -461,7 +461,7 @@ func TestCreateTicket_PhasedRoutesToPhaseDir(t *testing.T) {
 	// ticket without needing T16's CreatePhase. Also exercises the phase
 	// dir-name derivation path.
 	phaseID := uuid.NewString()
-	phaseDir := filepath.Join(s.Store.Root, "projects", slug, "phases", "001-discovery")
+	phaseDir := filepath.Join(s.Store.Root, "phases", "001-discovery")
 	if err := os.MkdirAll(phaseDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestListTickets_PhaseLessSentinel(t *testing.T) {
 
 	// Create a phase + a phased ticket, plus a phase-less ticket.
 	phaseID := uuid.NewString()
-	phaseDir := filepath.Join(s.Store.Root, "projects", slug, "phases", "001-discovery")
+	phaseDir := filepath.Join(s.Store.Root, "phases", "001-discovery")
 	if err := os.MkdirAll(phaseDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

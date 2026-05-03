@@ -332,21 +332,30 @@ Use cases:
 
 ### File layout
 
+Post-flatten (v0.2): one project per `.tickets_please/` data dir; project content
+sits at the data-dir root rather than nested under `projects/<slug>/`.
+
 ```
-projects/<slug>/
+.tickets_please/
 ├── project.yaml
 ├── summary.md
 ├── summary.embedding.json
 ├── tickets/                     # phase-less tickets sit here
 │   └── <NNN>-<slug>/
-└── phases/                      # only present when the project has phases
-    └── <NNN>-<phase-slug>/
-        ├── phase.yaml
-        ├── summary.md
-        ├── summary.embedding.json
-        └── tickets/
-            └── <NNN>-<ticket-slug>/
+├── phases/                      # only present when the project has phases
+│   └── <NNN>-<phase-slug>/
+│       ├── phase.yaml
+│       ├── summary.md
+│       ├── summary.embedding.json
+│       └── tickets/
+│           └── <NNN>-<ticket-slug>/
+├── agents/<session-uuid>.yaml   # agent registry (moves to a central path in a later ticket)
+├── .lock                        # per-data-dir flock
+└── .staging/                    # transient atomicity scratch dir; gitignored
 ```
+
+Repos still on the v0.1 `projects/<slug>/` shape can be flattened with
+`tickets_please migrate <repo-path> [--dry-run]`.
 
 Ticket `number` is **project-level** — i.e. one global sequence across phased + phase-less tickets — so a ticket reference is stable as it shuffles between phases. The path locates a ticket by phase membership; the number identifies it across the project.
 

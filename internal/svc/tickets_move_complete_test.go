@@ -83,7 +83,7 @@ func TestMoveTicket_HappyPath_UpdatesYAMLAndAddsSystemMove(t *testing.T) {
 	}
 
 	// Disk: ticket.yaml column flipped.
-	dir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", "001-implement-feature")
+	dir := filepath.Join(s.Store.Root, "tickets", "001-implement-feature")
 	yamlBytes, err := os.ReadFile(filepath.Join(dir, "ticket.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -324,7 +324,7 @@ func TestCompleteTicket_HappyPath_WritesAllFiles(t *testing.T) {
 		t.Fatalf("Learnings not populated: %+v", got.Learnings)
 	}
 
-	dir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", "001-implement-feature")
+	dir := filepath.Join(s.Store.Root, "tickets", "001-implement-feature")
 
 	// completion.md exists with the three sections.
 	completion, err := os.ReadFile(filepath.Join(dir, "completion.md"))

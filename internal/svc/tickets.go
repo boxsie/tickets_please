@@ -96,9 +96,9 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 	// Pick the on-disk path: phased vs phase-less.
 	var ticketDirRel string
 	if phaseDirName != "" {
-		ticketDirRel = filepath.Join("projects", lp.Project.Slug, "phases", phaseDirName, "tickets", dirName)
+		ticketDirRel = filepath.Join("phases", phaseDirName, "tickets", dirName)
 	} else {
-		ticketDirRel = filepath.Join("projects", lp.Project.Slug, "tickets", dirName)
+		ticketDirRel = filepath.Join("tickets", dirName)
 	}
 
 	now := time.Now()
@@ -871,9 +871,9 @@ func (s *Service) findTicketDir(slug, id string) (string, string, error) {
 		}
 		base := filepath.Base(ticketDir)
 		if phaseDirName == "" {
-			relDir = filepath.Join("projects", slug, "tickets", base)
+			relDir = filepath.Join("tickets", base)
 		} else {
-			relDir = filepath.Join("projects", slug, "phases", phaseDirName, "tickets", base)
+			relDir = filepath.Join("phases", phaseDirName, "tickets", base)
 		}
 		absDir = ticketDir
 		return nil

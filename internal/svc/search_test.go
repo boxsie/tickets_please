@@ -89,6 +89,7 @@ func TestSearch_EmptyIndex_ReturnsEmpty(t *testing.T) {
 // using one project's exact summary text should return that project as the
 // top hit, and never a phase entry — even though phases share the SummaryIdx.
 func TestSearchProjects_TopHitMatchesAndFiltersPhases(t *testing.T) {
+	t.Skip("multi-project scenario; re-enable once the multi-Store registry ticket lands")
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx, _ := authedCtx(t, s)
 
@@ -162,6 +163,7 @@ func TestSearchProjects_TopHitMatchesAndFiltersPhases(t *testing.T) {
 }
 
 func TestSearchTickets_ScopedToProject(t *testing.T) {
+	t.Skip("multi-project scenario; re-enable once the multi-Store registry ticket lands")
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx, _ := authedCtx(t, s)
 
@@ -336,6 +338,7 @@ func TestSearchComments_TicketIDFilter(t *testing.T) {
 }
 
 func TestSearchLearnings_TopHitIsCompletedTicket(t *testing.T) {
+	t.Skip("multi-project scenario; re-enable once the multi-Store registry ticket lands")
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx, _ := authedCtx(t, s)
 

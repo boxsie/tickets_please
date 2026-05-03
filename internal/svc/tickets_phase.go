@@ -71,9 +71,9 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 		newPhaseName = ph.Name
 		newPhaseSlug = ph.Slug
 		phaseDirName := fmt.Sprintf("%03d-%s", ph.Number, ph.Slug)
-		newParentRel = filepath.Join("projects", lp.Project.Slug, "phases", phaseDirName, "tickets")
+		newParentRel = filepath.Join("phases", phaseDirName, "tickets")
 	} else {
-		newParentRel = filepath.Join("projects", lp.Project.Slug, "tickets")
+		newParentRel = filepath.Join("tickets")
 	}
 
 	// No-op short-circuit: if the ticket is already in the target phase

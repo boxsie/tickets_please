@@ -81,7 +81,7 @@ func TestCreateProject_Happy(t *testing.T) {
 
 	// Files exist on disk.
 	for _, f := range []string{"project.yaml", "summary.md"} {
-		path := filepath.Join(s.Store.Root, "projects", "alpha", f)
+		path := filepath.Join(s.Store.Root, f)
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("missing %s: %v", f, err)
 		}
@@ -201,12 +201,12 @@ func TestGetProject_LazyLoadsThenHits(t *testing.T) {
 }
 
 func TestListProjects_DoesNotLazyLoad(t *testing.T) {
+	// Post-flatten a Store hosts at most one project, so we exercise the
+	// "doesn't lazy-load" invariant with a single project. The next-ticket
+	// multi-Store registry will cover the cross-project listing case.
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx, _ := authedCtx(t, s)
 	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.CreateProject(ctx, "bravo", "Bravo", "", validSummary()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -216,8 +216,11 @@ func TestListProjects_DoesNotLazyLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 2 {
-		t.Fatalf("expected 2 projects, got %d", len(out))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 project, got %d", len(out))
+	}
+	if out[0].Slug != "alpha" {
+		t.Fatalf("got slug %q, want alpha", out[0].Slug)
 	}
 	if s.Cache.Len() != beforeLen {
 		t.Fatalf("ListProjects mutated cache size: %d -> %d", beforeLen, s.Cache.Len())
@@ -259,7 +262,7 @@ func TestUpdateProject_ChangesNameAndSummary(t *testing.T) {
 	}
 
 	// Disk has the new summary.
-	disk, err := os.ReadFile(filepath.Join(s.Store.Root, "projects", "alpha", "summary.md"))
+	disk, err := os.ReadFile(filepath.Join(s.Store.Root, "summary.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +281,7 @@ func TestDeleteProject_RefusesActiveTickets(t *testing.T) {
 	// Drop a ticket directly on disk in the `todo` column. We don't have
 	// a CreateTicket method yet (T05 lands later), so we hand-wire the
 	// minimum the cache needs to count it as active.
-	tdir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", "001-stub")
+	tdir := filepath.Join(s.Store.Root, "tickets", "001-stub")
 	if err := os.MkdirAll(tdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -311,16 +314,21 @@ func TestDeleteProject_HappyPath_RemovesViaStageOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dir := filepath.Join(s.Store.Root, "projects", "alpha")
-	if _, err := os.Stat(dir); err != nil {
+	// Pre-delete: project files exist at the data-dir root (flat layout).
+	yamlPath := filepath.Join(s.Store.Root, "project.yaml")
+	if _, err := os.Stat(yamlPath); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := s.DeleteProject(ctx, "alpha"); err != nil {
 		t.Fatalf("DeleteProject: %v", err)
 	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatalf("project dir still present: %v", err)
+	// Post-delete: project-owned siblings are gone, but the data dir itself
+	// (which also holds agents/, .staging/, .lock) survives.
+	for _, rel := range []string{"project.yaml", "summary.md"} {
+		if _, err := os.Stat(filepath.Join(s.Store.Root, rel)); !os.IsNotExist(err) {
+			t.Fatalf("expected %s gone, got err=%v", rel, err)
+		}
 	}
 
 	// Cache no longer holds it.

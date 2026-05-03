@@ -1,14 +1,17 @@
 // Single binary for tickets_please. Subcommands:
 //
-//	mcp   (default) — stdio MCP server. Wraps svc.Service as 28 MCP tools.
-//	check          — integrity check + exit. Stub until T02.
-//	init           — create the .tickets_please/ data dir scaffold.
+//	mcp     (default) — stdio MCP server. Wraps svc.Service as 28 MCP tools.
+//	check            — integrity check + exit. Stub until T02.
+//	init             — create the .tickets_please/ data dir scaffold.
+//	migrate <repo>   — flatten a v0.1 layout (.tickets_please/projects/<slug>/*)
+//	                  to the v0.2 single-project shape (.tickets_please/*).
 package main
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -24,7 +27,7 @@ import (
 
 // version is the MCP server version reported to clients. Bump when meaningful
 // behaviour changes; semver-ish.
-const version = "0.1.0"
+const version = "0.2.0"
 
 // totalTools is the canonical tool count exposed by the MCP server. Mirrored
 // in the SPEC.md "MCP server" section table; if you change this, update both.
@@ -36,13 +39,24 @@ func main() {
 		sub = os.Args[1]
 	}
 
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+
+	// `migrate` is a tooling subcommand that runs entirely off-config (it
+	// operates on a path the user passes), so handle it before config.Load.
+	if sub == "migrate" {
+		if err := runMigrate(os.Args[2:], logger); err != nil {
+			logger.Error("migrate failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config load failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	logger.Info("tickets_please starting",
 		"binary", "tickets_please",
 		"subcommand", sub,
@@ -65,7 +79,7 @@ func main() {
 	case "help", "-h", "--help":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown subcommand %q (use one of: mcp, check, init)\n", sub)
+		fmt.Fprintf(os.Stderr, "unknown subcommand %q (use one of: mcp, check, init, migrate)\n", sub)
 		os.Exit(2)
 	}
 }
@@ -113,14 +127,16 @@ func runMCP(cfg config.Config, log *slog.Logger) error {
 }
 
 // runInit creates the data-dir scaffold under cfg.DataDir and writes a README
-// describing the layout if one does not already exist.
+// describing the layout if one does not already exist. Post-flatten the
+// scaffold is just `agents/` + `.staging/` — actual project content lands
+// directly at the data-dir root once a project is created.
 func runInit(logger *slog.Logger, cfg config.Config) error {
 	dataDir := cfg.DataDir
 	if dataDir == "" {
 		return errors.New("data_dir is empty")
 	}
 
-	subdirs := []string{"agents", "projects", ".staging"}
+	subdirs := []string{"agents", ".staging"}
 	for _, sd := range subdirs {
 		full := filepath.Join(dataDir, sd)
 		if err := os.MkdirAll(full, 0o755); err != nil {
@@ -142,6 +158,161 @@ func runInit(logger *slog.Logger, cfg config.Config) error {
 	return nil
 }
 
+// runMigrate flattens a v0.1 layout where project content lived under
+// `.tickets_please/projects/<slug>/*` into the v0.2 shape where a project's
+// files are siblings of `.tickets_please/agents/`. The migrate is idempotent:
+// running it on an already-flat repo is a no-op.
+//
+// One repo holds at most one project (post-flatten), so a multi-project legacy
+// layout aborts with an error pointing the operator at the conflict.
+func runMigrate(args []string, log *slog.Logger) error {
+	dryRun := false
+	var repoPath string
+	for _, a := range args {
+		switch {
+		case a == "--dry-run":
+			dryRun = true
+		case a == "-h" || a == "--help":
+			fmt.Println("usage: tickets_please migrate <repo-path> [--dry-run]")
+			return nil
+		default:
+			if repoPath != "" {
+				return fmt.Errorf("unexpected extra argument %q (only one repo path allowed)", a)
+			}
+			repoPath = a
+		}
+	}
+	if repoPath == "" {
+		return errors.New("repo path required: tickets_please migrate <repo-path> [--dry-run]")
+	}
+
+	abs, err := filepath.Abs(repoPath)
+	if err != nil {
+		return fmt.Errorf("resolve repo path: %w", err)
+	}
+
+	dataDir := filepath.Join(abs, ".tickets_please")
+	if info, err := os.Stat(dataDir); err != nil {
+		return fmt.Errorf("stat %s: %w", dataDir, err)
+	} else if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", dataDir)
+	}
+
+	projectsDir := filepath.Join(dataDir, "projects")
+	info, err := os.Stat(projectsDir)
+	if errors.Is(err, os.ErrNotExist) {
+		log.Info("migrate: already flat (no projects/ subdir)", "data_dir", dataDir)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", projectsDir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s exists but is not a directory", projectsDir)
+	}
+
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", projectsDir, err)
+	}
+	slugDirs := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if e.Name() == "" || e.Name()[0] == '.' {
+			continue
+		}
+		slugDirs = append(slugDirs, e.Name())
+	}
+
+	switch len(slugDirs) {
+	case 0:
+		log.Info("migrate: projects/ exists but is empty; removing it", "dir", projectsDir, "dry_run", dryRun)
+		if !dryRun {
+			if err := os.Remove(projectsDir); err != nil {
+				return fmt.Errorf("remove empty projects dir: %w", err)
+			}
+		}
+		return nil
+	case 1:
+		// Hoist contents below.
+	default:
+		return fmt.Errorf(
+			"migrate: %s has %d project subdirs (%v); the new layout is one project per repo — split or pick one before migrating",
+			projectsDir, len(slugDirs), slugDirs,
+		)
+	}
+
+	slug := slugDirs[0]
+	src := filepath.Join(projectsDir, slug)
+	srcEntries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+
+	// `.lock` is a runtime artefact (per-project flock) the legacy layout
+	// kept inside the slug dir. The new layout has its own root-level lock,
+	// so just drop the legacy one rather than try to hoist it.
+	skip := map[string]bool{".lock": true}
+
+	// Collision check: any non-skipped source name that already exists
+	// under the data dir aborts the migration. Catches the edge case where
+	// an operator ran a partial flatten by hand.
+	for _, e := range srcEntries {
+		if skip[e.Name()] {
+			continue
+		}
+		dst := filepath.Join(dataDir, e.Name())
+		if _, statErr := os.Stat(dst); statErr == nil {
+			return fmt.Errorf("migrate: would overwrite %s — flatten appears partially applied; manual review required", dst)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return fmt.Errorf("stat %s: %w", dst, statErr)
+		}
+	}
+
+	log.Info("migrate: hoisting project to flat layout",
+		"slug", slug,
+		"from", src,
+		"to", dataDir,
+		"entries", len(srcEntries),
+		"dry_run", dryRun,
+	)
+	if dryRun {
+		for _, e := range srcEntries {
+			if skip[e.Name()] {
+				log.Info("migrate: would skip (runtime file)", "name", e.Name())
+				continue
+			}
+			log.Info("migrate: would move", "name", e.Name())
+		}
+		return nil
+	}
+
+	for _, e := range srcEntries {
+		from := filepath.Join(src, e.Name())
+		if skip[e.Name()] {
+			if err := os.Remove(from); err != nil && !errors.Is(err, os.ErrNotExist) {
+				log.Warn("migrate: failed to drop legacy runtime file", "path", from, "err", err)
+			}
+			continue
+		}
+		to := filepath.Join(dataDir, e.Name())
+		if err := os.Rename(from, to); err != nil {
+			return fmt.Errorf("rename %s -> %s: %w", from, to, err)
+		}
+	}
+	if err := os.Remove(src); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Warn("migrate: failed to remove drained slug dir", "dir", src, "err", err)
+	}
+	if err := os.Remove(projectsDir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Warn("migrate: failed to remove drained projects dir", "dir", projectsDir, "err", err)
+	}
+	log.Info("migrate: done", "data_dir", dataDir)
+	_ = io.Discard // silence the stdlib import when verbose logging is trimmed
+	return nil
+}
+
 // printUsage writes a short subcommand summary to stdout.
 func printUsage() {
 	fmt.Println(`tickets_please — single-binary MCP server for an LLM-first ticketing system.
@@ -153,6 +324,8 @@ Subcommands:
   mcp     Run the stdio MCP server (default if omitted).
   check   Run an integrity walk over the data dir and exit.
   init    Create the .tickets_please/ data dir scaffold.
+  migrate Flatten a legacy projects/<slug>/ layout into the v0.2 shape.
+          Usage: tickets_please migrate <repo-path> [--dry-run]
   help    Show this message.
 
 See SPEC.md and README.md (Wiring up MCP) for setup details.`)
@@ -162,9 +335,12 @@ const dataDirReadme = "# .tickets_please/ — the data directory\n\n" +
 	"This directory is the on-disk store for everything tickets_please tracks.\n" +
 	"It is intentionally human-readable and committed to git so the project's\n" +
 	"ticket history travels with the repo.\n\n" +
+	"Post-v0.2 layout (one project per data dir):\n\n" +
+	"- `project.yaml`, `summary.md`, `summary.embedding.json` — the project record.\n" +
+	"- `phases/<NNN-slug>/{phase.yaml,summary.md,...}` — optional phases.\n" +
+	"- `tickets/<NNN-slug>/{ticket.yaml,body.md,comments/...}` — phase-less tickets.\n" +
 	"- `agents/<session-uuid>.yaml` — one file per agent session (active or expired).\n" +
-	"- `projects/<slug>/` — one dir per project. Contains `project.yaml`, `summary.md`,\n" +
-	"  `summary.embedding.json`, and `tickets/` (plus optional `phases/`).\n" +
 	"- `.staging/` — transient atomicity scratch dir; safe to delete when no server\n" +
 	"  is running. Gitignored.\n\n" +
-	"See `../SPEC.md` (Data layout) for the canonical schema.\n"
+	"See `../SPEC.md` (Data layout) for the canonical schema. Repos still on the\n" +
+	"v0.1 `projects/<slug>/` shape can be flattened with `tickets_please migrate`.\n"

@@ -140,7 +140,7 @@ func TestIntegration_MoveRequiresCommentOnDisk(t *testing.T) {
 	}
 
 	commentsDir := filepath.Join(
-		s.Store.Root, "projects", "alpha", "tickets", "001-implement-feature", "comments",
+		s.Store.Root, "tickets", "001-implement-feature", "comments",
 	)
 	entries, err := os.ReadDir(commentsDir)
 	if err != nil {
@@ -206,7 +206,7 @@ func TestIntegration_CompleteWritesAllArtifacts(t *testing.T) {
 		t.Fatalf("CompleteTicket: %v", err)
 	}
 
-	dir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", "001-implement-feature")
+	dir := filepath.Join(s.Store.Root, "tickets", "001-implement-feature")
 
 	// completion.md present and headed.
 	completion, err := os.ReadFile(filepath.Join(dir, "completion.md"))
@@ -392,7 +392,7 @@ func TestIntegration_BackfillRecoversMissingSidecar(t *testing.T) {
 	// Hand-write a ticket on disk, bypassing CreateTicket so no embedding
 	// job is enqueued. (CreateProject already enqueued one for the project
 	// summary; that sidecar will appear via the worker, which is fine.)
-	tdir := filepath.Join(s.Store.Root, "projects", "alpha", "tickets", "002-direct-write")
+	tdir := filepath.Join(s.Store.Root, "tickets", "002-direct-write")
 	if err := os.MkdirAll(tdir, 0o755); err != nil {
 		t.Fatal(err)
 	}

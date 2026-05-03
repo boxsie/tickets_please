@@ -33,7 +33,10 @@ func freshStore(t *testing.T) *Store {
 
 func TestNew_CreatesSkeletonDirs(t *testing.T) {
 	s := freshStore(t)
-	for _, sub := range []string{"agents", "projects", ".staging"} {
+	// Post-flatten skeleton: only agents/ + .staging/ at the data-dir root.
+	// Project content lives directly in `<Root>/{project.yaml,...}` once a
+	// project is created — no enclosing `projects/<slug>/` folder anymore.
+	for _, sub := range []string{"agents", ".staging"} {
 		path := filepath.Join(s.Root, sub)
 		info, err := os.Stat(path)
 		if err != nil {
@@ -43,6 +46,10 @@ func TestNew_CreatesSkeletonDirs(t *testing.T) {
 			t.Fatalf("%s is not a dir", sub)
 		}
 	}
+	// `projects/` must NOT be created — that dir is part of the old layout.
+	if _, err := os.Stat(filepath.Join(s.Root, "projects")); !os.IsNotExist(err) {
+		t.Fatalf("projects/ dir should not be created post-flatten, got err=%v", err)
+	}
 }
 
 func TestStageOp_RoundTrip_WriteRenameRemove(t *testing.T) {
@@ -50,14 +57,14 @@ func TestStageOp_RoundTrip_WriteRenameRemove(t *testing.T) {
 	ctx := context.Background()
 
 	// Pre-populate a directory we'll RenameDir, and a file we'll RemovePath.
-	srcDir := filepath.Join(s.Root, "projects", "alpha", "tickets", "001-foo")
+	srcDir := filepath.Join(s.Root,"tickets", "001-foo")
 	if err := os.MkdirAll(srcDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(srcDir, "ticket.yaml"), []byte("id: x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	stragglerDir := filepath.Join(s.Root, "projects", "alpha", "phases", "001-old")
+	stragglerDir := filepath.Join(s.Root,"phases", "001-old")
 	if err := os.MkdirAll(stragglerDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -69,16 +76,16 @@ func TestStageOp_RoundTrip_WriteRenameRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := op.Write("projects/alpha/project.yaml", []byte("id: alpha\n")); err != nil {
+	if err := op.Write("project.yaml", []byte("id: alpha\n")); err != nil {
 		t.Fatal(err)
 	}
-	if err := op.Write("projects/alpha/summary.md", []byte("project summary\n")); err != nil {
+	if err := op.Write("summary.md", []byte("project summary\n")); err != nil {
 		t.Fatal(err)
 	}
-	if err := op.RenameDir("projects/alpha/tickets/001-foo", "projects/alpha/tickets/001-bar"); err != nil {
+	if err := op.RenameDir("tickets/001-foo", "tickets/001-bar"); err != nil {
 		t.Fatal(err)
 	}
-	if err := op.RemovePath("projects/alpha/phases/001-old"); err != nil {
+	if err := op.RemovePath("phases/001-old"); err != nil {
 		t.Fatal(err)
 	}
 	stagingPath := op.dir
@@ -87,20 +94,20 @@ func TestStageOp_RoundTrip_WriteRenameRemove(t *testing.T) {
 	}
 
 	// Writes landed at final paths.
-	for _, rel := range []string{"projects/alpha/project.yaml", "projects/alpha/summary.md"} {
+	for _, rel := range []string{"project.yaml", "summary.md"} {
 		if _, err := os.Stat(filepath.Join(s.Root, rel)); err != nil {
 			t.Errorf("expected %s present: %v", rel, err)
 		}
 	}
 	// Rename applied.
-	if _, err := os.Stat(filepath.Join(s.Root, "projects/alpha/tickets/001-bar/ticket.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(s.Root, "tickets/001-bar/ticket.yaml")); err != nil {
 		t.Errorf("expected renamed dir: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(s.Root, "projects/alpha/tickets/001-foo")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.Root, "tickets/001-foo")); !os.IsNotExist(err) {
 		t.Errorf("expected old dir gone, got err=%v", err)
 	}
 	// Remove applied.
-	if _, err := os.Stat(filepath.Join(s.Root, "projects/alpha/phases/001-old")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.Root, "phases/001-old")); !os.IsNotExist(err) {
 		t.Errorf("expected removed dir gone, got err=%v", err)
 	}
 	// Staging dir cleaned.
@@ -164,15 +171,15 @@ func TestStageOp_StagingPersistsBeforeCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := op.Write("projects/p/project.yaml", []byte("id: p\n")); err != nil {
+	if err := op.Write("project.yaml", []byte("id: p\n")); err != nil {
 		t.Fatal(err)
 	}
-	stagedPath := filepath.Join(op.dir, "projects/p/project.yaml")
+	stagedPath := filepath.Join(op.dir, "project.yaml")
 	if _, err := os.Stat(stagedPath); err != nil {
 		t.Fatalf("expected staged file: %v", err)
 	}
 	// Final path must NOT exist.
-	if _, err := os.Stat(filepath.Join(s.Root, "projects/p/project.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.Root, "project.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("final path should not exist: %v", err)
 	}
 	// Integrity walk must surface the residual op.
@@ -301,7 +308,7 @@ func TestRegisterAgent_Uniqueness(t *testing.T) {
 
 func TestWalkComments_ChronologicalOrder(t *testing.T) {
 	s := freshStore(t)
-	ticketDir := filepath.Join(s.Root, "projects/foo/tickets/001-bar")
+	ticketDir := filepath.Join(s.Root, "tickets/001-bar")
 	commentsDir := filepath.Join(ticketDir, "comments")
 	if err := os.MkdirAll(commentsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -374,42 +381,11 @@ func TestWithProjectLock_SerializesSameSlug(t *testing.T) {
 	}
 }
 
-func TestWithProjectLock_DifferentSlugsDontBlock(t *testing.T) {
-	s := freshStore(t)
-	ctx := context.Background()
-
-	// Two locks on different slugs should not serialize. We measure
-	// whether they overlap at all.
-	startedFoo := make(chan struct{})
-	releaseFoo := make(chan struct{})
-	doneFoo := make(chan struct{})
-	go func() {
-		_ = s.WithProjectLock(ctx, "foo", func() error {
-			close(startedFoo)
-			<-releaseFoo
-			return nil
-		})
-		close(doneFoo)
-	}()
-
-	<-startedFoo
-	// While foo's lock is held, bar's lock acquisition must complete fast.
-	gotBar := make(chan struct{})
-	go func() {
-		_ = s.WithProjectLock(ctx, "bar", func() error {
-			close(gotBar)
-			return nil
-		})
-	}()
-	select {
-	case <-gotBar:
-		// good
-	case <-time.After(2 * time.Second):
-		t.Fatal("bar lock blocked while foo held — should not happen")
-	}
-	close(releaseFoo)
-	<-doneFoo
-}
+// TestWithProjectLock_DifferentSlugsDontBlock was removed in the flat-layout
+// refactor: a Store is now rooted at a single project, so all `LockProject`
+// calls (regardless of the slug arg) resolve to `<Root>/.lock`. Cross-project
+// non-blocking is now a property between *different Stores*, exercised by
+// the integration tests in svc/concurrency_test.go.
 
 func TestWithProjectLock_TimeoutFires(t *testing.T) {
 	cfg := config.Config{

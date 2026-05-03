@@ -50,19 +50,19 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 		return nil, err
 	}
 
-	// Slug uniqueness — cheap walk; the global flock during commit prevents
-	// two concurrent creates from racing past this check.
-	var conflict bool
+	// Single-project-per-Store invariant (post-flatten): a `project.yaml` at
+	// the data-dir root means *some* project already lives here. We reject
+	// any create — same-slug or otherwise — because writing would overwrite
+	// the existing record.
+	var existingSlug string
 	if err := s.Store.WalkProjects(func(existing string, _ *store.ProjectRecord) error {
-		if existing == slug {
-			conflict = true
-		}
+		existingSlug = existing
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("walk projects: %w", err)
 	}
-	if conflict {
-		return nil, fmt.Errorf("%w: project %q already exists", domain.ErrAlreadyExists, slug)
+	if existingSlug != "" {
+		return nil, fmt.Errorf("%w: project %q already exists at %s (one project per data dir)", domain.ErrAlreadyExists, existingSlug, s.Store.Root)
 	}
 
 	now := time.Now()
@@ -85,10 +85,10 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 		return nil, err
 	}
 	defer op.Abort()
-	if err := op.Write(filepath.Join("projects", slug, "project.yaml"), yamlBytes); err != nil {
+	if err := op.Write("project.yaml", yamlBytes); err != nil {
 		return nil, err
 	}
-	if err := op.Write(filepath.Join("projects", slug, "summary.md"), []byte(ensureTrailingNewline(summary))); err != nil {
+	if err := op.Write("summary.md", []byte(ensureTrailingNewline(summary))); err != nil {
 		return nil, err
 	}
 	caption := fmt.Sprintf("create project %s", slug)
@@ -101,8 +101,8 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 	if s.Worker != nil {
 		s.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobProjectSummary,
-			SourcePath:  filepath.Join(s.Store.Root, "projects", slug, "summary.md"),
-			SidecarPath: filepath.Join(s.Store.Root, "projects", slug, "summary.embedding.json"),
+			SourcePath:  filepath.Join(s.Store.Root, "summary.md"),
+			SidecarPath: filepath.Join(s.Store.Root, "summary.embedding.json"),
 			EntryID:     rec.ID,
 			Owner:       slug,
 			Text:        summary,
@@ -224,11 +224,11 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 		return nil, err
 	}
 	defer op.Abort()
-	if err := op.Write(filepath.Join("projects", slug, "project.yaml"), yamlBytes); err != nil {
+	if err := op.Write("project.yaml", yamlBytes); err != nil {
 		return nil, err
 	}
 	if newSummary != nil {
-		if err := op.Write(filepath.Join("projects", slug, "summary.md"), []byte(ensureTrailingNewline(*newSummary))); err != nil {
+		if err := op.Write("summary.md", []byte(ensureTrailingNewline(*newSummary))); err != nil {
 			return nil, err
 		}
 	}
@@ -247,8 +247,8 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 		if s.Worker != nil {
 			s.Worker.Enqueue(worker.Job{
 				Kind:        worker.JobProjectSummary,
-				SourcePath:  filepath.Join(s.Store.Root, "projects", slug, "summary.md"),
-				SidecarPath: filepath.Join(s.Store.Root, "projects", slug, "summary.embedding.json"),
+				SourcePath:  filepath.Join(s.Store.Root, "summary.md"),
+				SidecarPath: filepath.Join(s.Store.Root, "summary.embedding.json"),
 				EntryID:     rec.ID,
 				Owner:       slug,
 				Text:        *newSummary,
@@ -308,8 +308,13 @@ func (s *Service) DeleteProject(ctx context.Context, idOrSlug string) error {
 		return err
 	}
 	defer op.Abort()
-	if err := op.RemovePath(filepath.Join("projects", slug)); err != nil {
-		return err
+	// Flat layout: a project's contents are siblings at the data-dir root,
+	// so we remove each project-owned path individually rather than nuking
+	// the data dir itself (which also holds agents/, .staging/, .lock).
+	for _, rel := range []string{"project.yaml", "summary.md", "summary.embedding.json", "phases", "tickets"} {
+		if err := op.RemovePath(rel); err != nil {
+			return err
+		}
 	}
 	caption := fmt.Sprintf("delete project %s", slug)
 	if err := op.Commit(ctx, store.LockGlobal, agent, caption); err != nil {

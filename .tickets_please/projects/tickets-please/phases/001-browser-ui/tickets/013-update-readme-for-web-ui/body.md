@@ -1,1 +1,0 @@
-Document tickets_please web, the local URL, frontend development commands, embedded production build behavior, and MCP coexistence. Acceptance criteria: README has a Web UI quickstart; documents that web and MCP share the same data directory safely; lists frontend commands; explains the local-only and no-auth v1 caveat.

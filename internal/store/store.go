@@ -13,7 +13,6 @@ import (
 // here so callers don't sprinkle string literals.
 const (
 	dirAgents   = "agents"
-	dirProjects = "projects"
 	dirStaging  = ".staging"
 	dirPhases   = "phases"
 	dirTickets  = "tickets"
@@ -28,7 +27,9 @@ const (
 	fileLock       = ".lock"
 )
 
-// Store is the rooted filesystem handle every higher layer hangs off of.
+// Store is the rooted filesystem handle every higher layer hangs off of. Post-
+// flatten layout: a Store is rooted at one project's `.tickets_please/` dir, so
+// `<Root>/project.yaml` is *the* project record — no `projects/<slug>/` wrapper.
 // Reads do not lock; mutations go through StageOp + per-project flock. The
 // concurrency model is documented in SPEC.md §Concurrent access.
 type Store struct {
@@ -56,7 +57,7 @@ func New(cfg config.Config) (*Store, error) {
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir data_dir: %w", err)
 	}
-	for _, sub := range []string{dirAgents, dirProjects, dirStaging} {
+	for _, sub := range []string{dirAgents, dirStaging} {
 		if err := os.MkdirAll(filepath.Join(abs, sub), 0o755); err != nil {
 			return nil, fmt.Errorf("mkdir %s: %w", sub, err)
 		}
@@ -87,9 +88,12 @@ func New(cfg config.Config) (*Store, error) {
 	return s, nil
 }
 
-// projectDir returns the absolute path to a project's directory.
-func (s *Store) projectDir(slug string) string {
-	return filepath.Join(s.Root, dirProjects, slug)
+// projectDir returns the absolute path to the project's directory. After the
+// flat-layout refactor a Store is single-project, so this is just s.Root —
+// the slug parameter is kept for API compatibility but no longer affects the
+// path.
+func (s *Store) projectDir(_ string) string {
+	return s.Root
 }
 
 // stagingDir returns the absolute path to the .staging root.
@@ -100,9 +104,4 @@ func (s *Store) stagingDir() string {
 // agentsDir returns the absolute path to the agents/ directory.
 func (s *Store) agentsDir() string {
 	return filepath.Join(s.Root, dirAgents)
-}
-
-// projectsDir returns the absolute path to the projects/ directory.
-func (s *Store) projectsDir() string {
-	return filepath.Join(s.Root, dirProjects)
 }
