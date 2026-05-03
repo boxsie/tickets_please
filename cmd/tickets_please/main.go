@@ -128,6 +128,13 @@ func runMCP(cfg config.Config, log *slog.Logger) error {
 	sess.AgentID = agentID
 	sess.ExpiresAt = expiresAt
 
+	// MCP_PROJECT_SLUG lets stdio clients pre-bind a default project without
+	// calling register_agent. Tools that take project_id_or_slug then fall
+	// back to this slug when the param is omitted.
+	if slug := strings.TrimSpace(os.Getenv("MCP_PROJECT_SLUG")); slug != "" {
+		sess.ProjectSlug = slug
+	}
+
 	// Pre-register under the synthetic "stdio" session ID so every tool call
 	// via stdio transport finds its session without a register_agent round-trip.
 	if err := registry.Register("stdio", sess); err != nil {
