@@ -37,12 +37,24 @@ var expectedTools = []string{
 	"who_am_i",
 }
 
+// newTestRegistry returns a Registry pre-loaded with a single "stdio" session
+// for use in unit tests that don't exercise the actual transport.
+func newTestRegistry() *Registry {
+	r := NewRegistry(config.Config{})
+	_ = r.Register("stdio", &Session{
+		AgentID:   "test-agent-id",
+		AgentKey:  "test:abc123",
+		AgentName: "Tester",
+	})
+	return r
+}
+
 // TestRegisterAllTools spins up an MCP server, registers every tool, and
 // verifies all 28 names are present with non-empty descriptions. The svc
 // pointer is nil because no handler is invoked here — registration alone
 // covers the schema-builder code paths.
 func TestRegisterAllTools(t *testing.T) {
-	tools := NewTools(nil, &Identity{Key: "test", Name: "Test"}, nil)
+	tools := NewTools(nil, newTestRegistry(), nil)
 	srv := mcpserver.NewMCPServer("tickets_please_test", "0.0.0")
 	tools.RegisterAll(srv)
 
@@ -87,7 +99,7 @@ func TestRegisterAllTools(t *testing.T) {
 // well-formed and properties are serialised. Any malformed schema we
 // accidentally wired up (e.g. typo in mcp.WithString) fails here.
 func TestSchemasParse(t *testing.T) {
-	tools := NewTools(nil, &Identity{Key: "test", Name: "Test"}, nil)
+	tools := NewTools(nil, newTestRegistry(), nil)
 	srv := mcpserver.NewMCPServer("tickets_please_test", "0.0.0")
 	tools.RegisterAll(srv)
 
@@ -116,15 +128,23 @@ func TestSchemasParse(t *testing.T) {
 	}
 }
 
-// TestWhoAmI directly invokes the who_am_i handler with a populated identity
-// and verifies the JSON shape carries key/name/session_id/expires_at.
+// TestWhoAmI directly invokes the who_am_i handler with a pre-registered
+// session and verifies the JSON shape carries key/name/session_id/expires_at.
 func TestWhoAmI(t *testing.T) {
 	exp := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
-	id := &Identity{Key: "test:abc123", Name: "Tester"}
-	id.sessionID = "sess-uuid-1234"
-	id.expiresAt = exp
+	reg := NewRegistry(config.Config{})
+	sess := &Session{
+		AgentID:   "sess-uuid-1234",
+		AgentKey:  "test:abc123",
+		AgentName: "Tester",
+		ExpiresAt: exp,
+	}
+	if err := reg.Register("stdio", sess); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 
-	tools := NewTools(nil, id, nil)
+	tools := NewTools(nil, reg, nil)
+	// No ClientSession in context — sessionIDFromContext falls back to "stdio".
 	res, err := tools.handleWhoAmI(context.Background(), mcp.CallToolRequest{})
 	if err != nil {
 		t.Fatalf("handleWhoAmI returned error: %v", err)
@@ -143,32 +163,34 @@ func TestWhoAmI(t *testing.T) {
 	if got["name"] != "Tester" {
 		t.Errorf("name: got %v", got["name"])
 	}
-	if got["session_id"] != "sess-uuid-1234" {
-		t.Errorf("session_id: got %v", got["session_id"])
+	// session_id in the response is the MCP session ID ("stdio"), not the
+	// svc-layer agent ID.
+	if got["session_id"] != "stdio" {
+		t.Errorf("session_id: got %v want \"stdio\"", got["session_id"])
 	}
 	if got["expires_at"] != exp.Format(time.RFC3339) {
 		t.Errorf("expires_at: got %v want %v", got["expires_at"], exp.Format(time.RFC3339))
 	}
 }
 
-// TestNewIdentityDefaults verifies the cfg-derived defaults: empty
+// TestDefaultStdioSession verifies the cfg-derived defaults: empty
 // MCPAgentKey/Name fall back to the SPEC strings, and the random suffix is
 // included so two MCPs against the same data dir don't collide.
-func TestNewIdentityDefaults(t *testing.T) {
-	id := NewIdentity(config.Config{})
-	if !strings.HasPrefix(id.Key, "tickets_please_mcp:") {
-		t.Errorf("default key %q missing expected prefix", id.Key)
+func TestDefaultStdioSession(t *testing.T) {
+	sess := DefaultStdioSession(config.Config{})
+	if !strings.HasPrefix(sess.AgentKey, "tickets_please_mcp:") {
+		t.Errorf("default key %q missing expected prefix", sess.AgentKey)
 	}
-	if id.Name != "tickets_please_mcp" {
-		t.Errorf("default name %q", id.Name)
+	if sess.AgentName != "tickets_please_mcp" {
+		t.Errorf("default name %q", sess.AgentName)
 	}
 
-	id2 := NewIdentity(config.Config{MCPAgentKey: "claude:abc", MCPAgentName: "Claude"})
-	if id2.Key != "claude:abc" {
-		t.Errorf("explicit key dropped: %q", id2.Key)
+	sess2 := DefaultStdioSession(config.Config{MCPAgentKey: "claude:abc", MCPAgentName: "Claude"})
+	if sess2.AgentKey != "claude:abc" {
+		t.Errorf("explicit key dropped: %q", sess2.AgentKey)
 	}
-	if id2.Name != "Claude" {
-		t.Errorf("explicit name dropped: %q", id2.Name)
+	if sess2.AgentName != "Claude" {
+		t.Errorf("explicit name dropped: %q", sess2.AgentName)
 	}
 }
 
