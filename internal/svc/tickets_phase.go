@@ -173,7 +173,7 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 		Body:       commentBody,
 		FromColumn: nil,
 		ToColumn:   nil,
-		Author:     hydrateAgentRef(s.Store, agent.ID, agent.Name),
+		Author:     hydrateAgentRef(s.AgentStore, agent.ID, agent.Name),
 		CreatedAt:  commentRec.CreatedAt,
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], dc)

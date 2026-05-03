@@ -573,7 +573,7 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 		Body:       commentBodyOut,
 		FromColumn: cRec.FromColumn,
 		ToColumn:   cRec.ToColumn,
-		Author:     hydrateAgentRef(s.Store, agent.ID, agent.Name),
+		Author:     hydrateAgentRef(s.AgentStore, agent.ID, agent.Name),
 		CreatedAt:  cRec.CreatedAt,
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
@@ -743,7 +743,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 	t.WorkSummary = strPtr(wsTrim)
 	t.Learnings = strPtr(lnTrim)
 	t.CompletedAt = &now
-	t.CompletedBy = hydrateAgentRef(s.Store, agent.ID, agent.Name)
+	t.CompletedBy = hydrateAgentRef(s.AgentStore, agent.ID, agent.Name)
 	t.UpdatedAt = rec.UpdatedAt
 	domComment := &domain.Comment{
 		ID:         cRec.ID,
@@ -752,7 +752,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		Body:       commentBody,
 		FromColumn: cRec.FromColumn,
 		ToColumn:   cRec.ToColumn,
-		Author:     hydrateAgentRef(s.Store, agent.ID, agent.Name),
+		Author:     hydrateAgentRef(s.AgentStore, agent.ID, agent.Name),
 		CreatedAt:  cRec.CreatedAt,
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)

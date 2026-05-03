@@ -32,9 +32,10 @@ const expectedEmbedDim = 768
 // resident vec indexes. T11 will refactor TicketsIdx / CommentsIdx to
 // per-project routing later.
 type Service struct {
-	Store  *store.Store
-	Logger *slog.Logger
-	Cfg    config.Config
+	Store      *store.Store
+	AgentStore *store.AgentStore
+	Logger     *slog.Logger
+	Cfg        config.Config
 
 	// Cache is the in-memory project cache (T04). Lazy-loads project trees
 	// off disk, sliding-TTL evicts, and listens for cross-process file
@@ -110,13 +111,25 @@ func NewWithEmbed(cfg config.Config, provider embed.Provider) (*Service, error) 
 		)
 	}
 
+	// Resolve the central data root. When DataRoot is empty (e.g. in tests that
+	// supply only DataDir) fall back to a sibling tempdir-like path so tests
+	// never pollute the user's real ~/.tickets_please.
+	dataRoot := cfg.DataRoot
+	if dataRoot == "" {
+		dataRoot = cfg.DataDir + "-central"
+	}
+	as, err := store.NewAgentStore(dataRoot, cfg.LockTimeoutSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("svc: build agent store: %w", err)
+	}
+
 	st, err := store.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("svc: build store: %w", err)
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	pc := cache.New(st, cfg)
+	pc := cache.New(st, as, cfg)
 	pc.Logger = logger
 
 	indexes := worker.Indexes{
@@ -132,6 +145,7 @@ func NewWithEmbed(cfg config.Config, provider embed.Provider) (*Service, error) 
 
 	s := &Service{
 		Store:        st,
+		AgentStore:   as,
 		Logger:       logger,
 		Cfg:          cfg,
 		Cache:        pc,

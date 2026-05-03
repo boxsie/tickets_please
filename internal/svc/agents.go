@@ -54,7 +54,7 @@ func (s *Service) RegisterAgent(ctx context.Context, key, name string, metadata 
 		LastSeenAt: now,
 	}
 
-	if err := s.Store.RegisterAgent(ctx, rec); err != nil {
+	if err := s.AgentStore.RegisterAgent(ctx, rec); err != nil {
 		return "", time.Time{}, err
 	}
 	return rec.ID, rec.ExpiresAt, nil
@@ -68,7 +68,7 @@ func (s *Service) Heartbeat(ctx context.Context, sessionID string) (time.Time, e
 	if sessionID == "" {
 		return time.Time{}, fmt.Errorf("%w: session id required", domain.ErrInvalidArgument)
 	}
-	rec, err := s.Store.ReadAgent(sessionID)
+	rec, err := s.AgentStore.ReadAgent(sessionID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -76,7 +76,7 @@ func (s *Service) Heartbeat(ctx context.Context, sessionID string) (time.Time, e
 		return time.Time{}, fmt.Errorf("%w: session expired; re-register", domain.ErrUnauthenticated)
 	}
 	rec.LastSeenAt = time.Now()
-	if err := s.Store.WriteAgentRecord(rec); err != nil {
+	if err := s.AgentStore.WriteAgentRecord(rec); err != nil {
 		return time.Time{}, err
 	}
 	return rec.ExpiresAt, nil
@@ -88,7 +88,7 @@ func (s *Service) GetAgent(ctx context.Context, id string) (*domain.Agent, error
 	if id == "" {
 		return nil, fmt.Errorf("%w: agent id required", domain.ErrInvalidArgument)
 	}
-	rec, err := s.Store.ReadAgent(id)
+	rec, err := s.AgentStore.ReadAgent(id)
 	if err != nil {
 		return nil, err
 	}

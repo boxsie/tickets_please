@@ -157,7 +157,7 @@ func (s *Service) ListProjects(ctx context.Context) ([]*domain.Project, error) {
 			UpdatedAt:   rec.UpdatedAt,
 		}
 		if rec.CreatedByAgentID != nil {
-			if agentRec, err := s.Store.ReadAgent(*rec.CreatedByAgentID); err == nil {
+			if agentRec, err := s.AgentStore.ReadAgent(*rec.CreatedByAgentID); err == nil {
 				p.CreatedBy = &domain.AgentRef{ID: agentRec.ID, Name: agentRec.Name}
 			} else {
 				p.CreatedBy = &domain.AgentRef{ID: *rec.CreatedByAgentID}

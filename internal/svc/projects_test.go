@@ -26,6 +26,11 @@ func freshServiceWithCfg(t *testing.T, cfg config.Config) *Service {
 	if cfg.DataDir == "" {
 		cfg.DataDir = t.TempDir()
 	}
+	// Always use an isolated DataRoot per test so agent yamls never land in the
+	// user's real ~/.tickets_please.
+	if cfg.DataRoot == "" {
+		cfg.DataRoot = t.TempDir()
+	}
 	if cfg.LockTimeoutSeconds == 0 {
 		cfg.LockTimeoutSeconds = 5
 	}

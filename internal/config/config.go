@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,15 @@ import (
 
 // Config is the resolved configuration after layering defaults, file, and env.
 type Config struct {
-	DataDir                string `koanf:"data_dir"`
+	// DataDir is the per-repo project data directory (default ./.tickets_please).
+	// Project content (project.yaml, phases/, tickets/, etc.) lives here.
+	DataDir string `koanf:"data_dir"`
+	// DataRoot is the central data root shared across all repos managed by this
+	// server instance (default ~/.tickets_please). Agent sessions live here at
+	// <DataRoot>/agents/<uuid>.yaml. It is separate from DataDir so a
+	// long-running server can serve multiple repos without each one having its
+	// own copy of the agent registry.
+	DataRoot               string `koanf:"data_root"`
 	AutoCommit             bool   `koanf:"auto_commit"`
 	EmbedProvider          string `koanf:"embed_provider"`
 	OllamaURL              string `koanf:"ollama_url"`
@@ -43,6 +52,7 @@ type Config struct {
 // Defaults mirrors examples/config.yaml. Keep them in lockstep.
 var defaults = map[string]any{
 	"data_dir":                  "./.tickets_please",
+	"data_root":                 "~/.tickets_please",
 	"auto_commit":               true,
 	"embed_provider":            "ollama",
 	"ollama_url":                "http://localhost:11434",
@@ -115,5 +125,28 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("unmarshal config: %w", err)
 	}
 	cfg.Source = source
+
+	// koanf does not tilde-expand paths. Expand DataRoot manually.
+	cfg.DataRoot = expandTilde(cfg.DataRoot)
+
 	return cfg, nil
+}
+
+// expandTilde replaces a leading "~/" with the user's home directory. If the
+// home dir cannot be determined, falls back to "./.tickets_please-central" and
+// logs a warning so callers always get a non-empty, usable value.
+func expandTilde(p string) string {
+	if !strings.HasPrefix(p, "~/") && p != "~" {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Warn("config: cannot determine home dir for data_root; using fallback",
+			"fallback", "./.tickets_please-central", "err", err)
+		return "./.tickets_please-central"
+	}
+	if p == "~" {
+		return home
+	}
+	return filepath.Join(home, p[2:])
 }

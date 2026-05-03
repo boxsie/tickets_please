@@ -484,12 +484,12 @@ func TestIntegration_AgentSessionExpiry(t *testing.T) {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 	// Backdate.
-	rec, err := s.Store.ReadAgent(id)
+	rec, err := s.AgentStore.ReadAgent(id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rec.ExpiresAt = time.Now().Add(-time.Minute)
-	if err := s.Store.WriteAgentRecord(rec); err != nil {
+	if err := s.AgentStore.WriteAgentRecord(rec); err != nil {
 		t.Fatal(err)
 	}
 

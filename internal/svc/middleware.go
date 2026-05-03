@@ -26,7 +26,7 @@ func (s *Service) requireSession(ctx context.Context) (context.Context, *domain.
 	if !ok {
 		return ctx, nil, fmt.Errorf("%w: register an agent first", domain.ErrUnauthenticated)
 	}
-	rec, err := s.Store.ReadAgent(id)
+	rec, err := s.AgentStore.ReadAgent(id)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return ctx, nil, fmt.Errorf("%w: unknown session", domain.ErrUnauthenticated)
@@ -55,13 +55,13 @@ func (s *Service) touchAgentDebounced(id string) {
 	s.touchOnce[id] = now
 	s.touchMu.Unlock()
 
-	rec, err := s.Store.ReadAgent(id)
+	rec, err := s.AgentStore.ReadAgent(id)
 	if err != nil {
 		s.Logger.Warn("touch agent: read failed", "agent_id", id, "err", err)
 		return
 	}
 	rec.LastSeenAt = now
-	if err := s.Store.WriteAgentRecord(rec); err != nil {
+	if err := s.AgentStore.WriteAgentRecord(rec); err != nil {
 		s.Logger.Warn("touch agent: write failed", "agent_id", id, "err", err)
 	}
 }

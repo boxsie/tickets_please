@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -126,22 +127,24 @@ func runMCP(cfg config.Config, log *slog.Logger) error {
 	return nil
 }
 
-// runInit creates the data-dir scaffold under cfg.DataDir and writes a README
-// describing the layout if one does not already exist. Post-flatten the
-// scaffold is just `agents/` + `.staging/` — actual project content lands
-// directly at the data-dir root once a project is created.
+// runInit creates the per-repo data-dir scaffold under cfg.DataDir and the
+// central agent registry under cfg.DataRoot. Post-T003:
+//
+//   - cfg.DataDir (.tickets_please/): only `.staging/` is created here.
+//     Project content (project.yaml, phases/, tickets/) lands at the root
+//     once a project is created.
+//   - cfg.DataRoot (~/.tickets_please/): `agents/` + `.staging/` are created
+//     here for the central agent registry.
 func runInit(logger *slog.Logger, cfg config.Config) error {
 	dataDir := cfg.DataDir
 	if dataDir == "" {
 		return errors.New("data_dir is empty")
 	}
 
-	subdirs := []string{"agents", ".staging"}
-	for _, sd := range subdirs {
-		full := filepath.Join(dataDir, sd)
-		if err := os.MkdirAll(full, 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", full, err)
-		}
+	// Per-repo scaffold: only .staging/ (agents/ moved to DataRoot).
+	stagingDir := filepath.Join(dataDir, ".staging")
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", stagingDir, err)
 	}
 
 	readme := filepath.Join(dataDir, "README.md")
@@ -155,25 +158,57 @@ func runInit(logger *slog.Logger, cfg config.Config) error {
 	}
 
 	logger.Info("data dir ready", "data_dir", dataDir)
+
+	// Central agent registry scaffold under DataRoot.
+	dataRoot := cfg.DataRoot
+	if dataRoot == "" {
+		dataRoot = cfg.DataDir + "-central"
+		logger.Warn("data_root is empty; using fallback", "data_root", dataRoot)
+	}
+	for _, sd := range []string{"agents", ".staging"} {
+		full := filepath.Join(dataRoot, sd)
+		if err := os.MkdirAll(full, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", full, err)
+		}
+	}
+	logger.Info("central agent registry ready", "data_root", dataRoot)
 	return nil
 }
 
 // runMigrate flattens a v0.1 layout where project content lived under
-// `.tickets_please/projects/<slug>/*` into the v0.2 shape where a project's
-// files are siblings of `.tickets_please/agents/`. The migrate is idempotent:
-// running it on an already-flat repo is a no-op.
+// `.tickets_please/projects/<slug>/*` into the v0.2 shape, and (T003) also
+// moves any per-repo agent yamls from `.tickets_please/agents/*.yaml` into the
+// central data root at `<dataRoot>/agents/`. The migrate is idempotent:
+// running it on an already-migrated repo is a no-op.
 //
 // One repo holds at most one project (post-flatten), so a multi-project legacy
 // layout aborts with an error pointing the operator at the conflict.
+//
+// Flags:
+//
+//	--dry-run       Print what would happen without touching the filesystem.
+//	--data-root     Central data root for agents (default: ~/.tickets_please).
 func runMigrate(args []string, log *slog.Logger) error {
 	dryRun := false
 	var repoPath string
-	for _, a := range args {
+	// dataRoot defaults to empty; we resolve it below (after parsing flags) so
+	// we can fall back to the config default.
+	dataRoot := ""
+	for i := 0; i < len(args); i++ {
+		a := args[i]
 		switch {
 		case a == "--dry-run":
 			dryRun = true
+		case a == "--data-root":
+			if i+1 >= len(args) {
+				return errors.New("--data-root requires a value")
+			}
+			i++
+			dataRoot = args[i]
+		case len(a) > len("--data-root=") && a[:len("--data-root=")] == "--data-root=":
+			dataRoot = a[len("--data-root="):]
 		case a == "-h" || a == "--help":
-			fmt.Println("usage: tickets_please migrate <repo-path> [--dry-run]")
+			fmt.Println("usage: tickets_please migrate <repo-path> [--dry-run] [--data-root <path>]")
 			return nil
 		default:
 			if repoPath != "" {
@@ -183,7 +218,22 @@ func runMigrate(args []string, log *slog.Logger) error {
 		}
 	}
 	if repoPath == "" {
-		return errors.New("repo path required: tickets_please migrate <repo-path> [--dry-run]")
+		return errors.New("repo path required: tickets_please migrate <repo-path> [--dry-run] [--data-root <path>]")
+	}
+
+	// Resolve data root: flag > env/config default.
+	if dataRoot == "" {
+		// Try to get it from a loaded config; if that fails, derive from home.
+		if cfg, err := config.Load(); err == nil && cfg.DataRoot != "" {
+			dataRoot = cfg.DataRoot
+		} else {
+			if home, err := os.UserHomeDir(); err == nil {
+				dataRoot = filepath.Join(home, ".tickets_please")
+			} else {
+				dataRoot = "./.tickets_please-central"
+				log.Warn("migrate: cannot determine home dir; using fallback data-root", "data_root", dataRoot)
+			}
+		}
 	}
 
 	abs, err := filepath.Abs(repoPath)
@@ -198,117 +248,161 @@ func runMigrate(args []string, log *slog.Logger) error {
 		return fmt.Errorf("%s is not a directory", dataDir)
 	}
 
+	// --- Phase 1: flatten projects/<slug>/* → dataDir root ---
+
 	projectsDir := filepath.Join(dataDir, "projects")
 	info, err := os.Stat(projectsDir)
-	if errors.Is(err, os.ErrNotExist) {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
 		log.Info("migrate: already flat (no projects/ subdir)", "data_dir", dataDir)
-		return nil
-	}
-	if err != nil {
+	case err != nil:
 		return fmt.Errorf("stat %s: %w", projectsDir, err)
-	}
-	if !info.IsDir() {
+	case !info.IsDir():
 		return fmt.Errorf("%s exists but is not a directory", projectsDir)
-	}
-
-	entries, err := os.ReadDir(projectsDir)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", projectsDir, err)
-	}
-	slugDirs := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		if e.Name() == "" || e.Name()[0] == '.' {
-			continue
-		}
-		slugDirs = append(slugDirs, e.Name())
-	}
-
-	switch len(slugDirs) {
-	case 0:
-		log.Info("migrate: projects/ exists but is empty; removing it", "dir", projectsDir, "dry_run", dryRun)
-		if !dryRun {
-			if err := os.Remove(projectsDir); err != nil {
-				return fmt.Errorf("remove empty projects dir: %w", err)
-			}
-		}
-		return nil
-	case 1:
-		// Hoist contents below.
 	default:
-		return fmt.Errorf(
-			"migrate: %s has %d project subdirs (%v); the new layout is one project per repo — split or pick one before migrating",
-			projectsDir, len(slugDirs), slugDirs,
-		)
-	}
-
-	slug := slugDirs[0]
-	src := filepath.Join(projectsDir, slug)
-	srcEntries, err := os.ReadDir(src)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", src, err)
-	}
-
-	// `.lock` is a runtime artefact (per-project flock) the legacy layout
-	// kept inside the slug dir. The new layout has its own root-level lock,
-	// so just drop the legacy one rather than try to hoist it.
-	skip := map[string]bool{".lock": true}
-
-	// Collision check: any non-skipped source name that already exists
-	// under the data dir aborts the migration. Catches the edge case where
-	// an operator ran a partial flatten by hand.
-	for _, e := range srcEntries {
-		if skip[e.Name()] {
-			continue
+		// projects/ exists — check for slug subdirs.
+		entries, err := os.ReadDir(projectsDir)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", projectsDir, err)
 		}
-		dst := filepath.Join(dataDir, e.Name())
-		if _, statErr := os.Stat(dst); statErr == nil {
-			return fmt.Errorf("migrate: would overwrite %s — flatten appears partially applied; manual review required", dst)
-		} else if !errors.Is(statErr, os.ErrNotExist) {
-			return fmt.Errorf("stat %s: %w", dst, statErr)
-		}
-	}
-
-	log.Info("migrate: hoisting project to flat layout",
-		"slug", slug,
-		"from", src,
-		"to", dataDir,
-		"entries", len(srcEntries),
-		"dry_run", dryRun,
-	)
-	if dryRun {
-		for _, e := range srcEntries {
-			if skip[e.Name()] {
-				log.Info("migrate: would skip (runtime file)", "name", e.Name())
+		slugDirs := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if !e.IsDir() {
 				continue
 			}
-			log.Info("migrate: would move", "name", e.Name())
+			if e.Name() == "" || e.Name()[0] == '.' {
+				continue
+			}
+			slugDirs = append(slugDirs, e.Name())
 		}
-		return nil
+
+		switch len(slugDirs) {
+		case 0:
+			log.Info("migrate: projects/ exists but is empty; removing it", "dir", projectsDir, "dry_run", dryRun)
+			if !dryRun {
+				if err := os.Remove(projectsDir); err != nil {
+					return fmt.Errorf("remove empty projects dir: %w", err)
+				}
+			}
+		case 1:
+			slug := slugDirs[0]
+			src := filepath.Join(projectsDir, slug)
+			srcEntries, err := os.ReadDir(src)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", src, err)
+			}
+
+			// `.lock` is a runtime artefact; drop it rather than hoist.
+			skip := map[string]bool{".lock": true}
+
+			// Collision check.
+			for _, e := range srcEntries {
+				if skip[e.Name()] {
+					continue
+				}
+				dst := filepath.Join(dataDir, e.Name())
+				if _, statErr := os.Stat(dst); statErr == nil {
+					return fmt.Errorf("migrate: would overwrite %s — flatten appears partially applied; manual review required", dst)
+				} else if !errors.Is(statErr, os.ErrNotExist) {
+					return fmt.Errorf("stat %s: %w", dst, statErr)
+				}
+			}
+
+			log.Info("migrate: hoisting project to flat layout",
+				"slug", slug, "from", src, "to", dataDir,
+				"entries", len(srcEntries), "dry_run", dryRun,
+			)
+			if dryRun {
+				for _, e := range srcEntries {
+					if skip[e.Name()] {
+						log.Info("migrate: would skip (runtime file)", "name", e.Name())
+						continue
+					}
+					log.Info("migrate: would move", "name", e.Name())
+				}
+			} else {
+				for _, e := range srcEntries {
+					from := filepath.Join(src, e.Name())
+					if skip[e.Name()] {
+						if err := os.Remove(from); err != nil && !errors.Is(err, os.ErrNotExist) {
+							log.Warn("migrate: failed to drop legacy runtime file", "path", from, "err", err)
+						}
+						continue
+					}
+					to := filepath.Join(dataDir, e.Name())
+					if err := os.Rename(from, to); err != nil {
+						return fmt.Errorf("rename %s -> %s: %w", from, to, err)
+					}
+				}
+				if err := os.Remove(src); err != nil && !errors.Is(err, os.ErrNotExist) {
+					log.Warn("migrate: failed to remove drained slug dir", "dir", src, "err", err)
+				}
+				if err := os.Remove(projectsDir); err != nil && !errors.Is(err, os.ErrNotExist) {
+					log.Warn("migrate: failed to remove drained projects dir", "dir", projectsDir, "err", err)
+				}
+			}
+		default:
+			return fmt.Errorf(
+				"migrate: %s has %d project subdirs (%v); the new layout is one project per repo — split or pick one before migrating",
+				projectsDir, len(slugDirs), slugDirs,
+			)
+		}
 	}
 
-	for _, e := range srcEntries {
-		from := filepath.Join(src, e.Name())
-		if skip[e.Name()] {
-			if err := os.Remove(from); err != nil && !errors.Is(err, os.ErrNotExist) {
-				log.Warn("migrate: failed to drop legacy runtime file", "path", from, "err", err)
+	// --- Phase 2: move per-repo agents/*.yaml → <dataRoot>/agents/ ---
+
+	repoAgentsDir := filepath.Join(dataDir, "agents")
+	centralAgentsDir := filepath.Join(dataRoot, "agents")
+
+	agentEntries, err := os.ReadDir(repoAgentsDir)
+	if errors.Is(err, os.ErrNotExist) {
+		log.Info("migrate: no per-repo agents dir; nothing to move", "path", repoAgentsDir)
+	} else if err != nil {
+		return fmt.Errorf("read %s: %w", repoAgentsDir, err)
+	} else {
+		if !dryRun {
+			if err := os.MkdirAll(centralAgentsDir, 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", centralAgentsDir, err)
 			}
-			continue
 		}
-		to := filepath.Join(dataDir, e.Name())
-		if err := os.Rename(from, to); err != nil {
-			return fmt.Errorf("rename %s -> %s: %w", from, to, err)
+		moved := 0
+		skipped := 0
+		for _, e := range agentEntries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+			src := filepath.Join(repoAgentsDir, e.Name())
+			dst := filepath.Join(centralAgentsDir, e.Name())
+			if dryRun {
+				if _, statErr := os.Stat(dst); statErr == nil {
+					log.Info("migrate: would skip agent (already in central path)", "file", e.Name())
+				} else {
+					log.Info("migrate: would move agent to central path", "file", e.Name(), "dst", dst)
+				}
+				continue
+			}
+			if _, statErr := os.Stat(dst); statErr == nil {
+				log.Info("migrate: skip agent (already in central path)", "file", e.Name())
+				skipped++
+				continue
+			}
+			if err := os.Rename(src, dst); err != nil {
+				return fmt.Errorf("migrate agent %s: %w", e.Name(), err)
+			}
+			moved++
+		}
+		if !dryRun {
+			log.Info("migrate: agents moved to central path",
+				"moved", moved, "skipped", skipped, "data_root", dataRoot)
+			// Clean up per-repo agents dir (and .gitkeep if present).
+			_ = os.Remove(filepath.Join(repoAgentsDir, ".gitkeep"))
+			if err := os.Remove(repoAgentsDir); err != nil && !errors.Is(err, os.ErrNotExist) {
+				log.Warn("migrate: failed to remove per-repo agents dir", "dir", repoAgentsDir, "err", err)
+			}
 		}
 	}
-	if err := os.Remove(src); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Warn("migrate: failed to remove drained slug dir", "dir", src, "err", err)
-	}
-	if err := os.Remove(projectsDir); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Warn("migrate: failed to remove drained projects dir", "dir", projectsDir, "err", err)
-	}
-	log.Info("migrate: done", "data_dir", dataDir)
+
+	log.Info("migrate: done", "data_dir", dataDir, "data_root", dataRoot)
 	_ = io.Discard // silence the stdlib import when verbose logging is trimmed
 	return nil
 }
@@ -324,23 +418,27 @@ Subcommands:
   mcp     Run the stdio MCP server (default if omitted).
   check   Run an integrity walk over the data dir and exit.
   init    Create the .tickets_please/ data dir scaffold.
-  migrate Flatten a legacy projects/<slug>/ layout into the v0.2 shape.
-          Usage: tickets_please migrate <repo-path> [--dry-run]
+  migrate Flatten a legacy projects/<slug>/ layout into the v0.2 shape,
+          and move per-repo agents to the central data root (~/.tickets_please/).
+          Usage: tickets_please migrate <repo-path> [--dry-run] [--data-root <path>]
   help    Show this message.
 
 See SPEC.md and README.md (Wiring up MCP) for setup details.`)
 }
 
-const dataDirReadme = "# .tickets_please/ — the data directory\n\n" +
-	"This directory is the on-disk store for everything tickets_please tracks.\n" +
-	"It is intentionally human-readable and committed to git so the project's\n" +
-	"ticket history travels with the repo.\n\n" +
-	"Post-v0.2 layout (one project per data dir):\n\n" +
+const dataDirReadme = "# .tickets_please/ — the per-repo data directory\n\n" +
+	"This directory is the on-disk store for everything tickets_please tracks\n" +
+	"about this repo's project. It is intentionally human-readable and committed\n" +
+	"to git so the project's ticket history travels with the repo.\n\n" +
+	"Post-v0.3 layout (one project per data dir):\n\n" +
 	"- `project.yaml`, `summary.md`, `summary.embedding.json` — the project record.\n" +
 	"- `phases/<NNN-slug>/{phase.yaml,summary.md,...}` — optional phases.\n" +
 	"- `tickets/<NNN-slug>/{ticket.yaml,body.md,comments/...}` — phase-less tickets.\n" +
-	"- `agents/<session-uuid>.yaml` — one file per agent session (active or expired).\n" +
 	"- `.staging/` — transient atomicity scratch dir; safe to delete when no server\n" +
 	"  is running. Gitignored.\n\n" +
+	"Agent sessions (active or expired) are stored centrally at\n" +
+	"`~/.tickets_please/agents/<session-uuid>.yaml` (configurable via `data_root`)\n" +
+	"so a single server instance can serve multiple repos without each one holding\n" +
+	"a copy of the agent registry.\n\n" +
 	"See `../SPEC.md` (Data layout) for the canonical schema. Repos still on the\n" +
 	"v0.1 `projects/<slug>/` shape can be flattened with `tickets_please migrate`.\n"
