@@ -3,7 +3,6 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -14,24 +13,37 @@ import (
 	"tickets_please/internal/svc"
 )
 
-// Tools wraps the in-process svc.Service plus the MCP-side identity into a
+// Tools wraps the in-process svc.Service plus the per-session Registry into a
 // single struct that registers all 28 tools against an *mcpserver.MCPServer.
 //
 // One Tools per process — the MCP binary builds it once, calls RegisterAll,
 // and hands the server off to ServeStdio.
 type Tools struct {
 	svc      *svc.Service
-	identity *Identity
+	registry *Registry
 	logger   *slog.Logger
 }
 
 // NewTools constructs a Tools. The caller owns the lifecycle of svc and
-// identity; Tools just borrows them.
-func NewTools(s *svc.Service, id *Identity, logger *slog.Logger) *Tools {
+// registry; Tools just borrows them.
+func NewTools(s *svc.Service, registry *Registry, logger *slog.Logger) *Tools {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Tools{svc: s, identity: id, logger: logger}
+	return &Tools{svc: s, registry: registry, logger: logger}
+}
+
+// sessionIDFromContext extracts the MCP session ID from the tool call context.
+// When mcp-go provides a ClientSession (SSE, streamable-HTTP, or the stdlib
+// stdio session whose SessionID() returns "stdio"), we use that directly.
+// The constant "stdio" is also the synthetic fallback for any context where
+// no ClientSession is attached — which today only happens in unit tests that
+// call handlers directly without a live transport.
+func (t *Tools) sessionIDFromContext(ctx context.Context) string {
+	if sess := mcpserver.ClientSessionFromContext(ctx); sess != nil {
+		return sess.SessionID()
+	}
+	return "stdio"
 }
 
 // RegisterAll attaches every tool's schema + handler to the supplied MCP
@@ -250,26 +262,20 @@ func jsonResult(v any) (*mcp.CallToolResult, error) {
 	return mcp.NewToolResultText(string(data)), nil
 }
 
-// callWithRetry invokes fn under the identity-attached context, transparently
-// re-registering once if svc returns ErrUnauthenticated, then retrying. After
-// one failed retry the original/second error is returned to the caller as an
-// MCP error result. SPEC §Agent identity & sessions > MCP integration: "the
-// LLM never sees the failure".
+// callWithRetry looks up the per-session identity from the registry and
+// invokes fn under a context carrying the svc-layer agent session id. If no
+// session is registered for this MCP session, it returns ErrUnauthenticated
+// immediately — the LLM should call register_agent (upcoming ticket) to
+// self-register, or for stdio the session is pre-registered at startup.
 func (t *Tools) callWithRetry(ctx context.Context, fn func(ctx context.Context) error) error {
-	ctx2 := t.identity.AttachContext(ctx)
-	err := fn(ctx2)
-	if err == nil {
-		return nil
+	sessionID := t.sessionIDFromContext(ctx)
+	sess, ok := t.registry.Get(sessionID)
+	if !ok {
+		return fmt.Errorf("%w: no agent registered for session %q; call register_agent first",
+			domain.ErrUnauthenticated, sessionID)
 	}
-	if !errors.Is(err, domain.ErrUnauthenticated) {
-		return err
-	}
-	t.logger.Info("session unauthenticated; re-registering")
-	if rerr := t.identity.Register(ctx, t.svc); rerr != nil {
-		return fmt.Errorf("re-register agent: %w", rerr)
-	}
-	ctx3 := t.identity.AttachContext(ctx)
-	return fn(ctx3)
+	ctx2 := svc.WithSessionID(ctx, sess.AgentID)
+	return fn(ctx2)
 }
 
 // errorResult builds an MCP error result from a domain-mapped error message.
@@ -1066,14 +1072,38 @@ func (t *Tools) handleSearchComments(ctx context.Context, req mcp.CallToolReques
 // ---- Introspection ----
 
 // handleWhoAmI doesn't go through svc — it's pure process-state read of the
-// MCP's cached identity. SPEC §MCP server > Introspection.
-func (t *Tools) handleWhoAmI(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return jsonResult(map[string]any{
-		"key":        t.identity.Key,
-		"name":       t.identity.Name,
-		"session_id": t.identity.SessionID(),
-		"expires_at": formatTime(t.identity.ExpiresAt()),
-	})
+// per-session registry entry. SPEC §MCP server > Introspection.
+//
+// If no session is registered (e.g. HTTP client that hasn't called
+// register_agent yet) we return a descriptive payload rather than an error,
+// so the LLM can discover it needs to register.
+func (t *Tools) handleWhoAmI(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID := t.sessionIDFromContext(ctx)
+	sess, ok := t.registry.Get(sessionID)
+	if !ok {
+		return jsonResult(map[string]any{
+			"session_id":  sessionID,
+			"registered":  false,
+			"key":         nil,
+			"name":        nil,
+			"expires_at":  nil,
+		})
+	}
+	out := map[string]any{
+		"session_id":  sessionID,
+		"registered":  true,
+		"key":         sess.AgentKey,
+		"name":        sess.AgentName,
+		"agent_id":    sess.AgentID,
+		"expires_at":  formatTime(sess.ExpiresAt),
+	}
+	if len(sess.Metadata) > 0 {
+		out["metadata"] = sess.Metadata
+	}
+	if sess.ProjectSlug != "" {
+		out["project_slug"] = sess.ProjectSlug
+	}
+	return jsonResult(out)
 }
 
 // ---------------------------------------------------------------------------

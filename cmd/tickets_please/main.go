@@ -84,8 +84,15 @@ func main() {
 	}
 }
 
-// runMCP boots the in-process Service, self-registers as an agent, attaches
-// every MCP tool to a fresh stdio server, and serves until stdin closes.
+// runMCP boots the in-process Service, pre-registers a stdio agent session,
+// attaches every MCP tool to a fresh stdio server, and serves until stdin
+// closes.
+//
+// The Registry is built first; then a single "stdio" session is synthesised
+// from cfg defaults and registered under the fixed key "stdio" — which is
+// also what mcp-go's stdioSession.SessionID() returns. This gives stdio
+// clients (including CI/tests) transparent attribution without any extra
+// handshake.
 //
 // signal.NotifyContext gives a graceful shutdown path on Ctrl-C / SIGTERM —
 // the deferred svc.Close drains the embedding worker and releases watchers.
@@ -99,9 +106,22 @@ func runMCP(cfg config.Config, log *slog.Logger) error {
 	}
 	defer s.Close()
 
-	identity := mcptools.NewIdentity(cfg)
-	if err := identity.Register(ctx, s); err != nil {
+	// Build the registry and the default stdio session prototype.
+	registry := mcptools.NewRegistry(cfg)
+	sess := mcptools.DefaultStdioSession(cfg)
+
+	// Register the agent in the svc layer to get a real agent session ID.
+	agentID, expiresAt, err := s.RegisterAgent(ctx, sess.AgentKey, sess.AgentName, sess.Metadata, 0)
+	if err != nil {
 		return fmt.Errorf("register mcp agent: %w", err)
+	}
+	sess.AgentID = agentID
+	sess.ExpiresAt = expiresAt
+
+	// Pre-register under the synthetic "stdio" session ID so every tool call
+	// via stdio transport finds its session without a register_agent round-trip.
+	if err := registry.Register("stdio", sess); err != nil {
+		return fmt.Errorf("pre-register stdio session: %w", err)
 	}
 
 	server := mcpserver.NewMCPServer(
@@ -109,14 +129,14 @@ func runMCP(cfg config.Config, log *slog.Logger) error {
 		version,
 		mcpserver.WithInstructions(mcptools.ServerInstructions),
 	)
-	tools := mcptools.NewTools(s, &identity, log)
+	tools := mcptools.NewTools(s, registry, log)
 	tools.RegisterAll(server)
 
 	log.Info("mcp server starting",
 		"tools", totalTools,
-		"agent_key", identity.Key,
-		"agent_name", identity.Name,
-		"session", identity.SessionID(),
+		"agent_key", sess.AgentKey,
+		"agent_name", sess.AgentName,
+		"agent_id", sess.AgentID,
 	)
 	if err := mcpserver.ServeStdio(server); err != nil {
 		// ServeStdio returns nil on clean stdin close. Anything else is an

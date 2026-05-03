@@ -5,7 +5,6 @@
 package mcptools
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -14,36 +13,89 @@ import (
 	"time"
 
 	"tickets_please/internal/config"
-	"tickets_please/internal/svc"
 )
 
-// Identity is the MCP server's self-asserted agent identity. The MCP layer
-// registers itself once at startup, caches the returned session id, and
-// attaches it to every tool call's context. SPEC §Agent identity & sessions >
-// MCP integration.
-//
-// Re-registration replaces SessionID + ExpiresAt in place; concurrent reads of
-// SessionID are safe because handlers always go through AttachContext (which
-// reads under the mutex).
-type Identity struct {
-	// Key is the agent's self-chosen unique key. Defaults to
-	// `tickets_please_mcp:<random-8-hex>` so two MCP processes against the
-	// same data dir don't collide on the active-key uniqueness check.
-	Key string
-	// Name is the display name surfaced to readers of the audit trail.
-	Name string
-
-	mu        sync.RWMutex
-	sessionID string
-	expiresAt time.Time
+// Session holds the per-MCP-connection agent identity that the registry
+// maintains. Each incoming connection (stdio or future HTTP) gets its own
+// Session keyed by the MCP session ID supplied by mcp-go.
+type Session struct {
+	// AgentID is the svc-layer agent session id returned by svc.RegisterAgent.
+	// This is what gets threaded into the context for every svc call.
+	AgentID string
+	// AgentKey is the agent's self-chosen unique key, e.g. "tickets_please_mcp:abc123".
+	AgentKey string
+	// AgentName is the display name surfaced to readers of the audit trail.
+	AgentName string
+	// Metadata are arbitrary key/value pairs stored alongside the agent record.
+	Metadata map[string]string
+	// ProjectSlug is the default project for this session (may be empty).
+	ProjectSlug string
+	// ExpiresAt is when the underlying svc session expires.
+	ExpiresAt time.Time
 }
 
-// NewIdentity returns an Identity ready to Register. Key/Name come from cfg if
-// set; otherwise we fall back to the SPEC defaults. The random suffix is
-// chosen here (not at register time) so the same Identity Re-registers under
-// the same Key when its session expires — the audit trail sees one continuous
-// agent across re-auths.
-func NewIdentity(cfg config.Config) Identity {
+// Registry is a session-keyed map of Sessions. It replaces the old per-process
+// Identity singleton and is safe for concurrent use. In the stdio transport
+// there is exactly one entry keyed by "stdio"; the upcoming HTTP transport will
+// add and remove entries as clients connect and disconnect.
+type Registry struct {
+	mu       sync.RWMutex
+	sessions map[string]*Session
+}
+
+// NewRegistry returns an empty Registry. cfg is accepted for future use
+// (e.g. default TTL); it is not used at construction time today.
+func NewRegistry(_ config.Config) *Registry {
+	return &Registry{
+		sessions: make(map[string]*Session),
+	}
+}
+
+// Register stores sess under sessionID, overwriting any previous entry with
+// the same ID. It returns an error only if sess is nil.
+func (r *Registry) Register(sessionID string, sess *Session) error {
+	if sess == nil {
+		return fmt.Errorf("mcptools: Register: nil session")
+	}
+	r.mu.Lock()
+	r.sessions[sessionID] = sess
+	r.mu.Unlock()
+	return nil
+}
+
+// Get returns the Session registered under sessionID, or (nil, false) if no
+// entry exists.
+func (r *Registry) Get(sessionID string) (*Session, bool) {
+	r.mu.RLock()
+	sess, ok := r.sessions[sessionID]
+	r.mu.RUnlock()
+	return sess, ok
+}
+
+// Touch updates LastSeenAt semantics — currently a no-op placeholder kept for
+// the HTTP transport's heartbeat path. It is safe to call on a missing ID.
+func (r *Registry) Touch(_ string) {}
+
+// Remove drops the entry for sessionID. It is a no-op if the ID is unknown.
+func (r *Registry) Remove(sessionID string) {
+	r.mu.Lock()
+	delete(r.sessions, sessionID)
+	r.mu.Unlock()
+}
+
+// Len returns the number of sessions currently in the registry. Used in tests
+// and diagnostics.
+func (r *Registry) Len() int {
+	r.mu.RLock()
+	n := len(r.sessions)
+	r.mu.RUnlock()
+	return n
+}
+
+// DefaultStdioSession builds a Session from the cfg agent key/name env
+// defaults. The returned Session has no AgentID yet — the caller must call
+// svc.RegisterAgent, then fill in AgentID and ExpiresAt before registering.
+func DefaultStdioSession(cfg config.Config) *Session {
 	key := strings.TrimSpace(cfg.MCPAgentKey)
 	if key == "" {
 		key = fmt.Sprintf("tickets_please_mcp:%s", randomHex(8))
@@ -52,60 +104,14 @@ func NewIdentity(cfg config.Config) Identity {
 	if name == "" {
 		name = "tickets_please_mcp"
 	}
-	return Identity{Key: key, Name: name}
-}
-
-// Register calls svc.RegisterAgent with the cached Key/Name and stashes the
-// resulting session id + expiry. Safe to call repeatedly (e.g. after an
-// ErrUnauthenticated bubble-up): the previous session is left on disk for the
-// audit trail and a fresh one takes over.
-//
-// Metadata records the binary's role + a short fingerprint of the start-time
-// so post-mortem readers can tell which process registered which session.
-func (id *Identity) Register(ctx context.Context, s *svc.Service) error {
-	if s == nil {
-		return fmt.Errorf("mcptools: nil svc.Service")
+	return &Session{
+		AgentKey:  key,
+		AgentName: name,
+		Metadata: map[string]string{
+			"client":     "tickets_please_mcp",
+			"started_at": time.Now().UTC().Format(time.RFC3339),
+		},
 	}
-	metadata := map[string]string{
-		"client":     "tickets_please_mcp",
-		"started_at": time.Now().UTC().Format(time.RFC3339),
-	}
-	sessionID, expiresAt, err := s.RegisterAgent(ctx, id.Key, id.Name, metadata, 0)
-	if err != nil {
-		return fmt.Errorf("register agent: %w", err)
-	}
-	id.mu.Lock()
-	id.sessionID = sessionID
-	id.expiresAt = expiresAt
-	id.mu.Unlock()
-	return nil
-}
-
-// AttachContext returns a context carrying the cached session id under the
-// key svc.WithSessionID uses. Handlers call this before every svc method.
-func (id *Identity) AttachContext(ctx context.Context) context.Context {
-	id.mu.RLock()
-	sid := id.sessionID
-	id.mu.RUnlock()
-	if sid == "" {
-		return ctx
-	}
-	return svc.WithSessionID(ctx, sid)
-}
-
-// SessionID returns the cached session id (may be empty if Register hasn't
-// run yet). Used by the `who_am_i` tool.
-func (id *Identity) SessionID() string {
-	id.mu.RLock()
-	defer id.mu.RUnlock()
-	return id.sessionID
-}
-
-// ExpiresAt returns the cached session expiry. Used by the `who_am_i` tool.
-func (id *Identity) ExpiresAt() time.Time {
-	id.mu.RLock()
-	defer id.mu.RUnlock()
-	return id.expiresAt
 }
 
 // randomHex returns a lowercase hex string of length 2*n. Used to seed the
