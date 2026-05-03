@@ -1,0 +1,8 @@
+## Testing evidence
+Subagent commit 5a1bcec merged. go build clean, go vet clean, go test all packages PASS, go test race svc clean in 2.4s. New tests TestSearchLearnings_AggregatesAcrossMounts TestSearchProjects_AggregatesAcrossMounts TestSearchLearnings_ConcurrentMountAndSearch TestSearchProjects_StdioFallback all green.
+
+## Work summary
+Wired hydrateMount into RegisterProjectMount (new and re-mount paths) and ResolveProjectStore. Wired dropMountFromIndexes into maybeEvictLocked. Added vecindex RemoveByOwner method. New svc hydrate.go: per-mount sidecar walker that Upserts existing embedding.json files into resident indexes and enqueues missing ones via worker. SearchProjects now walks every mounted Store to build idToSlug with stdio-fallback to s.Store when registry empty. ProjectHit and LearningHit gained ProjectSlug field. mcptools format.go formatProjectHit and formatLearningHit surface project_slug.
+
+## Learnings
+vecindex.Entry already had Owner field populated by worker as project slug since T010 — adding slug provenance was zero-diff payload change just had to consume Owner at hydrate eviction and search-result-hydration time. Only one new exported method needed: RemoveByOwner. Search functions need stdio-fallback to s.Store when registry empty so single-project tests/CLI do not regress. Three pre-existing search tests remain t.Skip because they call CreateProject on a single Service multiple times and CreateProject still writes only to s.Store; a registry-aware CreateProject is a separate ticket. Did not change vecindex dimension-mismatch safeguard since hydrate path goes through Upsert which already enforces it.
