@@ -87,6 +87,11 @@ func TestIntegrity_OrphanEmbeddingIsWarning(t *testing.T) {
 
 func TestIntegrity_DanglingAgentRefIsWarning(t *testing.T) {
 	s := freshStore(t)
+	// Build an AgentStore with no agents so "ghost-agent" is unknown.
+	as, err := NewAgentStore(t.TempDir(), 5)
+	if err != nil {
+		t.Fatalf("NewAgentStore: %v", err)
+	}
 	pdir := s.projectDir("p")
 	if err := os.MkdirAll(pdir, 0o755); err != nil {
 		t.Fatal(err)
@@ -107,7 +112,7 @@ func TestIntegrity_DanglingAgentRefIsWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	warnings, fatal, err := s.Integrity(context.Background())
+	warnings, fatal, err := s.Integrity(context.Background(), as)
 	if err != nil {
 		t.Fatal(err)
 	}

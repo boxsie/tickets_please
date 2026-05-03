@@ -65,9 +65,10 @@ type LoadedProject struct {
 // ProjectCache is the slug-keyed in-memory project store with sliding TTL
 // eviction. See package doc for the concurrency model.
 type ProjectCache struct {
-	store     *store.Store
-	idleTTL   time.Duration
-	maxLoaded int
+	store      *store.Store
+	agentStore *store.AgentStore
+	idleTTL    time.Duration
+	maxLoaded  int
 
 	// Logger is the cache's structured logger. Defaults to slog.Default();
 	// svc.New overrides it to share Service.Logger so eviction events land
@@ -85,7 +86,10 @@ type ProjectCache struct {
 // New builds a ProjectCache with idle TTL and max-loaded pulled from cfg. A
 // zero ProjectIdleMinutes fallback to 15; zero MaxLoadedProjects to 16 so
 // tests can supply a partial config without tripping the LRU bound.
-func New(st *store.Store, cfg config.Config) *ProjectCache {
+//
+// as is the central AgentStore used for agent-ref hydration (lookupAgentRef).
+// It may be nil; when nil, lookupAgentRef returns a thin ref with only the id.
+func New(st *store.Store, as *store.AgentStore, cfg config.Config) *ProjectCache {
 	idle := time.Duration(cfg.ProjectIdleMinutes) * time.Minute
 	if idle <= 0 {
 		idle = 15 * time.Minute
@@ -95,13 +99,14 @@ func New(st *store.Store, cfg config.Config) *ProjectCache {
 		max = 16
 	}
 	return &ProjectCache{
-		store:     st,
-		idleTTL:   idle,
-		maxLoaded: max,
-		Logger:    slog.Default(),
-		loaded:    make(map[string]*LoadedProject),
-		handles:   make(map[string]string),
-		idIndex:   make(map[string]string),
+		store:      st,
+		agentStore: as,
+		idleTTL:    idle,
+		maxLoaded:  max,
+		Logger:     slog.Default(),
+		loaded:     make(map[string]*LoadedProject),
+		handles:    make(map[string]string),
+		idIndex:    make(map[string]string),
 	}
 }
 
@@ -647,12 +652,16 @@ func (c *ProjectCache) hydrateTicket(ticketDir string, tr *store.TicketRecord) (
 
 // lookupAgentRef returns a flat AgentRef for the given agent id, swallowing
 // not-found errors so a missing agent file doesn't fail the load. Returns
-// nil for the zero id.
+// nil for the zero id. When no AgentStore is configured a thin ref (id only)
+// is returned so the project still loads cleanly.
 func (c *ProjectCache) lookupAgentRef(id string) *domain.AgentRef {
 	if id == "" {
 		return nil
 	}
-	rec, err := c.store.ReadAgent(id)
+	if c.agentStore == nil {
+		return &domain.AgentRef{ID: id}
+	}
+	rec, err := c.agentStore.ReadAgent(id)
 	if err != nil {
 		// Soft fail: integrity check surfaces dangling refs separately.
 		return &domain.AgentRef{ID: id}

@@ -33,11 +33,35 @@ func freshStore(t *testing.T) *Store {
 
 func TestNew_CreatesSkeletonDirs(t *testing.T) {
 	s := freshStore(t)
-	// Post-flatten skeleton: only agents/ + .staging/ at the data-dir root.
-	// Project content lives directly in `<Root>/{project.yaml,...}` once a
-	// project is created — no enclosing `projects/<slug>/` folder anymore.
+	// Post-T003 skeleton: only .staging/ at the data-dir root.
+	// agents/ is no longer created by Store.New — it lives in the central
+	// AgentStore (see TestNewAgentStore_CreatesDirs for the equivalent check).
+	path := filepath.Join(s.Root, ".staging")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("missing .staging: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf(".staging is not a dir")
+	}
+	// agents/ must NOT be created by the project Store.
+	if _, err := os.Stat(filepath.Join(s.Root, "agents")); !os.IsNotExist(err) {
+		t.Fatalf("agents/ should not be created by Store.New (post-T003), got err=%v", err)
+	}
+	// `projects/` must NOT be created — that dir is part of the old layout.
+	if _, err := os.Stat(filepath.Join(s.Root, "projects")); !os.IsNotExist(err) {
+		t.Fatalf("projects/ dir should not be created post-flatten, got err=%v", err)
+	}
+}
+
+func TestNewAgentStore_CreatesDirs(t *testing.T) {
+	root := t.TempDir()
+	as, err := NewAgentStore(root, 5)
+	if err != nil {
+		t.Fatalf("NewAgentStore: %v", err)
+	}
 	for _, sub := range []string{"agents", ".staging"} {
-		path := filepath.Join(s.Root, sub)
+		path := filepath.Join(as.Root, sub)
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatalf("missing %s: %v", sub, err)
@@ -45,10 +69,6 @@ func TestNew_CreatesSkeletonDirs(t *testing.T) {
 		if !info.IsDir() {
 			t.Fatalf("%s is not a dir", sub)
 		}
-	}
-	// `projects/` must NOT be created — that dir is part of the old layout.
-	if _, err := os.Stat(filepath.Join(s.Root, "projects")); !os.IsNotExist(err) {
-		t.Fatalf("projects/ dir should not be created post-flatten, got err=%v", err)
 	}
 }
 
@@ -268,7 +288,12 @@ func trimTrailingNL(s string) string {
 }
 
 func TestRegisterAgent_Uniqueness(t *testing.T) {
-	s := freshStore(t)
+	// AgentStore is now the home of agent operations; Store no longer has
+	// RegisterAgent / WriteAgentRecord methods.
+	as, err := NewAgentStore(t.TempDir(), 5)
+	if err != nil {
+		t.Fatalf("NewAgentStore: %v", err)
+	}
 	ctx := context.Background()
 	now := time.Now()
 	rec1 := &AgentRecord{
@@ -278,7 +303,7 @@ func TestRegisterAgent_Uniqueness(t *testing.T) {
 		CreatedAt: now,
 		ExpiresAt: now.Add(time.Hour),
 	}
-	if err := s.RegisterAgent(ctx, rec1); err != nil {
+	if err := as.RegisterAgent(ctx, rec1); err != nil {
 		t.Fatalf("first RegisterAgent: %v", err)
 	}
 
@@ -290,18 +315,18 @@ func TestRegisterAgent_Uniqueness(t *testing.T) {
 		CreatedAt: now,
 		ExpiresAt: now.Add(time.Hour),
 	}
-	err := s.RegisterAgent(ctx, rec2)
+	err = as.RegisterAgent(ctx, rec2)
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("expected ErrAlreadyExists, got %v", err)
 	}
 
 	// Expire the first by overwriting its file with an expired timestamp.
 	rec1.ExpiresAt = now.Add(-time.Minute)
-	if err := s.WriteAgentRecord(rec1); err != nil {
+	if err := as.WriteAgentRecord(rec1); err != nil {
 		t.Fatal(err)
 	}
 	// Now rec2 should succeed.
-	if err := s.RegisterAgent(ctx, rec2); err != nil {
+	if err := as.RegisterAgent(ctx, rec2); err != nil {
 		t.Fatalf("post-expiry RegisterAgent: %v", err)
 	}
 }

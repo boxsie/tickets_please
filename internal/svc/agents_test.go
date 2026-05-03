@@ -14,11 +14,13 @@ import (
 )
 
 // freshService returns a Service rooted at t.TempDir() with auto-commit off
-// and sane TTLs.
+// and sane TTLs. DataRoot is set to a separate tempdir so the test never
+// touches the user's real ~/.tickets_please.
 func freshService(t *testing.T) *Service {
 	t.Helper()
 	cfg := config.Config{
 		DataDir:                t.TempDir(),
+		DataRoot:               t.TempDir(),
 		AutoCommit:             false,
 		LockTimeoutSeconds:     5,
 		AgentSessionTTLMinutes: 60,
@@ -58,12 +60,12 @@ func TestRegisterAgent_WritesYAMLWithExpectedFields(t *testing.T) {
 		t.Fatalf("expiresAt too soon: %v", expiresAt)
 	}
 
-	path := filepath.Join(s.Store.Root, "agents", id+".yaml")
+	path := filepath.Join(s.AgentStore.Root, "agents", id+".yaml")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected agent yaml at %s: %v", path, err)
 	}
 
-	got, err := s.Store.ReadAgent(id)
+	got, err := s.AgentStore.ReadAgent(id)
 	if err != nil {
 		t.Fatalf("ReadAgent: %v", err)
 	}
@@ -124,12 +126,12 @@ func TestRegisterAgent_ReusableAfterExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Force-expire the first session by rewriting its yaml.
-	rec, err := s.Store.ReadAgent(id)
+	rec, err := s.AgentStore.ReadAgent(id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rec.ExpiresAt = time.Now().Add(-time.Minute)
-	if err := s.Store.WriteAgentRecord(rec); err != nil {
+	if err := s.AgentStore.WriteAgentRecord(rec); err != nil {
 		t.Fatal(err)
 	}
 
@@ -167,9 +169,9 @@ func TestRequireSession_ExpiredID(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Force-expire.
-	rec, _ := s.Store.ReadAgent(id)
+	rec, _ := s.AgentStore.ReadAgent(id)
 	rec.ExpiresAt = time.Now().Add(-time.Second)
-	if err := s.Store.WriteAgentRecord(rec); err != nil {
+	if err := s.AgentStore.WriteAgentRecord(rec); err != nil {
 		t.Fatal(err)
 	}
 
@@ -228,9 +230,9 @@ func TestHeartbeat_UpdatesLastSeenButNotExpiry(t *testing.T) {
 	}
 
 	// Backdate LastSeenAt and re-write so we have a clean delta to detect.
-	rec, _ := s.Store.ReadAgent(id)
+	rec, _ := s.AgentStore.ReadAgent(id)
 	rec.LastSeenAt = time.Now().Add(-2 * time.Hour)
-	if err := s.Store.WriteAgentRecord(rec); err != nil {
+	if err := s.AgentStore.WriteAgentRecord(rec); err != nil {
 		t.Fatal(err)
 	}
 
@@ -242,7 +244,7 @@ func TestHeartbeat_UpdatesLastSeenButNotExpiry(t *testing.T) {
 		t.Fatalf("Heartbeat must NOT extend ExpiresAt: orig=%v got=%v", originalExpiry, gotExpiry)
 	}
 
-	after, _ := s.Store.ReadAgent(id)
+	after, _ := s.AgentStore.ReadAgent(id)
 	if !after.LastSeenAt.After(rec.LastSeenAt) {
 		t.Fatalf("LastSeenAt did not advance: was=%v now=%v", rec.LastSeenAt, after.LastSeenAt)
 	}
@@ -258,9 +260,9 @@ func TestHeartbeat_ExpiredSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec, _ := s.Store.ReadAgent(id)
+	rec, _ := s.AgentStore.ReadAgent(id)
 	rec.ExpiresAt = time.Now().Add(-time.Second)
-	if err := s.Store.WriteAgentRecord(rec); err != nil {
+	if err := s.AgentStore.WriteAgentRecord(rec); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Heartbeat(ctx, id); !errors.Is(err, domain.ErrUnauthenticated) {
@@ -308,7 +310,7 @@ func TestTouchDebounce_SecondCallSkipsRewrite(t *testing.T) {
 
 	mtimeOf := func() time.Time {
 		t.Helper()
-		fi, err := os.Stat(filepath.Join(s.Store.Root, "agents", id+".yaml"))
+		fi, err := os.Stat(filepath.Join(s.AgentStore.Root, "agents", id+".yaml"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -374,7 +376,7 @@ func TestGetAgent_MirrorsRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec, err := s.Store.ReadAgent(id)
+	rec, err := s.AgentStore.ReadAgent(id)
 	if err != nil {
 		t.Fatal(err)
 	}

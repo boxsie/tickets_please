@@ -11,8 +11,10 @@ import (
 
 // Subdirectory and file names used throughout the store package. Centralized
 // here so callers don't sprinkle string literals.
+//
+// Note: dirAgents is defined in agents.go since it is only referenced there
+// (AgentStore) after the agent registry was decoupled from the project Store.
 const (
-	dirAgents   = "agents"
 	dirStaging  = ".staging"
 	dirPhases   = "phases"
 	dirTickets  = "tickets"
@@ -49,6 +51,10 @@ type Store struct {
 // subdirectories if missing, and returns a Store. It does NOT run the
 // integrity check — callers (the `check` subcommand and `Service.New`) call
 // Integrity explicitly.
+//
+// Post-T003: New no longer creates an agents/ subdir under the data dir.
+// Agent sessions are stored in the central AgentStore (see NewAgentStore),
+// whose root defaults to ~/.tickets_please. Only .staging/ is created here.
 func New(cfg config.Config) (*Store, error) {
 	abs, err := filepath.Abs(cfg.DataDir)
 	if err != nil {
@@ -57,10 +63,8 @@ func New(cfg config.Config) (*Store, error) {
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir data_dir: %w", err)
 	}
-	for _, sub := range []string{dirAgents, dirStaging} {
-		if err := os.MkdirAll(filepath.Join(abs, sub), 0o755); err != nil {
-			return nil, fmt.Errorf("mkdir %s: %w", sub, err)
-		}
+	if err := os.MkdirAll(filepath.Join(abs, dirStaging), 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", dirStaging, err)
 	}
 
 	logger := slog.Default()
@@ -101,7 +105,3 @@ func (s *Store) stagingDir() string {
 	return filepath.Join(s.Root, dirStaging)
 }
 
-// agentsDir returns the absolute path to the agents/ directory.
-func (s *Store) agentsDir() string {
-	return filepath.Join(s.Root, dirAgents)
-}

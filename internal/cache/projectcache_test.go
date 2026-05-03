@@ -67,7 +67,7 @@ func TestCache_Get_LazyLoadPopulatesProject(t *testing.T) {
 	st := freshStore(t, false)
 	id := seedProject(t, st, "foo", "Foo")
 
-	c := New(st, config.Config{})
+	c := New(st, nil, config.Config{})
 	if c.Len() != 0 {
 		t.Fatalf("expected empty cache, got %d", c.Len())
 	}
@@ -100,7 +100,7 @@ func TestCache_Get_ResolvesByID(t *testing.T) {
 	st := freshStore(t, false)
 	id := seedProject(t, st, "foo", "Foo")
 
-	c := New(st, config.Config{})
+	c := New(st, nil, config.Config{})
 	lp, _, err := c.Get(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +112,7 @@ func TestCache_Get_ResolvesByID(t *testing.T) {
 
 func TestCache_Get_NotFound(t *testing.T) {
 	st := freshStore(t, false)
-	c := New(st, config.Config{})
+	c := New(st, nil, config.Config{})
 	_, _, err := c.Get(context.Background(), "missing")
 	if !domain.IsNotFound(err) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
@@ -123,7 +123,7 @@ func TestCache_Evict_ClosesWatcherAndRemoves(t *testing.T) {
 	st := freshStore(t, true)
 	seedProject(t, st, "foo", "Foo")
 
-	c := New(st, config.Config{})
+	c := New(st, nil, config.Config{})
 	if _, _, err := c.Get(context.Background(), "foo"); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestCache_SweepIdle_EvictsExpired(t *testing.T) {
 	st := freshStore(t, false)
 	seedProject(t, st, "foo", "Foo")
 
-	c := New(st, config.Config{ProjectIdleMinutes: 1})
+	c := New(st, nil, config.Config{ProjectIdleMinutes: 1})
 	lp, _, err := c.Get(context.Background(), "foo")
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func TestCache_LRU_EvictsOldestBeyondMax(t *testing.T) {
 	st := freshStore(t, false)
 	seedProject(t, st, "alpha", "Alpha")
 
-	c := New(st, config.Config{MaxLoadedProjects: 1})
+	c := New(st, nil, config.Config{MaxLoadedProjects: 1})
 
 	if _, _, err := c.Get(context.Background(), "alpha"); err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestCache_StaleFlagTriggersReload(t *testing.T) {
 	st := freshStore(t, true)
 	seedProject(t, st, "foo", "Foo")
 
-	c := New(st, config.Config{})
+	c := New(st, nil, config.Config{})
 	lp1, _, err := c.Get(context.Background(), "foo")
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +225,7 @@ func TestCache_FsnotifyFlipsStaleOnDiskWrite(t *testing.T) {
 	st := freshStore(t, true)
 	seedProject(t, st, "foo", "Foo")
 
-	c := New(st, config.Config{})
+	c := New(st, nil, config.Config{})
 	lp, _, err := c.Get(context.Background(), "foo")
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +275,7 @@ func TestCache_CloseAll_ReleasesWatchers(t *testing.T) {
 	st := freshStore(t, true)
 	seedProject(t, st, "foo", "Foo")
 
-	c := New(st, config.Config{})
+	c := New(st, nil, config.Config{})
 	if _, _, err := c.Get(context.Background(), "foo"); err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestCache_CloseAll_ReleasesWatchers(t *testing.T) {
 
 func TestCache_RunEvictor_StopsOnContextCancel(t *testing.T) {
 	st := freshStore(t, false)
-	c := New(st, config.Config{})
+	c := New(st, nil, config.Config{})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

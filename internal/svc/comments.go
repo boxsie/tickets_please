@@ -140,7 +140,7 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 		Body:       bodyOut,
 		FromColumn: rec.FromColumn,
 		ToColumn:   rec.ToColumn,
-		Author:     hydrateAgentRef(s.Store, agent.ID, agent.Name),
+		Author:     hydrateAgentRef(s.AgentStore, agent.ID, agent.Name),
 		CreatedAt:  rec.CreatedAt,
 	}
 
@@ -187,7 +187,7 @@ func (s *Service) ListComments(ctx context.Context, ticketID string) ([]*domain.
 		// AgentRef may be stale-without-name. Best-effort refresh; failure
 		// keeps whatever the loader put in (possibly nil).
 		if cp.Author != nil && cp.Author.Name == "" && cp.Author.ID != "" {
-			if r := hydrateAgentRef(s.Store, cp.Author.ID, ""); r != nil {
+			if r := hydrateAgentRef(s.AgentStore, cp.Author.ID, ""); r != nil {
 				cp.Author = r
 			}
 		}
@@ -266,14 +266,14 @@ func (s *Service) findTicketDirAndNumber(slug, ticketID string) (string, int, er
 // the store; not-found errors are swallowed and the ref is returned with just
 // the id populated so the comment still surfaces an attribution token in the
 // UI / MCP listing.
-func hydrateAgentRef(st *store.Store, id, fallbackName string) *domain.AgentRef {
+func hydrateAgentRef(as *store.AgentStore, id, fallbackName string) *domain.AgentRef {
 	if id == "" {
 		return nil
 	}
 	if fallbackName != "" {
 		return &domain.AgentRef{ID: id, Name: fallbackName}
 	}
-	rec, err := st.ReadAgent(id)
+	rec, err := as.ReadAgent(id)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return &domain.AgentRef{ID: id}

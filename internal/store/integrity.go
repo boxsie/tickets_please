@@ -54,20 +54,31 @@ func (f FatalError) Error() string { return f.String() }
 //   - Every ticket has `ticket.yaml` and `body.md`.
 //   - Every `done` ticket also has `completion.md`.
 //   - Agent attribution refs (created_by, completed_by, author_id) resolve
-//     to an existing agent file (warning if not).
+//     to an existing agent file (warning if not) — only when agentSt != nil.
 //   - `.staging/` is empty (warning per residual op-id; we don't auto-clean).
 //   - Stray `*.embedding.json` without source file → warning.
-func (s *Store) Integrity(ctx context.Context) ([]Warning, []FatalError, error) {
+//
+// agentSt may be nil; when it is, agent-ref validation is skipped (no warnings
+// emitted for dangling refs). The next phase will always pass an AgentStore.
+func (s *Store) Integrity(ctx context.Context, agentSt ...*AgentStore) ([]Warning, []FatalError, error) {
 	var warnings []Warning
 	var fatal []FatalError
 
 	// Build the set of known agent ids so we can validate references.
+	// Skip when no AgentStore is provided (backward compat for tests that
+	// build a Store without the central data root).
 	knownAgents := map[string]bool{}
-	if err := s.WalkAgents(func(rec *AgentRecord) error {
-		knownAgents[rec.ID] = true
-		return nil
-	}); err != nil {
-		return nil, nil, fmt.Errorf("walk agents: %w", err)
+	var as *AgentStore
+	if len(agentSt) > 0 {
+		as = agentSt[0]
+	}
+	if as != nil {
+		if err := as.WalkAgents(func(rec *AgentRecord) error {
+			knownAgents[rec.ID] = true
+			return nil
+		}); err != nil {
+			return nil, nil, fmt.Errorf("walk agents: %w", err)
+		}
 	}
 
 	// Residual .staging entries.
@@ -84,8 +95,9 @@ func (s *Store) Integrity(ctx context.Context) ([]Warning, []FatalError, error) 
 
 	// Walk the single project hosted at the data-dir root, if any. Post-
 	// flatten there's at most one project per Store.
+	checkAgents := as != nil // only validate agent refs when an AgentStore is available
 	if err := s.WalkProjects(func(slug string, _ *ProjectRecord) error {
-		w, f := s.checkProject(slug, knownAgents)
+		w, f := s.checkProject(slug, knownAgents, checkAgents)
 		warnings = append(warnings, w...)
 		fatal = append(fatal, f...)
 		return nil
@@ -98,7 +110,10 @@ func (s *Store) Integrity(ctx context.Context) ([]Warning, []FatalError, error) 
 }
 
 // checkProject runs the per-project structural checks.
-func (s *Store) checkProject(slug string, knownAgents map[string]bool) ([]Warning, []FatalError) {
+// checkAgents gates agent-ref validation; it is false when no AgentStore was
+// provided to Integrity (backward-compat path for tests that build a Store
+// without a central data root).
+func (s *Store) checkProject(slug string, knownAgents map[string]bool, checkAgents bool) ([]Warning, []FatalError) {
 	var warnings []Warning
 	var fatal []FatalError
 	dir := s.projectDir(slug)
@@ -115,7 +130,7 @@ func (s *Store) checkProject(slug string, knownAgents map[string]bool) ([]Warnin
 	if _, err := os.Stat(summaryPath); err != nil {
 		fatal = append(fatal, FatalError{Path: summaryPath, Message: "missing required summary.md"})
 	}
-	if rec.CreatedByAgentID != nil && *rec.CreatedByAgentID != "" && !knownAgents[*rec.CreatedByAgentID] {
+	if checkAgents && rec.CreatedByAgentID != nil && *rec.CreatedByAgentID != "" && !knownAgents[*rec.CreatedByAgentID] {
 		warnings = append(warnings, Warning{Path: projectPath, Message: "created_by references unknown agent " + *rec.CreatedByAgentID})
 	}
 	// Stray summary embedding sidecar without source already covered (we
@@ -136,15 +151,17 @@ func (s *Store) checkProject(slug string, knownAgents map[string]bool) ([]Warnin
 				fatal = append(fatal, FatalError{Path: cp, Message: "done ticket missing completion.md"})
 			}
 		}
-		if t.CreatedByAgentID != nil && *t.CreatedByAgentID != "" && !knownAgents[*t.CreatedByAgentID] {
-			warnings = append(warnings, Warning{Path: filepath.Join(ticketDir, fileTicket), Message: "created_by references unknown agent " + *t.CreatedByAgentID})
-		}
-		if t.CompletedByAgentID != nil && *t.CompletedByAgentID != "" && !knownAgents[*t.CompletedByAgentID] {
-			warnings = append(warnings, Warning{Path: filepath.Join(ticketDir, fileTicket), Message: "completed_by references unknown agent " + *t.CompletedByAgentID})
+		if checkAgents {
+			if t.CreatedByAgentID != nil && *t.CreatedByAgentID != "" && !knownAgents[*t.CreatedByAgentID] {
+				warnings = append(warnings, Warning{Path: filepath.Join(ticketDir, fileTicket), Message: "created_by references unknown agent " + *t.CreatedByAgentID})
+			}
+			if t.CompletedByAgentID != nil && *t.CompletedByAgentID != "" && !knownAgents[*t.CompletedByAgentID] {
+				warnings = append(warnings, Warning{Path: filepath.Join(ticketDir, fileTicket), Message: "completed_by references unknown agent " + *t.CompletedByAgentID})
+			}
 		}
 		// Comment author refs.
 		if err := s.WalkComments(ticketDir, func(c *CommentRecord, _ string) error {
-			if c.AuthorAgentID != nil && *c.AuthorAgentID != "" && !knownAgents[*c.AuthorAgentID] {
+			if checkAgents && c.AuthorAgentID != nil && *c.AuthorAgentID != "" && !knownAgents[*c.AuthorAgentID] {
 				warnings = append(warnings, Warning{
 					Path:    filepath.Join(ticketDir, dirComments),
 					Message: "comment " + c.ID + " author_id references unknown agent " + *c.AuthorAgentID,
