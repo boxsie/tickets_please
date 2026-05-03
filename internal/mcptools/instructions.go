@@ -31,5 +31,5 @@ const ServerInstructions = `tickets_please is a Trello-shaped, LLM-first ticketi
 
 ## Identity
 
-You are already registered as an agent for this session — the MCP binary handled this on startup. Your identity travels with every mutation as ` + "`created_by` / `completed_by` / `author_id`" + `. No need to re-introduce yourself. ` + "`who_am_i`" + ` shows the registered identity if you want to confirm.
+Your identity travels with every mutation as ` + "`created_by` / `completed_by` / `author_id`" + `. ` + "`who_am_i`" + ` shows the registered identity if you want to confirm. HTTP clients should call ` + "`register_agent`" + ` once on connection to declare their model, client, and bound project. Stdio clients can skip if ` + "`MCP_AGENT_*`" + ` env vars are set — the binary pre-registers a session at startup.
 `

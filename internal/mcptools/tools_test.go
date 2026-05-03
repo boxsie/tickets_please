@@ -17,7 +17,7 @@ import (
 	"tickets_please/internal/domain"
 )
 
-// expectedTools is the canonical 28 — keep in sync with SPEC.md and
+// expectedTools is the canonical list — keep in sync with SPEC.md and
 // RegisterAll. The test fails loud if any name drifts.
 var expectedTools = []string{
 	// Projects (7)
@@ -33,8 +33,8 @@ var expectedTools = []string{
 	"add_comment", "list_comments",
 	// Search (4)
 	"search_projects", "search_tickets", "search_learnings", "search_comments",
-	// Introspection (1)
-	"who_am_i",
+	// Introspection (2)
+	"who_am_i", "register_agent",
 }
 
 // newTestRegistry returns a Registry pre-loaded with a single "stdio" session

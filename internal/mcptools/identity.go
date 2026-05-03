@@ -30,6 +30,10 @@ type Session struct {
 	Metadata map[string]string
 	// ProjectSlug is the default project for this session (may be empty).
 	ProjectSlug string
+	// ProjectPath is the absolute filesystem path to the bound project repo.
+	// Kept alongside ProjectSlug so the project can be re-resolved if the
+	// project store cache evicts the slug.
+	ProjectPath string
 	// ExpiresAt is when the underlying svc session expires.
 	ExpiresAt time.Time
 }
