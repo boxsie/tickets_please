@@ -40,9 +40,29 @@ The system is **not** a long-running service. It's a single binary that runs in 
 
 Subcommand dispatch on `cmd/tickets_please/main.go`:
 - `tickets_please mcp` *(default)* — stdio MCP server. The main mode.
+- `tickets_please serve` — long-running HTTP MCP server (StreamableHTTP transport) for centralised mode. See "Centralised mode" below.
 - `tickets_please check` — run integrity check + exit.
 - `tickets_please init` — create `.tickets_please/` skeleton.
-- *(future)* `tickets_please serve` — long-running daemon for a future web frontend. Not in v1.
+
+### Centralised mode
+
+`tickets_please serve` runs the same `svc.Service` + tool surface as `mcp`, but exposes it over HTTP via mcp-go's `StreamableHTTPServer`. One process can serve multiple Claude Code clients without each one spawning its own stdio binary.
+
+```
+tickets_please serve --addr :8765
+```
+
+Mounts:
+- `/mcp` — the StreamableHTTP MCP endpoint (per-connection sessions handled natively by mcp-go).
+- `/healthz` — `200 ok` plaintext liveness probe.
+
+Wire it up in Claude Code:
+
+```
+claude mcp add --transport http tickets_please http://localhost:8765/mcp
+```
+
+Localhost only; no TLS, no auth — out of scope for v1.
 
 **Why one binary, not a service:**
 - An LLM-driven ticket tracker doesn't need a long-running process. The MCP lifecycle (one process per LLM client invocation) is the correct lifecycle.

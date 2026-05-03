@@ -44,11 +44,22 @@ That's it. The `.tickets_please/` directory IS the data — it's committed to gi
 
 ## Wiring up MCP
 
-### Claude Code
+### Claude Code (stdio)
 
 ```bash
 claude mcp add tickets_please /abs/path/to/tickets_please mcp
 ```
+
+### Claude Code (centralised HTTP)
+
+Run a single long-lived server and point any number of clients at it:
+
+```bash
+./tickets_please serve --addr :8765
+claude mcp add --transport http tickets_please http://localhost:8765/mcp
+```
+
+`/healthz` returns `ok` for liveness probes.
 
 ### Claude Desktop
 
