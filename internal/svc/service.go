@@ -315,6 +315,9 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 			existing.Store = st
 			existing.LastTouchedAt = time.Now()
 			s.maybeEvictLocked(rec.Slug)
+			// Re-hydrate the resident indexes for this slug; eviction earlier
+			// may have dropped its entries.
+			s.hydrateMount(rec.Slug, st)
 			return rec.Slug, nil
 		}
 		return "", fmt.Errorf("svc: slug %q is already mounted at %s", rec.Slug, existing.RepoPath)
@@ -331,6 +334,11 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 		LastTouchedAt: time.Now(),
 	}
 	s.maybeEvictLocked(rec.Slug)
+	// Populate resident indexes from this project's on-disk sidecars (and
+	// enqueue missing ones via the embed worker). Done with the lock still
+	// held — hydrate only touches Service-level indexes + the embed worker
+	// queue, neither of which loops back into mountsMu.
+	s.hydrateMount(rec.Slug, st)
 	return rec.Slug, nil
 }
 
@@ -367,6 +375,7 @@ func (s *Service) ResolveProjectStore(_ context.Context, slug string) (*store.St
 		return nil, fmt.Errorf("svc: project %q not mounted; call register_agent first", slug)
 	}
 
+	rehydrated := false
 	if mount.Store == nil {
 		// Re-mount silently from the retained RepoPath.
 		dataDir := filepath.Join(mount.RepoPath, ".tickets_please")
@@ -375,9 +384,15 @@ func (s *Service) ResolveProjectStore(_ context.Context, slug string) (*store.St
 			return nil, fmt.Errorf("svc: re-mount project %q: %w", slug, err)
 		}
 		mount.Store = st
+		rehydrated = true
 	}
 	mount.LastTouchedAt = time.Now()
 	s.maybeEvictLocked(slug)
+	if rehydrated {
+		// Eviction nuked the resident-index entries for this slug; refill
+		// them from disk so search results return for this project again.
+		s.hydrateMount(slug, mount.Store)
+	}
 	return mount.Store, nil
 }
 
@@ -452,6 +467,10 @@ func (s *Service) maybeEvictLocked(keep string) {
 			continue
 		}
 		m.Store = nil
+		// Drop the project's resident-index entries so cross-project search
+		// stops returning hits we can no longer hydrate without a re-mount.
+		// ResolveProjectStore re-hydrates on next access.
+		s.dropMountFromIndexes(resident[i].slug)
 		over--
 	}
 }
