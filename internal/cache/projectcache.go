@@ -62,10 +62,28 @@ type LoadedProject struct {
 	stopWatch chan struct{}
 }
 
+// Resolvers is the closure bundle a ProjectCache uses to find a *store.Store
+// for a given slug, plus walk every mounted store for id-only lookups. The
+// indirection keeps cache→svc dependency-free: svc.New constructs and passes
+// these closures, while tests can pass a fixed-store closure for the
+// single-project case.
+type Resolvers struct {
+	// ResolveStore returns the Store hosting `slug`, or an error when no mount
+	// exists for it.
+	ResolveStore func(slug string) (*store.Store, error)
+	// WalkAllStores invokes fn against every currently-resident project store
+	// (used by the id→slug disk-walk fallback in resolveSlug).
+	WalkAllStores func(fn func(*store.Store) error) error
+	// FsnotifyEnabled mirrors the per-store flag: the cache used to read
+	// `c.store.FsnotifyEnabled` directly; under multi-store routing the value
+	// is sourced from the Service config one level up.
+	FsnotifyEnabled bool
+}
+
 // ProjectCache is the slug-keyed in-memory project store with sliding TTL
 // eviction. See package doc for the concurrency model.
 type ProjectCache struct {
-	store      *store.Store
+	resolvers  Resolvers
 	agentStore *store.AgentStore
 	idleTTL    time.Duration
 	maxLoaded  int
@@ -87,9 +105,13 @@ type ProjectCache struct {
 // zero ProjectIdleMinutes fallback to 15; zero MaxLoadedProjects to 16 so
 // tests can supply a partial config without tripping the LRU bound.
 //
+// resolvers carries the closures the cache uses to find the Store for a given
+// slug. svc.New supplies registry-backed closures; single-project tests can
+// build a Resolvers whose closures always return one Store via NewWithStore.
+//
 // as is the central AgentStore used for agent-ref hydration (lookupAgentRef).
 // It may be nil; when nil, lookupAgentRef returns a thin ref with only the id.
-func New(st *store.Store, as *store.AgentStore, cfg config.Config) *ProjectCache {
+func New(resolvers Resolvers, as *store.AgentStore, cfg config.Config) *ProjectCache {
 	idle := time.Duration(cfg.ProjectIdleMinutes) * time.Minute
 	if idle <= 0 {
 		idle = 15 * time.Minute
@@ -99,7 +121,7 @@ func New(st *store.Store, as *store.AgentStore, cfg config.Config) *ProjectCache
 		max = 16
 	}
 	return &ProjectCache{
-		store:      st,
+		resolvers:  resolvers,
 		agentStore: as,
 		idleTTL:    idle,
 		maxLoaded:  max,
@@ -108,6 +130,29 @@ func New(st *store.Store, as *store.AgentStore, cfg config.Config) *ProjectCache
 		handles:    make(map[string]string),
 		idIndex:    make(map[string]string),
 	}
+}
+
+// NewWithStore is a single-project convenience: builds a ProjectCache whose
+// Resolvers always return st regardless of the slug requested. Used by
+// single-store tests (and any future single-project caller) that want the
+// previous "one Store wired in at construction" ergonomics.
+func NewWithStore(st *store.Store, as *store.AgentStore, cfg config.Config) *ProjectCache {
+	resolvers := Resolvers{
+		ResolveStore: func(_ string) (*store.Store, error) {
+			if st == nil {
+				return nil, fmt.Errorf("cache: no store wired")
+			}
+			return st, nil
+		},
+		WalkAllStores: func(fn func(*store.Store) error) error {
+			if st == nil {
+				return nil
+			}
+			return fn(st)
+		},
+		FsnotifyEnabled: st != nil && st.FsnotifyEnabled,
+	}
+	return New(resolvers, as, cfg)
 }
 
 // Len returns the number of currently-loaded projects. Test helper.
@@ -290,10 +335,16 @@ func (c *ProjectCache) resolveSlug(idOrSlug string) (string, error) {
 	return "", fmt.Errorf("%w: project %q", domain.ErrNotFound, idOrSlug)
 }
 
-// tryDiskSlug returns (slug, true, nil) if projects/<idOrSlug>/project.yaml
-// exists on disk.
+// tryDiskSlug returns (slug, true, nil) if a Store hosting `slug` is mounted
+// and its project.yaml is readable.
 func (c *ProjectCache) tryDiskSlug(slug string) (string, bool, error) {
-	if _, err := c.store.ReadProject(slug); err != nil {
+	st, err := c.resolvers.ResolveStore(slug)
+	if err != nil || st == nil {
+		// Unmounted slug: treat as absent so the caller falls through to id
+		// lookup or returns ErrNotFound.
+		return "", false, nil
+	}
+	if _, err := st.ReadProject(slug); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", false, nil
 		}
@@ -302,15 +353,16 @@ func (c *ProjectCache) tryDiskSlug(slug string) (string, bool, error) {
 	return slug, true, nil
 }
 
-// tryDiskID walks the projects directory looking for a project whose id
-// matches.
+// tryDiskID walks every mounted store looking for a project whose id matches.
 func (c *ProjectCache) tryDiskID(id string) (string, bool, error) {
 	var found string
-	err := c.store.WalkProjects(func(slug string, rec *store.ProjectRecord) error {
-		if rec.ID == id {
-			found = slug
-		}
-		return nil
+	err := c.resolvers.WalkAllStores(func(st *store.Store) error {
+		return st.WalkProjects(func(slug string, rec *store.ProjectRecord) error {
+			if rec.ID == id {
+				found = slug
+			}
+			return nil
+		})
 	})
 	if err != nil {
 		return "", false, err
@@ -439,7 +491,12 @@ func (c *ProjectCache) handleForLocked(slug string) string {
 // tickets, and (when fsnotify is enabled) starts a watcher goroutine that
 // flips Stale on every event.
 func (c *ProjectCache) loadFromDisk(ctx context.Context, slug string) (*LoadedProject, error) {
-	rec, err := c.store.ReadProject(slug)
+	st, err := c.resolvers.ResolveStore(slug)
+	if err != nil {
+		return nil, fmt.Errorf("%w: project %q", domain.ErrNotFound, slug)
+	}
+
+	rec, err := st.ReadProject(slug)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("%w: project %q", domain.ErrNotFound, slug)
@@ -447,7 +504,7 @@ func (c *ProjectCache) loadFromDisk(ctx context.Context, slug string) (*LoadedPr
 		return nil, fmt.Errorf("read project: %w", err)
 	}
 
-	summary, err := c.store.ReadProjectSummary(slug)
+	summary, err := st.ReadProjectSummary(slug)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("read summary: %w", err)
 	}
@@ -472,7 +529,7 @@ func (c *ProjectCache) loadFromDisk(ctx context.Context, slug string) (*LoadedPr
 	// so callers don't have to nil-check).
 	phases := map[string]*domain.Phase{}
 	phasesBySlug := map[string]*domain.Phase{}
-	if err := c.store.WalkPhases(slug, func(pr *store.PhaseRecord) error {
+	if err := st.WalkPhases(slug, func(pr *store.PhaseRecord) error {
 		ph := &domain.Phase{
 			ID:          pr.ID,
 			ProjectID:   pr.ProjectID,
@@ -496,8 +553,8 @@ func (c *ProjectCache) loadFromDisk(ctx context.Context, slug string) (*LoadedPr
 	// Tickets and comments.
 	tickets := map[string]*domain.Ticket{}
 	comments := map[string][]*domain.Comment{}
-	if err := c.store.WalkTickets(slug, func(ticketDir, _ string, tr *store.TicketRecord) error {
-		t, ts, err := c.hydrateTicket(ticketDir, tr)
+	if err := st.WalkTickets(slug, func(ticketDir, _ string, tr *store.TicketRecord) error {
+		t, ts, err := c.hydrateTicket(st, ticketDir, tr)
 		if err != nil {
 			return err
 		}
@@ -543,8 +600,8 @@ func (c *ProjectCache) loadFromDisk(ctx context.Context, slug string) (*LoadedPr
 	}
 
 	// Watcher: only when fsnotify is enabled in store cfg.
-	if c.store.FsnotifyEnabled {
-		w, err := c.store.WatchProject(slug)
+	if c.resolvers.FsnotifyEnabled {
+		w, err := st.WatchProject(slug)
 		if err != nil {
 			c.Logger.Warn("watch project failed", "slug", slug, "err", err)
 		} else {
@@ -583,8 +640,10 @@ func (c *ProjectCache) watchLoop(lp *LoadedProject, slug string, w *store.Projec
 
 // hydrateTicket builds a domain.Ticket from a store.TicketRecord plus its
 // sibling markdown files. Comments are loaded in the same pass since the
-// caller already has the ticket dir resolved.
-func (c *ProjectCache) hydrateTicket(ticketDir string, tr *store.TicketRecord) (*domain.Ticket, []*domain.Comment, error) {
+// caller already has the ticket dir resolved. st is the project's resolved
+// Store (used for WalkComments), passed in so hydrateTicket doesn't have to
+// re-resolve via c.resolvers.
+func (c *ProjectCache) hydrateTicket(st *store.Store, ticketDir string, tr *store.TicketRecord) (*domain.Ticket, []*domain.Comment, error) {
 	body, err := readFileIfExists(filepath.Join(ticketDir, "body.md"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("read body: %w", err)
@@ -629,7 +688,7 @@ func (c *ProjectCache) hydrateTicket(ticketDir string, tr *store.TicketRecord) (
 	}
 
 	cs := make([]*domain.Comment, 0)
-	if err := c.store.WalkComments(ticketDir, func(cr *store.CommentRecord, body string) error {
+	if err := st.WalkComments(ticketDir, func(cr *store.CommentRecord, body string) error {
 		dc := &domain.Comment{
 			ID:         cr.ID,
 			TicketID:   cr.TicketID,
