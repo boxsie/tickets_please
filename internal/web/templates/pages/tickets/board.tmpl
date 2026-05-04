@@ -3,12 +3,11 @@
 {{- $phaseSlug := .Body.PhaseSlug -}}
 <section class="board-page">
   <header class="page-header">
+    <a class="back-link" href="/p/{{$proj.Slug}}">{{$proj.Name}}</a>
     <h1>Board</h1>
-    <p class="subtitle"><a href="/p/{{$proj.Slug}}">{{$proj.Name}}</a></p>
     <div class="page-actions">
       <a class="btn btn-primary" href="/p/{{$proj.Slug}}/tickets/new">New ticket</a>
       <a class="btn" href="/p/{{$proj.Slug}}/waves">View waves</a>
-      <a class="btn" href="/p/{{$proj.Slug}}">← back to project</a>
       {{if .Body.Phases}}
       <form method="get" action="/p/{{$proj.Slug}}/board" class="inline-filter">
         <label for="phase">Phase</label>

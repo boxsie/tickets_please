@@ -65,7 +65,7 @@ module.exports = {
     "ticket-detail", "ticket-grid", "ticket-main", "ticket-side",
     "ticket-meta", "id-pill", "transition", "subtitle",
     "card-compact", "btn-sm", "short", "count",
-    "breadcrumb-sep", "footnote",
+    "breadcrumb-sep", "footnote", "back-link",
     "form-page-wide", "fs-picker", "fs-breadcrumb", "fs-sep",
     "fs-actions", "marker-hint", "fs-listing", "fs-row",
     "fs-row-marker", "fs-empty", "marker-badge", "inline-badge",

@@ -4,11 +4,9 @@
 {{- $tkt := $f.Ticket -}}
 <section class="form-page">
   <header class="page-header">
-    <h1>Edit {{$tkt.Title}}</h1>
-    <p class="muted">
-      <a href="/tickets/{{$tkt.ID}}?slug={{$proj.Slug}}">← back to ticket</a>
-      · phase + dependencies edited via the action panel on the detail page
-    </p>
+    <a class="back-link" href="/tickets/{{$tkt.ID}}?slug={{$proj.Slug}}">{{$tkt.Title}}</a>
+    <h1>Edit ticket</h1>
+    <p class="subtitle">Phase + dependencies are edited via the action panel on the detail page.</p>
   </header>
   {{if $f.FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{$f.FormError}}</div>{{end}}
   <form method="post" action="/tickets/{{$tkt.ID}}?slug={{$proj.Slug}}" class="stack">

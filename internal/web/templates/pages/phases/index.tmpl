@@ -2,12 +2,11 @@
 {{- $proj := .Body.Project -}}
 <section class="phases-index">
   <header class="page-header">
+    <a class="back-link" href="/p/{{$proj.Slug}}">{{$proj.Name}}</a>
     <h1>Phases</h1>
-    <p class="subtitle"><a href="/p/{{$proj.Slug}}">{{$proj.Name}}</a></p>
     <div class="page-actions">
       <a class="btn btn-primary" href="/p/{{$proj.Slug}}/phases/new">New phase</a>
       <a class="btn" href="/p/{{$proj.Slug}}/waves">View waves</a>
-      <a class="btn" href="/p/{{$proj.Slug}}">← back to project</a>
     </div>
   </header>
   {{if .Body.Phases}}

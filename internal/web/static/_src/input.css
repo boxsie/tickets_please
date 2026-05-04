@@ -456,6 +456,21 @@
 
   .breadcrumb-sep::before { content: "·"; margin: 0 0.4rem; color: var(--fg-faint); }
 
+  /* Back link: small muted up-link above the page H1, used by sub-pages
+     (phases index, board, waves, summary editors). Quieter than a button
+     so it doesn't compete with the page-actions row. */
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.82rem;
+    color: var(--fg-muted);
+    margin: 0 0 0.55rem;
+    line-height: 1.2;
+  }
+  .back-link:hover { color: var(--accent); text-decoration: none; }
+  .back-link::before { content: "←"; font-size: 0.95em; }
+
   /* ============================================================
      Cards
      ============================================================ */

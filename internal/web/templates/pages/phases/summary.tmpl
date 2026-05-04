@@ -4,10 +4,8 @@
 {{- $phase := $b.Phase -}}
 <section class="phase-summary">
   <header class="page-header">
+    <a class="back-link" href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}">{{$phase.Name}}</a>
     <h1>{{$phase.Name}} <span class="muted">· summary</span></h1>
-    <p class="muted">
-      <a href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}">← back to phase</a>
-    </p>
   </header>
 
   <div id="summary-region">

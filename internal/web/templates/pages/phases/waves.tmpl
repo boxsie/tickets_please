@@ -2,15 +2,11 @@
 {{- $proj := .Body.Project -}}
 <section class="waves-page">
   <header class="page-header">
+    <a class="back-link" href="/p/{{$proj.Slug}}">{{$proj.Name}}</a>
     <h1>Waves</h1>
-    <p class="subtitle">
-      <a href="/p/{{$proj.Slug}}">{{$proj.Name}}</a>
-      <span class="breadcrumb-sep"></span>
-      Soft integer groupings across the whole project. Wave 0 (unassigned) sorts last.
-    </p>
+    <p class="subtitle">Soft integer groupings across the whole project. Wave 0 (unassigned) sorts last.</p>
     <div class="page-actions">
       <a class="btn" href="/p/{{$proj.Slug}}/phases">All phases</a>
-      <a class="btn" href="/p/{{$proj.Slug}}">← back to project</a>
     </div>
   </header>
 

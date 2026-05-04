@@ -3,10 +3,9 @@
 {{- $phase := .Body.Phase -}}
 <section class="phase-detail">
   <header class="page-header">
+    <a class="back-link" href="/p/{{$proj.Slug}}/phases">All phases</a>
     <h1>{{$phase.Name}}</h1>
     <p class="subtitle">
-      <a href="/p/{{$proj.Slug}}">{{$proj.Name}}</a>
-      <span class="breadcrumb-sep"></span>
       <code>{{$phase.Slug}}</code>
       {{if $phase.Description}}<span class="breadcrumb-sep"></span>{{$phase.Description}}{{end}}
       <span class="breadcrumb-sep"></span>
@@ -15,7 +14,6 @@
     <div class="page-actions">
       <a class="btn btn-primary" href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary">Summary</a>
       <a class="btn" href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/edit">Edit</a>
-      <a class="btn" href="/p/{{$proj.Slug}}/phases">← all phases</a>
     </div>
   </header>
 
