@@ -1,0 +1,9 @@
+id: 5915b10d-53c3-4243-b2a9-3549ea8a5c01
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+slug: ticket-detail-action-modals
+number: 8
+name: 'Ticket detail: action modals'
+description: Replace the right-rail action panels with native dialog modals; widen body content into the freed space.
+created_by: c37cefe9-af48-450e-93e4-6fb1c4405384
+created_at: 2026-05-05T00:02:18.146421976+01:00
+updated_at: 2026-05-05T00:02:18.146421976+01:00
