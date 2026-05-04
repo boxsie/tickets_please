@@ -2,9 +2,9 @@ id: 9b06036c-c1e7-4f0e-b944-e7ce551822ff
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 17
 title: Auto-refresh expired sessions in callWithRetry; honest unauthenticated error
-column: todo
+column: in_progress
 phase_id: 2fe42e90-3c01-443c-a4d2-40dbc9088d90
 wave: 1
 created_by: ea83c4a0-f653-4656-b69e-cdc5c69f57b2
 created_at: 2026-05-04T12:48:37.048675303+01:00
-updated_at: 2026-05-04T12:48:37.048675303+01:00
+updated_at: 2026-05-04T12:49:14.732917031+01:00
