@@ -2,12 +2,14 @@ id: a7f80d53-ade2-43e2-bd3e-8dafeb7a06e2
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 25
 title: Drop /waves page; polish /phases visual hierarchy
-column: in_progress
+column: done
 phase_id: ba77af7e-a855-49b3-8136-8567123d019d
 wave: 2
 depends_on:
     - 2e85a781-988e-4a0c-a8c1-3bfe120ebd5a
     - 82ff144b-3a84-44d8-b153-3ee6b055bb2c
 created_by: 62bf4824-1660-4e8f-a141-16a97bc93977
+completed_by: 0984fff5-192d-4589-bb1c-31375ce07b76
+completed_at: 2026-05-04T22:09:14.635829327+01:00
 created_at: 2026-05-04T21:59:12.100427728+01:00
-updated_at: 2026-05-04T21:59:18.650685601+01:00
+updated_at: 2026-05-04T22:09:14.635829327+01:00
