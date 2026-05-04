@@ -1,0 +1,9 @@
+id: 2fe42e90-3c01-443c-a4d2-40dbc9088d90
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+slug: mcp-auth-hardening
+number: 3
+name: MCP auth hardening
+description: Auto-refresh expired sessions on tool call; surface expiry honestly.
+created_by: ea83c4a0-f653-4656-b69e-cdc5c69f57b2
+created_at: 2026-05-04T12:47:57.219563238+01:00
+updated_at: 2026-05-04T12:47:57.219563238+01:00
