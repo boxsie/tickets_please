@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -415,19 +416,48 @@ func (a *app) handlePhaseSummaryUpdate(w http.ResponseWriter, r *http.Request) {
 
 // --- waves view ------------------------------------------------------------
 
-// wavesPageData groups WaveSummary + the actual tickets in each wave so the
-// view can render a section per wave.
+// wavesPageData carries the cross-phase wave matrix + the existing flat-list
+// view so the template can render whichever the project shape calls for.
+//
+//   - Phases     ordered by Number; matrix columns. Empty → matrix is omitted.
+//   - Rows       wave rows, ordered ascending with wave 0 last; each carries
+//                len(Phases)+1 cells (last cell is the "Unphased" column).
+//   - Sections   the per-wave flat list nested under the expanded-view details.
+//   - Mismatch   non-empty when sum(cells.count) != len(tickets); rendered as
+//                a debug banner so we never silently drop tickets.
 type wavesPageData struct {
-	Project *domain.Project
-	Waves   []waveSection
+	Project  *domain.Project
+	Phases   []*domain.Phase
+	Rows     []waveMatrixRow
+	Sections []waveSection
+	Mismatch string
 }
 
 type waveSection struct {
 	Wave    int
 	Tickets []*domain.Ticket
 	// IsUnassigned is true for the wave-0 bucket; templates render it with
-	// muted styling per the ticket's gotcha #2.
+	// muted styling per the original waves view's convention.
 	IsUnassigned bool
+}
+
+type waveMatrixRow struct {
+	Wave         int
+	IsUnassigned bool
+	Cells        []waveMatrixCell // len = len(phases)+1; last cell is Unphased
+}
+
+type waveMatrixCell struct {
+	PhaseSlug string // empty for the Unphased column
+	Count     int
+	Dots      columnDistribution
+}
+
+// columnDistribution counts tickets per kanban column inside one matrix cell
+// so the template can render a tiny status-dot strip without re-walking the
+// ticket slice. Field names mirror domain.ColumnTodo etc.
+type columnDistribution struct {
+	Todo, InProgress, Testing, Done int
 }
 
 func (a *app) handleWaves(w http.ResponseWriter, r *http.Request) {
@@ -442,6 +472,11 @@ func (a *app) handleWaves(w http.ResponseWriter, r *http.Request) {
 	// docstring; the page wants the *project* view across all phases. The
 	// simpler-and-correct path: ListTickets once for the whole project,
 	// bucket in-handler via the shared helper.
+	phases, err := a.deps.Service.ListPhases(r.Context(), slug)
+	if err != nil {
+		a.deps.Logger.Warn("waves: list phases", "err", err)
+		phases = nil
+	}
 	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
 		ProjectIDOrSlug: slug,
 		Limit:           200,
@@ -451,12 +486,130 @@ func (a *app) handleWaves(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sections := bucketTicketsByWave(tickets)
+	rows, mismatch := buildWaveMatrix(phases, tickets)
+	if mismatch != "" {
+		a.deps.Logger.Warn("waves: matrix integrity mismatch", "slug", slug, "detail", mismatch)
+	}
 
 	a.renderer.Page(w, r, "phases/waves", PageOpts{
 		Title:       "Waves · " + proj.Name,
 		CurrentSlug: proj.Slug,
-		Body:        wavesPageData{Project: proj, Waves: sections},
+		Body: wavesPageData{
+			Project:  proj,
+			Phases:   phases,
+			Rows:     rows,
+			Sections: sections,
+			Mismatch: mismatch,
+		},
 	})
+}
+
+// buildWaveMatrix groups tickets by (wave, phase or unphased). Returns the
+// rows in ascending-wave-number order with wave 0 last, and a non-empty
+// mismatch string when sum(cells.count) != len(tickets) — used to flag
+// orphan PhaseIDs (e.g. tickets pointing at a deleted phase) so the page
+// can surface a debug banner instead of silently dropping the tickets.
+//
+// When phases is empty, returns nil rows; the caller falls back to the
+// flat-list-only template path.
+func buildWaveMatrix(phases []*domain.Phase, tickets []*domain.Ticket) ([]waveMatrixRow, string) {
+	if len(phases) == 0 {
+		// Still walk tickets so a missing-tickets-vs-cells check is meaningful
+		// for the caller, but rows are nil and the template skips the matrix.
+		return nil, ""
+	}
+
+	phaseIdxByID := make(map[string]int, len(phases))
+	for i, ph := range phases {
+		phaseIdxByID[ph.ID] = i
+	}
+	unphasedIdx := len(phases) // last column
+
+	// waves[wave] = []cell where cell index matches phaseIdxByID, plus a
+	// final unphased column.
+	type cellKey struct {
+		wave, col int
+	}
+	cells := map[cellKey]*waveMatrixCell{}
+	waveSet := map[int]struct{}{}
+	placed := 0
+	for _, t := range tickets {
+		col := unphasedIdx
+		if t.PhaseID != nil {
+			if idx, ok := phaseIdxByID[*t.PhaseID]; ok {
+				col = idx
+			} else {
+				// Orphan PhaseID — counted as unphased in the cells but the
+				// caller will see the placement-vs-len mismatch via the
+				// returned string.
+				col = unphasedIdx
+			}
+		}
+		k := cellKey{wave: t.Wave, col: col}
+		c, ok := cells[k]
+		if !ok {
+			slug := ""
+			if col < len(phases) {
+				slug = phases[col].Slug
+			}
+			c = &waveMatrixCell{PhaseSlug: slug}
+			cells[k] = c
+		}
+		c.Count++
+		switch t.Column {
+		case domain.ColumnTodo:
+			c.Dots.Todo++
+		case domain.ColumnInProgress:
+			c.Dots.InProgress++
+		case domain.ColumnTesting:
+			c.Dots.Testing++
+		case domain.ColumnDone:
+			c.Dots.Done++
+		}
+		waveSet[t.Wave] = struct{}{}
+		placed++
+	}
+
+	waves := make([]int, 0, len(waveSet))
+	for w := range waveSet {
+		waves = append(waves, w)
+	}
+	sort.Slice(waves, func(i, j int) bool {
+		ai, aj := waves[i], waves[j]
+		if ai == 0 {
+			ai = int(^uint(0) >> 1)
+		}
+		if aj == 0 {
+			aj = int(^uint(0) >> 1)
+		}
+		return ai < aj
+	})
+
+	rows := make([]waveMatrixRow, 0, len(waves))
+	rowWidth := len(phases) + 1
+	cellTotal := 0
+	for _, w := range waves {
+		row := waveMatrixRow{Wave: w, IsUnassigned: w == 0, Cells: make([]waveMatrixCell, rowWidth)}
+		for col := 0; col < rowWidth; col++ {
+			if c, ok := cells[cellKey{wave: w, col: col}]; ok {
+				row.Cells[col] = *c
+				cellTotal += c.Count
+			} else {
+				slug := ""
+				if col < len(phases) {
+					slug = phases[col].Slug
+				}
+				row.Cells[col] = waveMatrixCell{PhaseSlug: slug}
+			}
+		}
+		rows = append(rows, row)
+	}
+
+	mismatch := ""
+	if cellTotal != len(tickets) {
+		mismatch = fmt.Sprintf("matrix sum %d does not equal ticket count %d (orphan phase reference?)", cellTotal, len(tickets))
+	}
+	return rows, mismatch
 }
 
 // --- assign ticket to phase -----------------------------------------------

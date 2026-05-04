@@ -1470,6 +1470,165 @@
   }
 
   /* ============================================================
+     Waves page — wave × phase matrix
+     ============================================================ */
+  .wave-debug-banner {
+    background: rgba(245,165,36,0.08);
+    border: 1px solid rgba(245,165,36,0.4);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    color: var(--fg);
+    font-size: 0.9rem;
+  }
+  .wave-debug-banner code {
+    font-size: 0.82rem;
+    color: var(--warn);
+    background: var(--bg-base);
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+  }
+  .wave-matrix-card {
+    overflow: hidden;
+    padding: 0.75rem 0;
+  }
+  .wave-matrix-card > h2 { padding: 0 1rem; }
+  .wave-matrix-scroll {
+    overflow-x: auto;
+    padding: 0 0.5rem;
+  }
+  .wave-matrix {
+    border-collapse: separate;
+    border-spacing: 4px;
+    margin: 0 auto;
+    min-width: 100%;
+  }
+  .wave-matrix th, .wave-matrix td {
+    padding: 0;
+    text-align: left;
+    vertical-align: middle;
+  }
+  .wave-matrix-corner {
+    width: 1%;
+    background: transparent;
+  }
+  .wave-matrix-phase {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--fg);
+    padding: 0.4rem 0.6rem !important;
+    background: var(--bg-base);
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .wave-matrix-phase a { color: var(--fg); }
+  .wave-matrix-phase a:hover { color: var(--accent); text-decoration: none; }
+  .wave-matrix-unphased {
+    color: var(--fg-muted);
+    font-style: italic;
+  }
+  .wave-matrix-wave {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--fg);
+    padding: 0.4rem 0.7rem !important;
+    background: var(--bg-base);
+    border-radius: 6px;
+    white-space: nowrap;
+    text-align: right;
+  }
+  .wave-matrix-row.muted-section .wave-matrix-wave { color: var(--fg-muted); }
+  .wave-cell {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    transition: border-color 0.12s, background 0.12s;
+    min-width: 5rem;
+  }
+  .wave-cell:hover {
+    border-color: rgba(106,169,255,0.4);
+    background: var(--bg-hover);
+  }
+  .wave-cell-empty {
+    background: transparent;
+    border: 1px dashed var(--line);
+    text-align: center;
+    color: var(--fg-muted);
+  }
+  .wave-cell-empty:hover { border-color: var(--line); background: transparent; }
+  .wave-cell-link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0.7rem;
+    color: var(--fg);
+    text-decoration: none;
+    height: 100%;
+  }
+  .wave-cell-link:hover { color: var(--fg); text-decoration: none; }
+  .wave-cell-link.wave-cell-static { color: var(--fg-muted); }
+  .wave-cell-count {
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .wave-cell-dots {
+    display: flex;
+    gap: 0.2rem;
+    align-items: center;
+  }
+  .wave-cell-dots .dot {
+    width: 0.45rem; height: 0.45rem; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .wave-matrix-legend {
+    display: flex;
+    gap: 0.85rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 0.6rem 1rem 0 1rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed var(--line);
+    font-size: 0.78rem;
+    color: var(--fg-muted);
+  }
+  .wave-matrix-legend .dot {
+    width: 0.5rem; height: 0.5rem; border-radius: 50%;
+    margin-right: 0.15rem;
+  }
+
+  .wave-expanded {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-top: 1rem;
+    overflow: hidden;
+  }
+  .wave-expanded > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.65rem 0.9rem;
+    color: var(--fg-muted);
+    font-size: 0.88rem;
+  }
+  .wave-expanded > summary::-webkit-details-marker { display: none; }
+  .wave-expanded > summary::before {
+    content: "▸";
+    margin-right: 0.5rem;
+    transition: transform 0.12s;
+    display: inline-block;
+  }
+  .wave-expanded[open] > summary::before { transform: rotate(90deg); }
+  .wave-expanded-body {
+    padding: 0 0.9rem 0.9rem 0.9rem;
+    border-top: 1px dashed var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+  .wave-expanded-body > .card { margin: 0.85rem 0 0 0; }
+
+  /* ============================================================
      Filesystem picker (/p/load)
      ============================================================ */
   .form-page-wide { max-width: 56rem; }

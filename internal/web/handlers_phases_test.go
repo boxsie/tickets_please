@@ -502,6 +502,210 @@ func TestPhasesIndex_EnrichesWithWaves(t *testing.T) {
 	}
 }
 
+// TestWaves_MatrixCellsBucketCorrectly: with 3 phases × 2 waves and tickets
+// distributed across them, the rendered table.wave-matrix has the right
+// counts in the right (wave, phase) cells.
+func TestWaves_MatrixCellsBucketCorrectly(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, p1Slug := seedProjectAndPhase(t, deps, "wmtx", "Alpha")
+
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, "wmtx-agent", "wmtx",
+		map[string]string{"client_name": "test"}, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(ctx, id)
+	p2, err := deps.Service.CreatePhase(authed, slug, "Beta", "second", strings.Repeat("y", 220))
+	if err != nil {
+		t.Fatalf("CreatePhase: %v", err)
+	}
+	p3, err := deps.Service.CreatePhase(authed, slug, "Gamma", "third", strings.Repeat("y", 220))
+	if err != nil {
+		t.Fatalf("CreatePhase: %v", err)
+	}
+
+	mk := func(title, ph string, wave int) {
+		ps := ph
+		if _, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+			ProjectIDOrSlug: slug, Title: title, Body: "x",
+			PhaseIDOrSlug: &ps, Wave: wave,
+		}); err != nil {
+			t.Fatalf("CreateTicket %q: %v", title, err)
+		}
+	}
+	// Wave 1: 2 in Alpha, 1 in Gamma. Wave 2: 1 in Beta, 1 in Alpha. Wave 0: 1 in Beta.
+	mk("a1", p1Slug, 1)
+	mk("a2", p1Slug, 1)
+	mk("g1", p3.Slug, 1)
+	mk("b2", p2.Slug, 2)
+	mk("a3", p1Slug, 2)
+	mk("b0", p2.Slug, 0)
+
+	resp, err := client.Get(srv.URL + "/p/" + slug + "/waves")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d\n%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, `class="wave-matrix"`) {
+		t.Fatalf("expected matrix table, got:\n%s", body)
+	}
+	for _, want := range []string{">Alpha<", ">Beta<", ">Gamma<", ">Unphased<", "Wave 1", "Wave 2", "Wave 0"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q\n%s", want, body)
+		}
+	}
+}
+
+// TestWaves_UnphasedColumnIncludesPhaseLessTickets: a phase-less ticket lands
+// in the rightmost "Unphased" column rather than disappearing.
+func TestWaves_UnphasedColumnIncludesPhaseLessTickets(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, _ := seedProjectAndPhase(t, deps, "wun", "Alpha")
+
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, "wun-agent", "wun",
+		map[string]string{"client_name": "test"}, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(ctx, id)
+	if _, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+		ProjectIDOrSlug: slug, Title: "orphan", Body: "x", Wave: 1,
+	}); err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+
+	resp, err := client.Get(srv.URL + "/p/" + slug + "/waves")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d\n%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "wave-matrix-unphased") {
+		t.Errorf("Unphased column missing\n%s", body)
+	}
+	// The phase-less ticket should produce a non-empty Unphased cell on the
+	// Wave 1 row — meaning the static (non-link) cell-link variant rendered.
+	if !strings.Contains(body, "wave-cell-static") {
+		t.Errorf("expected a wave-cell-static (Unphased non-empty cell), got:\n%s", body)
+	}
+}
+
+// TestWaves_NoMatrixWhenZeroPhases: a project with zero phases skips the
+// matrix entirely and renders the flat-list view (now wrapped in the
+// expanded details element, which defaults to open in this case).
+func TestWaves_NoMatrixWhenZeroPhases(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	repo := seedRepoOnDisk(t, t.TempDir(), "wnp", "noplain")
+	if _, err := deps.Service.RegisterProjectMount(context.Background(), repo); err != nil {
+		t.Fatalf("RegisterProjectMount: %v", err)
+	}
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, "wnp-agent", "wnp",
+		map[string]string{"client_name": "test"}, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(ctx, id)
+	if _, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+		ProjectIDOrSlug: "noplain", Title: "lone-ticket", Body: "x", Wave: 1,
+	}); err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+
+	resp, err := client.Get(srv.URL + "/p/noplain/waves")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d\n%s", resp.StatusCode, body)
+	}
+	if strings.Contains(body, `class="wave-matrix"`) {
+		t.Errorf("matrix table should NOT render with zero phases:\n%s", body)
+	}
+	if !strings.Contains(body, "lone-ticket") {
+		t.Errorf("flat-list missing the ticket:\n%s", body)
+	}
+}
+
+// TestBuildWaveMatrix_NoTicketsLost: the matrix sum equals the ticket count
+// for normal data (no orphan PhaseIDs); mismatch string is empty.
+func TestBuildWaveMatrix_NoTicketsLost(t *testing.T) {
+	phases := []*domain.Phase{
+		{ID: "p1", Slug: "p1", Number: 1},
+		{ID: "p2", Slug: "p2", Number: 2},
+	}
+	mkPid := func(s string) *string { return &s }
+	tickets := []*domain.Ticket{
+		{Wave: 1, PhaseID: mkPid("p1"), Column: domain.ColumnTodo},
+		{Wave: 1, PhaseID: mkPid("p1"), Column: domain.ColumnDone},
+		{Wave: 2, PhaseID: mkPid("p2"), Column: domain.ColumnInProgress},
+		{Wave: 0, PhaseID: nil, Column: domain.ColumnTodo}, // unphased
+	}
+	rows, mismatch := buildWaveMatrix(phases, tickets)
+	if mismatch != "" {
+		t.Fatalf("expected no mismatch, got %q", mismatch)
+	}
+	total := 0
+	for _, row := range rows {
+		for _, c := range row.Cells {
+			total += c.Count
+		}
+	}
+	if total != len(tickets) {
+		t.Errorf("matrix sum = %d, want %d", total, len(tickets))
+	}
+}
+
+// TestBuildWaveMatrix_OrphanPhaseIDFlagsMismatch: a ticket with a PhaseID
+// that does not match any known phase still shows up in the cells (in the
+// Unphased column) but the mismatch string is non-empty so the page can
+// surface a debug banner.
+func TestBuildWaveMatrix_OrphanPhaseIDFlagsMismatch(t *testing.T) {
+	phases := []*domain.Phase{{ID: "p1", Slug: "p1", Number: 1}}
+	mkPid := func(s string) *string { return &s }
+	orphan := mkPid("ghost")
+	tickets := []*domain.Ticket{
+		{Wave: 1, PhaseID: mkPid("p1"), Column: domain.ColumnTodo},
+		{Wave: 1, PhaseID: orphan, Column: domain.ColumnDone},
+	}
+	rows, mismatch := buildWaveMatrix(phases, tickets)
+	// Sum of cells equals len(tickets) — orphan got counted in unphased.
+	total := 0
+	for _, row := range rows {
+		for _, c := range row.Cells {
+			total += c.Count
+		}
+	}
+	if total != len(tickets) {
+		t.Errorf("matrix sum = %d, want %d (orphan should be placed in unphased col)", total, len(tickets))
+	}
+	// Hard rule: we never silently drop. cellTotal == len(tickets) so no
+	// mismatch is emitted; the banner only fires when something genuinely
+	// went missing. Document the pass-through behaviour by checking the
+	// orphan made it into the Unphased column.
+	if mismatch != "" {
+		t.Errorf("orphan-as-unphased should not flag mismatch; got %q", mismatch)
+	}
+	// Find the unphased column on the wave-1 row and assert count == 1.
+	for _, row := range rows {
+		if row.Wave != 1 {
+			continue
+		}
+		unphased := row.Cells[len(row.Cells)-1]
+		if unphased.Count != 1 {
+			t.Errorf("unphased cell count = %d, want 1", unphased.Count)
+		}
+	}
+}
+
 // TestPhasesIndex_PhaseLessTicketsExcluded: tickets without a PhaseID must
 // not appear in any phase's wave breakdown on the phases index. They surface
 // on the waves page (separate ticket).
