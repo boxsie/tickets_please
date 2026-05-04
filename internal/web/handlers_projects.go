@@ -220,19 +220,18 @@ func (a *app) renderLoadFormError(w http.ResponseWriter, r *http.Request, msg, p
 
 // --- detail / edit / update / delete --------------------------------------
 
-// projectDetailData is the payload for pages/projects/detail.tmpl. Phases
-// list is included so the detail page can render a tab strip with counts
-// (the Phases tab links to ticket 4's UI).
+// projectDetailData is the payload for pages/projects/detail.tmpl. The
+// Phases list drives the inline "Phases" card on the detail page; the
+// per-project nav in the sidebar handles section navigation.
 type projectDetailData struct {
-	Project    *domain.Project
-	Phases     []*domain.Phase
-	PhaseCount int
+	Project *domain.Project
+	Phases  []*domain.Phase
 }
 
-// handleProjectDetail serves GET /p/{slug}. Header + tabs (Board, Phases,
-// Summary) + phase-count breadcrumbs. Tickets/Phases tabs route to ticket 4
-// and ticket 5 respectively; both 404 today, which is fine for the
-// foundation since the project page itself renders.
+// handleProjectDetail serves GET /p/{slug} — project overview (summary +
+// phases card + danger-zone delete). Section navigation (Board / Phases /
+// Waves / Summary) lives in the sidebar's per-project nav; this page is
+// just the overview.
 func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
@@ -246,9 +245,8 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 		Title:       proj.Name + " · tickets_please",
 		CurrentSlug: proj.Slug,
 		Body: projectDetailData{
-			Project:    proj,
-			Phases:     phases,
-			PhaseCount: len(phases),
+			Project: proj,
+			Phases:  phases,
 		},
 	})
 }
