@@ -10,26 +10,43 @@
     </div>
   </header>
   {{if .Body.Phases}}
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Slug</th>
-        <th>Description</th>
-        <th>Active / Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Body.Phases}}
-      <tr>
-        <td><a href="/p/{{$proj.Slug}}/phases/{{.Slug}}">{{.Name}}</a></td>
-        <td><code>{{.Slug}}</code></td>
-        <td class="muted">{{.Description}}</td>
-        <td>{{.ActiveTicketCount}} / {{.TicketCount}}</td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
+    {{range .Body.Phases}}
+      {{- $ph := .Phase -}}
+      <details class="phase-row">
+        <summary class="phase-row-summary">
+          <span class="phase-row-chevron" aria-hidden="true">▸</span>
+          <span class="phase-row-name"><a href="/p/{{$proj.Slug}}/phases/{{$ph.Slug}}">{{$ph.Name}}</a></span>
+          <code class="phase-row-slug">{{$ph.Slug}}</code>
+          <span class="phase-row-counts">{{$ph.ActiveTicketCount}} active <span class="muted">/ {{$ph.TicketCount}} total</span></span>
+          {{if $ph.Description}}<span class="phase-row-desc">{{$ph.Description}}</span>{{end}}
+        </summary>
+        <div class="phase-row-body">
+          {{if .Waves}}
+            {{range .Waves}}
+            <section class="phase-wave{{if .IsUnassigned}} muted-section{{end}}">
+              <h3 class="phase-wave-heading">
+                {{if .IsUnassigned}}Wave 0 <span class="muted">(unassigned)</span>{{else}}Wave {{.Wave}}{{end}}
+                <span class="muted">— {{len .Tickets}} ticket{{if ne (len .Tickets) 1}}s{{end}}</span>
+              </h3>
+              <ul class="ticket-list">
+                {{range .Tickets}}
+                <li>
+                  <a class="ticket-list-title" href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a>
+                  <div class="ticket-list-meta">
+                    <span class="dot dot-{{.Column}}"></span>
+                    <span class="muted">{{.Column}}</span>
+                  </div>
+                </li>
+                {{end}}
+              </ul>
+            </section>
+            {{end}}
+          {{else}}
+            <p class="hint">No tickets in this phase yet. <a href="/p/{{$proj.Slug}}/tickets/new">Create one →</a></p>
+          {{end}}
+        </div>
+      </details>
+    {{end}}
   {{else}}
   <div class="empty-state">
     <h1>No phases yet</h1>

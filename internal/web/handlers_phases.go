@@ -29,7 +29,15 @@ import (
 
 type phasesIndexData struct {
 	Project *domain.Project
-	Phases  []*domain.Phase
+	Phases  []phaseWithWaves
+}
+
+// phaseWithWaves carries a phase + the wave-bucketed tickets that belong to
+// it, so the index can render each phase as a collapsible drill-down without
+// a second round-trip from the template.
+type phaseWithWaves struct {
+	Phase *domain.Phase
+	Waves []waveSection
 }
 
 func (a *app) handlePhasesIndex(w http.ResponseWriter, r *http.Request) {
@@ -44,11 +52,89 @@ func (a *app) handlePhasesIndex(w http.ResponseWriter, r *http.Request) {
 		a.renderer.Error(w, r, classifyServiceError(err), err)
 		return
 	}
+	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
+		ProjectIDOrSlug: slug,
+		Limit:           200,
+	})
+	if err != nil {
+		// Tickets failure degrades to phases-without-waves rather than 500ing.
+		// The page still renders useful info; a missing wave breakdown is a
+		// soft failure.
+		a.deps.Logger.Warn("phases: list tickets for index", "err", err)
+		tickets = nil
+	}
+	enriched := bucketTicketsByPhaseAndWave(phases, tickets)
 	a.renderer.Page(w, r, "phases/index", PageOpts{
 		Title:       proj.Name + " · phases · tickets_please",
 		CurrentSlug: slug,
-		Body:        phasesIndexData{Project: proj, Phases: phases},
+		Body:        phasesIndexData{Project: proj, Phases: enriched},
 	})
+}
+
+// bucketTicketsByPhaseAndWave groups tickets by (phase, wave) and returns the
+// phases (in their input order — caller decides ordering) each carrying the
+// per-wave sections of *their* tickets. Tickets with PhaseID == nil OR with
+// a PhaseID that doesn't match any phase are dropped from this output —
+// the phases index intentionally excludes phase-less tickets (the waves
+// page surfaces them via the "Unphased" column). Orphan PhaseIDs are
+// logged at the call site, not here, since this helper has no logger.
+func bucketTicketsByPhaseAndWave(phases []*domain.Phase, tickets []*domain.Ticket) []phaseWithWaves {
+	// Index tickets by phase ID for O(1) lookup per phase.
+	byPhase := map[string][]*domain.Ticket{}
+	for _, t := range tickets {
+		if t.PhaseID == nil {
+			continue
+		}
+		byPhase[*t.PhaseID] = append(byPhase[*t.PhaseID], t)
+	}
+	out := make([]phaseWithWaves, 0, len(phases))
+	for _, ph := range phases {
+		mine := byPhase[ph.ID]
+		out = append(out, phaseWithWaves{
+			Phase: ph,
+			Waves: bucketTicketsByWave(mine),
+		})
+	}
+	return out
+}
+
+// bucketTicketsByWave groups tickets by wave number, ordered ascending with
+// wave 0 (unassigned) sorted last — matches svc.ListWaves and handleWaves.
+// Within each wave tickets are sorted by title for deterministic rendering.
+func bucketTicketsByWave(tickets []*domain.Ticket) []waveSection {
+	if len(tickets) == 0 {
+		return nil
+	}
+	buckets := map[int][]*domain.Ticket{}
+	for _, t := range tickets {
+		buckets[t.Wave] = append(buckets[t.Wave], t)
+	}
+	for _, ts := range buckets {
+		sort.Slice(ts, func(i, j int) bool { return ts[i].Title < ts[j].Title })
+	}
+	waves := make([]int, 0, len(buckets))
+	for w := range buckets {
+		waves = append(waves, w)
+	}
+	sort.Slice(waves, func(i, j int) bool {
+		ai, aj := waves[i], waves[j]
+		if ai == 0 {
+			ai = int(^uint(0) >> 1)
+		}
+		if aj == 0 {
+			aj = int(^uint(0) >> 1)
+		}
+		return ai < aj
+	})
+	out := make([]waveSection, 0, len(waves))
+	for _, w := range waves {
+		out = append(out, waveSection{
+			Wave:         w,
+			Tickets:      buckets[w],
+			IsUnassigned: w == 0,
+		})
+	}
+	return out
 }
 
 type phaseFormData struct {
@@ -355,7 +441,7 @@ func (a *app) handleWaves(w http.ResponseWriter, r *http.Request) {
 	// ListWaves with phaseIDOrSlug=nil only covers phase-less tickets per its
 	// docstring; the page wants the *project* view across all phases. The
 	// simpler-and-correct path: ListTickets once for the whole project,
-	// bucket in-handler.
+	// bucket in-handler via the shared helper.
 	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
 		ProjectIDOrSlug: slug,
 		Limit:           200,
@@ -364,42 +450,7 @@ func (a *app) handleWaves(w http.ResponseWriter, r *http.Request) {
 		a.renderer.Error(w, r, classifyServiceError(err), err)
 		return
 	}
-
-	buckets := map[int][]*domain.Ticket{}
-	for _, t := range tickets {
-		buckets[t.Wave] = append(buckets[t.Wave], t)
-	}
-	// Sort each bucket by title for deterministic rendering. Stable across
-	// page reloads is more useful here than freshness.
-	for _, ts := range buckets {
-		sort.Slice(ts, func(i, j int) bool { return ts[i].Title < ts[j].Title })
-	}
-
-	// Order: ascending wave number, with wave 0 (unassigned) last. Same
-	// convention as svc.ListWaves.
-	waves := make([]int, 0, len(buckets))
-	for w := range buckets {
-		waves = append(waves, w)
-	}
-	sort.Slice(waves, func(i, j int) bool {
-		ai, aj := waves[i], waves[j]
-		if ai == 0 {
-			ai = int(^uint(0) >> 1)
-		}
-		if aj == 0 {
-			aj = int(^uint(0) >> 1)
-		}
-		return ai < aj
-	})
-
-	sections := make([]waveSection, 0, len(waves))
-	for _, w := range waves {
-		sections = append(sections, waveSection{
-			Wave:         w,
-			Tickets:      buckets[w],
-			IsUnassigned: w == 0,
-		})
-	}
+	sections := bucketTicketsByWave(tickets)
 
 	a.renderer.Page(w, r, "phases/waves", PageOpts{
 		Title:       "Waves · " + proj.Name,

@@ -414,3 +414,128 @@ func TestAssignTicketToPhase_Happy(t *testing.T) {
 		t.Errorf("Location missing slug hint: %q", loc)
 	}
 }
+
+// TestPhasesIndex_RendersDetailsPerPhase: the new collapsible layout uses
+// <details class="phase-row"> per phase rather than a flat <table>.
+func TestPhasesIndex_RendersDetailsPerPhase(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	seedProjectAndPhase(t, deps, "demo", "First Phase")
+
+	resp, err := client.Get(srv.URL + "/p/demo/phases")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, `<details class="phase-row">`) {
+		t.Errorf("expected a phase-row details element, got:\n%s", body)
+	}
+	// Default-collapsed: no `open` attribute on the details tag.
+	if strings.Contains(body, `<details class="phase-row" open>`) {
+		t.Errorf("phase-row should default to collapsed, found open attribute")
+	}
+}
+
+// TestPhasesIndex_EnrichesWithWaves: with tickets distributed across waves
+// in a phase, the phase row's body lists each wave with its tickets and
+// keeps tickets from a different phase out of the bucket.
+func TestPhasesIndex_EnrichesWithWaves(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, phase1Slug := seedProjectAndPhase(t, deps, "ewp", "Alpha")
+
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, "ewp-agent", "ewp",
+		map[string]string{"client_name": "test"}, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(ctx, id)
+
+	// Second phase so we can verify no cross-phase leakage.
+	phase2, err := deps.Service.CreatePhase(authed, slug, "Beta", "second", strings.Repeat("y", 220))
+	if err != nil {
+		t.Fatalf("CreatePhase: %v", err)
+	}
+
+	mkTicket := func(title, phaseSlug string, wave int) {
+		ps := phaseSlug
+		if _, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+			ProjectIDOrSlug: slug,
+			Title:           title,
+			Body:            "x",
+			PhaseIDOrSlug:   &ps,
+			Wave:            wave,
+		}); err != nil {
+			t.Fatalf("CreateTicket %q: %v", title, err)
+		}
+	}
+	// Alpha phase: two tickets in wave 1, one in wave 2.
+	mkTicket("alpha-w1-a", phase1Slug, 1)
+	mkTicket("alpha-w1-b", phase1Slug, 1)
+	mkTicket("alpha-w2", phase1Slug, 2)
+	// Beta phase: one ticket in wave 1.
+	mkTicket("beta-w1", phase2.Slug, 1)
+
+	resp, err := client.Get(srv.URL + "/p/" + slug + "/phases")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	for _, want := range []string{"alpha-w1-a", "alpha-w1-b", "alpha-w2", "beta-w1", "Wave 1", "Wave 2"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q\n%s", want, body)
+		}
+	}
+	// Beta's ticket must not appear inside Alpha's phase-row body. We assert
+	// this structurally: split the page on </details> and check that whichever
+	// chunk contains "Alpha" doesn't also contain "beta-w1".
+	chunks := strings.Split(body, "</details>")
+	for _, chunk := range chunks {
+		if strings.Contains(chunk, ">Alpha<") && strings.Contains(chunk, "beta-w1") {
+			t.Errorf("beta-w1 leaked into the Alpha phase row")
+		}
+	}
+}
+
+// TestPhasesIndex_PhaseLessTicketsExcluded: tickets without a PhaseID must
+// not appear in any phase's wave breakdown on the phases index. They surface
+// on the waves page (separate ticket).
+func TestPhasesIndex_PhaseLessTicketsExcluded(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, _ := seedProjectAndPhase(t, deps, "plx", "Alpha")
+
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, "plx-agent", "plx",
+		map[string]string{"client_name": "test"}, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(ctx, id)
+
+	if _, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+		ProjectIDOrSlug: slug,
+		Title:           "orphan-ticket",
+		Body:            "x",
+		Wave:            1,
+		// PhaseIDOrSlug intentionally nil
+	}); err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+
+	resp, err := client.Get(srv.URL + "/p/" + slug + "/phases")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d\n%s", resp.StatusCode, body)
+	}
+	if strings.Contains(body, "orphan-ticket") {
+		t.Errorf("phase-less ticket leaked into phases index:\n%s", body)
+	}
+}
