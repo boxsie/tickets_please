@@ -29,6 +29,16 @@ const ServerInstructions = `tickets_please is a Trello-shaped, LLM-first ticketi
 - **Waves** are soft integer groupings inside a phase or project. Use ` + "`list_waves`" + ` to see how a body of work decomposes; ` + "`list_tickets`" + ` accepts a ` + "`wave`" + ` filter. Waves don't gate execution — they're an organizational hint.
 - **` + "`depends_on`" + `** is a hard prerequisite (gates ` + "`ready_only`" + `). **` + "`parallelizable_with`" + `** is purely advisory.
 
+## Bootstrapping a new project
+
+Cold-starting in a repo with no ` + "`.tickets_please/project.yaml`" + ` is a chicken-and-egg: ` + "`create_project`" + ` needs a session, ` + "`register_agent`" + ` needs ` + "`project.yaml`" + `. The escape valve is stdio.
+
+1. Launch ` + "`tickets_please mcp`" + ` from a stdio client (Claude Code, etc.) — the binary pre-registers a session at startup, no ` + "`project.yaml`" + ` required.
+2. Call ` + "`create_project`" + ` from that stdio session. This writes ` + "`project.yaml`" + ` and mounts the project.
+3. Any client (HTTP or stdio) can now ` + "`register_agent`" + ` against the repo's ` + "`project_path`" + ` and use the full tool set.
+
+If you see ` + "`no .tickets_please/project.yaml at <path>`" + ` from ` + "`register_agent`" + `, that's the trigger to do the above — not a sign the system is in a weird state.
+
 ## Identity
 
 Your identity travels with every mutation as ` + "`created_by` / `completed_by` / `author_id`" + `. ` + "`who_am_i`" + ` shows the registered identity if you want to confirm. HTTP clients should call ` + "`register_agent`" + ` once on connection to declare their model, client, and bound project. Stdio clients can skip if ` + "`MCP_AGENT_*`" + ` env vars are set — the binary pre-registers a session at startup.

@@ -141,6 +141,13 @@ func TestRegisterAgent_MissingProjectYAML(t *testing.T) {
 	if want := "no .tickets_please/project.yaml at " + bare; msg == "" || !contains(msg, want) {
 		t.Errorf("expected helpful message containing %q, got %q", want, msg)
 	}
+	// Cold-start error must name the bootstrap path so an agent can recover
+	// without spelunking the source code (see Bootstrap UX phase, T1).
+	for _, want := range []string{"create_project", "stdio", "pre-registered"} {
+		if !contains(msg, want) {
+			t.Errorf("expected bootstrap-guidance phrase %q in message, got %q", want, msg)
+		}
+	}
 }
 
 func TestRegisterAgent_RelativePathRejected(t *testing.T) {
@@ -448,6 +455,32 @@ func TestCallWithRetry_RefreshFailureSurfaces(t *testing.T) {
 	}
 	if contains(msg, "re-registering...") {
 		t.Errorf("legacy misleading string still surfaces: %q", msg)
+	}
+}
+
+// TestCallWithRetry_NoSessionMessage exercises the cold-start error path: when
+// callWithRetry runs without a registered session, the returned message must
+// name the bootstrap flow (create_project from a stdio session) so an agent can
+// recover from the error text alone. See Bootstrap UX phase, T1.
+func TestCallWithRetry_NoSessionMessage(t *testing.T) {
+	tools, _, _ := freshToolsForRegister(t)
+	// No callRegister. Use any handler that flows through callWithRetry —
+	// handleListProjects is the simplest.
+	res, err := tools.handleListProjects(context.Background(), mcp.CallToolRequest{})
+	if err != nil {
+		t.Fatalf("handleListProjects: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected error result for unregistered session, got: %s", extractText(t, res))
+	}
+	msg := extractText(t, res)
+	if !contains(msg, "unauthenticated:") {
+		t.Errorf("missing structured prefix: %q", msg)
+	}
+	for _, want := range []string{"register_agent", "create_project", "stdio", "pre-registered"} {
+		if !contains(msg, want) {
+			t.Errorf("expected bootstrap-guidance phrase %q in message, got %q", want, msg)
+		}
 	}
 }
 

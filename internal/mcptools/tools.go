@@ -311,7 +311,9 @@ func (t *Tools) callWithRetry(ctx context.Context, fn func(ctx context.Context) 
 	sessionID := t.sessionIDFromContext(ctx)
 	sess, ok := t.registry.Get(sessionID)
 	if !ok {
-		return fmt.Errorf("%w: no agent registered for session %q; call register_agent first",
+		return fmt.Errorf("%w: no agent registered for session %q. "+
+			"If this repo already has .tickets_please/project.yaml, call register_agent with the absolute project_path. "+
+			"If the repo has no project yet, bootstrap from a stdio launch of `tickets_please mcp` (its session is pre-registered, no project.yaml required) and call create_project there; HTTP clients can register_agent afterward.",
 			domain.ErrUnauthenticated, sessionID)
 	}
 	err := fn(svc.WithSessionID(ctx, sess.AgentID))
@@ -1239,7 +1241,12 @@ func (t *Tools) handleRegisterAgent(ctx context.Context, req mcp.CallToolRequest
 	projectRec := &store.ProjectRecord{}
 	if err := store.ReadYAML(projectYAML, projectRec); err != nil {
 		if os.IsNotExist(err) {
-			return mcp.NewToolResultError(fmt.Sprintf("no .tickets_please/project.yaml at %s", projectPath)), nil
+			return mcp.NewToolResultError(fmt.Sprintf(
+				"no .tickets_please/project.yaml at %s — this repo has no project yet. "+
+					"To bootstrap: launch `tickets_please mcp` from a stdio client (its session is pre-registered, no project.yaml required) and call create_project; "+
+					"once project.yaml exists, register_agent works from any client.",
+				projectPath,
+			)), nil
 		}
 		return mcp.NewToolResultError("invalid argument: read project.yaml: " + err.Error()), nil
 	}

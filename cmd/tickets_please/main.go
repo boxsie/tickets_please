@@ -571,5 +571,19 @@ const dataDirReadme = "# .tickets_please/ — the per-repo data directory\n\n" +
 	"`~/.tickets_please/agents/<session-uuid>.yaml` (configurable via `data_root`)\n" +
 	"so a single server instance can serve multiple repos without each one holding\n" +
 	"a copy of the agent registry.\n\n" +
+	"## Cold-starting a fresh repo\n\n" +
+	"If you've just run `tickets_please init` here, this dir has only `.staging/`\n" +
+	"and this README — there's no project yet. To create the project record:\n\n" +
+	"1. Launch the MCP server in stdio mode from this repo: `tickets_please mcp`.\n" +
+	"   The stdio binary pre-registers an agent session at startup, so no\n" +
+	"   `project.yaml` is required to call tools.\n" +
+	"2. From your LLM client, call `create_project` with `slug`, `name`, and a\n" +
+	"   substantive `summary` (≥200 chars — the summary is load-bearing context\n" +
+	"   for future work).\n" +
+	"3. `project.yaml` now exists. Any MCP client (HTTP or stdio) can\n" +
+	"   `register_agent` against this repo's path and use the full tool set.\n\n" +
+	"The chicken-and-egg detail: `register_agent` reads `project.yaml`, so it\n" +
+	"can't be called against a fresh repo. Stdio's pre-registered session is the\n" +
+	"escape valve for cold-start.\n\n" +
 	"See `../SPEC.md` (Data layout) for the canonical schema. Repos still on the\n" +
 	"v0.1 `projects/<slug>/` shape can be flattened with `tickets_please migrate`.\n"

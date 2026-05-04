@@ -17,6 +17,11 @@ func TestServerInstructionsContainsLoadBearingPhrases(t *testing.T) {
 		"Every column move requires a non-empty comment",
 		"frozen",
 		"immutable",
+		// Bootstrapping section (Bootstrap UX phase, T2): the cold-start
+		// flow must live in the persistent context every turn.
+		"Bootstrapping a new project",
+		"create_project",
+		"pre-registers",
 	}
 	for _, w := range wants {
 		if !strings.Contains(ServerInstructions, w) {
