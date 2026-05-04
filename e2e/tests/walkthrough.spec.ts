@@ -88,12 +88,7 @@ test('10 phases index (populated)', async ({ page }) => {
   await shoot(page, '10-phases-populated');
 });
 
-test('11 waves view', async ({ page }) => {
-  await page.goto('/p/demo/waves');
-  await shoot(page, '11-waves');
-});
-
-test('12 board (empty)', async ({ page }) => {
+test('11 board (empty)', async ({ page }) => {
   await page.goto('/p/demo/board');
   await shoot(page, '12-board-empty');
 });

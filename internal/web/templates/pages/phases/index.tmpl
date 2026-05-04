@@ -4,49 +4,79 @@
   <header class="page-header">
     <a class="back-link" href="/p/{{$proj.Slug}}">{{$proj.Name}}</a>
     <h1>Phases</h1>
+    <p class="subtitle">Sub-projects for larger bodies of work. Click a row to drill into its waves.</p>
     <div class="page-actions">
       <a class="btn btn-primary" href="/p/{{$proj.Slug}}/phases/new">New phase</a>
-      <a class="btn" href="/p/{{$proj.Slug}}/waves">View waves</a>
     </div>
   </header>
   {{if .Body.Phases}}
+  <div class="phase-list">
     {{range .Body.Phases}}
       {{- $ph := .Phase -}}
+      {{- $dist := .Dist -}}
+      {{- $total := .Total -}}
       <details class="phase-row">
         <summary class="phase-row-summary">
           <span class="phase-row-chevron" aria-hidden="true">▸</span>
-          <span class="phase-row-name"><a href="/p/{{$proj.Slug}}/phases/{{$ph.Slug}}">{{$ph.Name}}</a></span>
-          <code class="phase-row-slug">{{$ph.Slug}}</code>
-          <span class="phase-row-counts">{{$ph.ActiveTicketCount}} active <span class="muted">/ {{$ph.TicketCount}} total</span></span>
-          {{if $ph.Description}}<span class="phase-row-desc">{{$ph.Description}}</span>{{end}}
+          <div class="phase-row-headline">
+            <span class="phase-row-name"><a href="/p/{{$proj.Slug}}/phases/{{$ph.Slug}}">{{$ph.Name}}</a></span>
+            {{if $ph.Description}}<span class="phase-row-desc">{{$ph.Description}}</span>{{end}}
+          </div>
+          <div class="phase-row-meta">
+            {{if gt $total 0}}
+            <div class="phase-row-bar" title="{{$dist.Todo}} todo · {{$dist.InProgress}} in progress · {{$dist.Testing}} testing · {{$dist.Done}} done">
+              {{if gt $dist.Todo 0}}<span class="phase-row-bar-seg phase-row-bar-todo" style="width: {{percentOf $dist.Todo $total}}%"></span>{{end}}
+              {{if gt $dist.InProgress 0}}<span class="phase-row-bar-seg phase-row-bar-in_progress" style="width: {{percentOf $dist.InProgress $total}}%"></span>{{end}}
+              {{if gt $dist.Testing 0}}<span class="phase-row-bar-seg phase-row-bar-testing" style="width: {{percentOf $dist.Testing $total}}%"></span>{{end}}
+              {{if gt $dist.Done 0}}<span class="phase-row-bar-seg phase-row-bar-done" style="width: {{percentOf $dist.Done $total}}%"></span>{{end}}
+            </div>
+            {{else}}
+            <div class="phase-row-bar phase-row-bar-empty" title="no tickets in this phase"></div>
+            {{end}}
+            <span class="phase-row-counts">
+              <strong>{{$ph.ActiveTicketCount}}</strong>
+              <span class="muted">active /</span>
+              <strong>{{$ph.TicketCount}}</strong>
+              <span class="muted">total</span>
+            </span>
+          </div>
         </summary>
         <div class="phase-row-body">
           {{if .Waves}}
+            <div class="phase-row-waves">
             {{range .Waves}}
             <section class="phase-wave{{if .IsUnassigned}} muted-section{{end}}">
-              <h3 class="phase-wave-heading">
-                {{if .IsUnassigned}}Wave 0 <span class="muted">(unassigned)</span>{{else}}Wave {{.Wave}}{{end}}
-                <span class="muted">— {{len .Tickets}} ticket{{if ne (len .Tickets) 1}}s{{end}}</span>
-              </h3>
-              <ul class="ticket-list">
+              <header class="phase-wave-head">
+                <span class="phase-wave-chip{{if .IsUnassigned}} phase-wave-chip-unassigned{{end}}">
+                  {{if .IsUnassigned}}W0{{else}}W{{.Wave}}{{end}}
+                </span>
+                <span class="phase-wave-title">
+                  {{if .IsUnassigned}}Unassigned wave{{else}}Wave {{.Wave}}{{end}}
+                </span>
+                <span class="phase-wave-count muted">{{len .Tickets}} ticket{{if ne (len .Tickets) 1}}s{{end}}</span>
+              </header>
+              <ul class="phase-wave-tickets">
                 {{range .Tickets}}
-                <li>
-                  <a class="ticket-list-title" href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a>
-                  <div class="ticket-list-meta">
-                    <span class="dot dot-{{.Column}}"></span>
-                    <span class="muted">{{.Column}}</span>
-                  </div>
+                <li class="phase-wave-ticket">
+                  <span class="dot dot-{{.Column}}" title="{{.Column}}"></span>
+                  <a class="phase-wave-ticket-title" href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a>
+                  <span class="badge badge-{{.Column}}">{{.Column}}</span>
                 </li>
                 {{end}}
               </ul>
             </section>
             {{end}}
+            </div>
           {{else}}
-            <p class="hint">No tickets in this phase yet. <a href="/p/{{$proj.Slug}}/tickets/new">Create one →</a></p>
+            <div class="phase-row-empty">
+              <p class="hint">No tickets in this phase yet.</p>
+              <a class="btn btn-sm" href="/p/{{$proj.Slug}}/tickets/new">+ New ticket</a>
+            </div>
           {{end}}
         </div>
       </details>
     {{end}}
+  </div>
   {{else}}
   <div class="empty-state">
     <h1>No phases yet</h1>

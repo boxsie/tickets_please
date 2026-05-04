@@ -315,8 +315,16 @@ var funcMap = template.FuncMap{
 	"list": func(items ...string) []string { return items },
 	// hasSuffix is strings.HasSuffix exposed to templates. The sidebar uses
 	// it to highlight the active per-project nav item by matching the
-	// request URL against /board, /phases, /waves, /summary, etc.
+	// request URL against /board, /phases, /summary, etc.
 	"hasSuffix": strings.HasSuffix,
+	// percentOf returns part/total as a 0-100 integer (floor). Used for
+	// status-bar segment widths; total==0 returns 0 to avoid div-by-zero.
+	"percentOf": func(part, total int) int {
+		if total <= 0 {
+			return 0
+		}
+		return part * 100 / total
+	},
 	// phaseSlug returns the slug of the ticket's current phase, or "" if
 	// it's phase-less or the phase is missing from the slice.
 	"phaseSlug": func(t *domain.Ticket, phases []*domain.Phase) string {

@@ -32,7 +32,6 @@
     <a class="project-nav-link{{if eq $url $overview}} active{{end}}" href="{{$overview}}"{{if eq $url $overview}} aria-current="page"{{end}}>Overview</a>
     <a class="project-nav-link{{if hasSuffix $url "/board"}} active{{end}}" href="/p/{{$cur}}/board"{{if hasSuffix $url "/board"}} aria-current="page"{{end}}>Board</a>
     <a class="project-nav-link{{if hasSuffix $url "/phases"}} active{{end}}" href="/p/{{$cur}}/phases"{{if hasSuffix $url "/phases"}} aria-current="page"{{end}}>Phases</a>
-    <a class="project-nav-link{{if hasSuffix $url "/waves"}} active{{end}}" href="/p/{{$cur}}/waves"{{if hasSuffix $url "/waves"}} aria-current="page"{{end}}>Waves</a>
     <a class="project-nav-link{{if hasSuffix $url "/summary"}} active{{end}}" href="/p/{{$cur}}/summary"{{if hasSuffix $url "/summary"}} aria-current="page"{{end}}>Summary</a>
     <hr class="project-nav-sep">
     <a class="project-nav-cta{{if hasSuffix $url "/tickets/new"}} active{{end}}" href="/p/{{$cur}}/tickets/new"{{if hasSuffix $url "/tickets/new"}} aria-current="page"{{end}}>+ New ticket</a>

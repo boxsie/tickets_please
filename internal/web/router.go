@@ -58,7 +58,7 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /p/{slug}/summary", wrap(a.handleProjectSummaryUpdate))
 
 	// Phase routes. Same wrap (session + CSRF on POST). Literal segments
-	// (/phases, /waves, /new) take precedence over the {phase} wildcard.
+	// (/phases, /new) take precedence over the {phase} wildcard.
 	mux.Handle("GET /p/{slug}/phases", wrap(a.handlePhasesIndex))
 	mux.Handle("POST /p/{slug}/phases", wrap(a.handlePhaseCreate))
 	mux.Handle("GET /p/{slug}/phases/new", wrap(a.handlePhaseNewForm))
@@ -68,7 +68,6 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /p/{slug}/phases/{phase}/delete", wrap(a.handlePhaseDelete))
 	mux.Handle("GET /p/{slug}/phases/{phase}/summary", wrap(a.handlePhaseSummaryView))
 	mux.Handle("POST /p/{slug}/phases/{phase}/summary", wrap(a.handlePhaseSummaryUpdate))
-	mux.Handle("GET /p/{slug}/waves", wrap(a.handleWaves))
 
 	// Cross-cutting: reassign a ticket between phases. /tickets/{id} is
 	// owned by ticket 5; the assign-phase POST lives here under the phases
