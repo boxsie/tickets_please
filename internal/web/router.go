@@ -96,6 +96,10 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// fragment so the live-search box doesn't redraw chrome on every keystroke.
 	mux.Handle("GET /search", wrap(a.handleSearch))
 
+	// Filesystem picker for /p/load. Read-only directory listing. JSON for
+	// API clients, HTML partial for the htmx-driven /p/load picker.
+	mux.Handle("GET /api/fs", wrap(a.handleFSBrowse))
+
 	// Root: home handler. http.ServeMux's "/" pattern catches every path not
 	// matched by a more specific handler, so the more-specific /p/* patterns
 	// above preempt it.

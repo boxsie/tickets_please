@@ -96,6 +96,24 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 		return nil, fmt.Errorf("commit create project: %w", err)
 	}
 
+	// Self-register the freshly-created project as a mount so it appears in
+	// the persistent registry and survives a restart. Without this,
+	// CreateProject leaves the project reachable only via the s.Store
+	// fallback in ResolveProjectStore — which works in-process but loses
+	// the mount on the next boot.
+	//
+	// Only runs when DataDir follows the `<repo>/.tickets_please` convention
+	// (the prod shape — see cfg.DataDir comment). Tests that pass a bare
+	// tempdir as DataDir skip this since there's no sensible repo parent.
+	// Best-effort: log-and-ignore the error; the project itself is on disk
+	// and reachable, the registry is just a hint for the next boot.
+	if s.Store != nil && filepath.Base(s.Store.Root) == ".tickets_please" {
+		repoPath := filepath.Dir(s.Store.Root)
+		if _, regErr := s.RegisterProjectMount(ctx, repoPath); regErr != nil && s.Logger != nil {
+			s.Logger.Warn("svc: post-create register mount failed", "repo", repoPath, "err", regErr)
+		}
+	}
+
 	// Async embed: project summary → resident SummaryIdx. Fire-and-forget;
 	// dropped jobs get picked up by backfill on the next boot.
 	if s.Worker != nil {
@@ -339,6 +357,17 @@ func (s *Service) DeleteProject(ctx context.Context, idOrSlug string) error {
 	caption := fmt.Sprintf("delete project %s", slug)
 	if err := op.Commit(ctx, store.LockGlobal, agent, caption); err != nil {
 		return fmt.Errorf("commit delete project: %w", err)
+	}
+
+	// Drop the in-memory mount + the persistent registry entry. Both fail
+	// silently — the on-disk delete already succeeded so we shouldn't
+	// surface a registry-write error to the caller.
+	s.mountsMu.Lock()
+	mount, hadMount := s.projectMounts[slug]
+	delete(s.projectMounts, slug)
+	s.mountsMu.Unlock()
+	if hadMount && mount != nil {
+		s.persistMountRegistry(mount.RepoPath, false)
 	}
 	return nil
 }

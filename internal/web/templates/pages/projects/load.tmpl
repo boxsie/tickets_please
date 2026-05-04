@@ -1,26 +1,30 @@
 {{define "main"}}
 {{- $f := .Body -}}
-<section class="form-page">
+<section class="form-page form-page-wide">
   <header class="page-header">
     <h1>Load existing project</h1>
-    <p class="hint">
-      Point at a directory containing a <code>.tickets_please/project.yaml</code>
-      marker file. The path must be absolute and readable by the server
-      process (which runs as the same user that started <code>tickets_please serve</code>).
-    </p>
+    <p class="subtitle">Browse to a directory containing <code>.tickets_please/project.yaml</code>. The picker flags loadable folders with a <span class="marker-badge inline-badge">project</span> badge.</p>
   </header>
   {{if $f.FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{$f.FormError}}</div>{{end}}
-  <form method="post" action="/p/load" class="stack">
-    <label for="path">Absolute path</label>
-    <input type="text" id="path" name="path" required
-           placeholder="/home/you/code/some-repo"
-           autocomplete="off"
-           value="{{$f.Path}}">
+
+  <form method="post" action="/p/load" id="load-form" class="stack">
+    {{template "fs_picker.tmpl" $f.Picker}}
     <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
-    <div class="form-actions">
-      <button type="submit">Load project</button>
-      <a class="btn-link" href="/p">Cancel</a>
-    </div>
   </form>
+
+  <details class="manual-entry">
+    <summary>Or enter the path manually</summary>
+    <form method="post" action="/p/load" class="stack">
+      <label for="manual-path">Absolute path</label>
+      <input type="text" id="manual-path" name="path" required
+             placeholder="/home/you/code/some-repo"
+             autocomplete="off"
+             value="{{$f.Path}}">
+      <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
+      <div class="form-actions">
+        <button type="submit">Load project</button>
+      </div>
+    </form>
+  </details>
 </section>
 {{end}}

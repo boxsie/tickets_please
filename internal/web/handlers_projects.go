@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 
@@ -154,14 +155,23 @@ func classifyServiceError(err error) int {
 type loadProjectFormData struct {
 	FormError string
 	Path      string
+	Picker    fsListing
 }
 
-// handleLoadProjectForm serves GET /p/load — the mount-from-disk form.
-// Replaces the ticket-2 stub which lived in handlers_load_project.go.
+// handleLoadProjectForm serves GET /p/load — the mount-from-disk form
+// rooted at $HOME (or `?path=` if supplied) plus a manual-entry fallback.
 func (a *app) handleLoadProjectForm(w http.ResponseWriter, r *http.Request) {
+	startPath := strings.TrimSpace(r.URL.Query().Get("path"))
+	if startPath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			startPath = home
+		} else {
+			startPath = "/"
+		}
+	}
 	a.renderer.Page(w, r, "projects/load", PageOpts{
 		Title: "Load project · tickets_please",
-		Body:  loadProjectFormData{},
+		Body:  loadProjectFormData{Picker: buildFSListing(startPath)},
 	})
 }
 
@@ -171,25 +181,40 @@ func (a *app) handleLoadProjectForm(w http.ResponseWriter, r *http.Request) {
 func (a *app) handleLoadProjectMount(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSpace(r.Form.Get("path"))
 	if path == "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		a.renderer.Page(w, r, "projects/load", PageOpts{
-			Title: "Load project · tickets_please",
-			Body:  loadProjectFormData{FormError: "Path is required."},
-		})
+		a.renderLoadFormError(w, r, "Path is required.", "", http.StatusUnprocessableEntity)
 		return
 	}
 	slug, err := a.deps.Service.RegisterProjectMount(r.Context(), path)
 	if err != nil {
-		w.WriteHeader(classifyServiceError(err))
-		a.renderer.Page(w, r, "projects/load", PageOpts{
-			Title: "Load project · tickets_please",
-			Body:  loadProjectFormData{FormError: err.Error(), Path: path},
-		})
+		a.renderLoadFormError(w, r, err.Error(), path, classifyServiceError(err))
 		return
 	}
 	w.Header().Set("HX-Trigger", "sidebar-refresh")
 	SetFlash(w, r, "success", "Mounted "+slug+" from "+path+".")
 	http.Redirect(w, r, "/p/"+slug, http.StatusSeeOther)
+}
+
+// renderLoadFormError re-renders /p/load with an inline error and the
+// picker rooted at the offending path's parent (so the user can quickly
+// correct the click).
+func (a *app) renderLoadFormError(w http.ResponseWriter, r *http.Request, msg, path string, status int) {
+	startPath := path
+	if startPath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			startPath = home
+		} else {
+			startPath = "/"
+		}
+	}
+	w.WriteHeader(status)
+	a.renderer.Page(w, r, "projects/load", PageOpts{
+		Title: "Load project · tickets_please",
+		Body: loadProjectFormData{
+			FormError: msg,
+			Path:      path,
+			Picker:    buildFSListing(startPath),
+		},
+	})
 }
 
 // --- detail / edit / update / delete --------------------------------------

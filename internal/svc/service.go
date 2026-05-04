@@ -213,6 +213,23 @@ func NewWithEmbed(cfg config.Config, provider embed.Provider) (*Service, error) 
 		}
 	}
 
+	// Restore mounts persisted across restarts. Each path that fails (repo
+	// moved, marker deleted, permission denied) logs a warning but doesn't
+	// block startup — the registry is best-effort, the source of truth is
+	// each repo's project.yaml. Paths already mounted by the eager-mount
+	// block above are deduped by RegisterProjectMount's idempotency.
+	if cfg.DataRoot != "" {
+		paths, regErr := loadMountRegistry(cfg.DataRoot)
+		if regErr != nil {
+			logger.Warn("svc: load mount registry failed", "err", regErr)
+		}
+		for _, p := range paths {
+			if _, mErr := s.RegisterProjectMount(context.Background(), p); mErr != nil {
+				logger.Warn("svc: restore mount from registry failed", "repo", p, "err", mErr)
+			}
+		}
+	}
+
 	go s.Cache.RunEvictor(evictCtx)
 	go s.Worker.Run(workerCtx)
 
@@ -306,6 +323,7 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 		if existing.RepoPath == repoPath && existing.ProjectID == rec.ID {
 			if existing.Store != nil {
 				existing.LastTouchedAt = time.Now()
+				s.persistMountRegistry(repoPath, true)
 				return rec.Slug, nil
 			}
 			// Re-mount an evicted entry under the same path.
@@ -319,6 +337,7 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 			// Re-hydrate the resident indexes for this slug; eviction earlier
 			// may have dropped its entries.
 			s.hydrateMount(rec.Slug, st)
+			s.persistMountRegistry(repoPath, true)
 			return rec.Slug, nil
 		}
 		return "", fmt.Errorf("svc: slug %q is already mounted at %s", rec.Slug, existing.RepoPath)
@@ -340,7 +359,32 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 	// held — hydrate only touches Service-level indexes + the embed worker
 	// queue, neither of which loops back into mountsMu.
 	s.hydrateMount(rec.Slug, st)
+	s.persistMountRegistry(repoPath, true)
 	return rec.Slug, nil
+}
+
+// persistMountRegistry writes the add/remove to <DataRoot>/registry.yaml so
+// the mount survives a restart. Best-effort — failures log but don't bubble
+// up because the registry is a hint for the next boot, not authoritative
+// state. Caller normally holds mountsMu; the on-disk registry is written by
+// at most one process at a time so no flock is needed.
+func (s *Service) persistMountRegistry(repoPath string, add bool) {
+	if s.Cfg.DataRoot == "" {
+		return
+	}
+	var err error
+	if add {
+		err = addToMountRegistry(s.Cfg.DataRoot, repoPath)
+	} else {
+		err = removeFromMountRegistry(s.Cfg.DataRoot, repoPath)
+	}
+	if err != nil && s.Logger != nil {
+		op := "add"
+		if !add {
+			op = "remove"
+		}
+		s.Logger.Warn("svc: registry "+op+" failed", "repo", repoPath, "err", err)
+	}
 }
 
 // ResolveProjectStore returns the live *store.Store for the given slug,

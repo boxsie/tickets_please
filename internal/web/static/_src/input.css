@@ -1110,6 +1110,130 @@
   .empty-state .footnote { color: var(--fg-faint); font-size: 0.85rem; margin-top: 1.25rem; }
 
   /* ============================================================
+     Filesystem picker (/p/load)
+     ============================================================ */
+  .form-page-wide { max-width: 56rem; }
+
+  .fs-picker {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+  .fs-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82rem;
+    color: var(--fg-muted);
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .fs-breadcrumb a {
+    color: var(--accent);
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+  }
+  .fs-breadcrumb a:hover { background: var(--bg-hover); text-decoration: none; }
+  .fs-breadcrumb .fs-sep { color: var(--fg-faint); }
+
+  .fs-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 0;
+  }
+  .fs-actions .marker-hint { color: var(--success); }
+
+  .fs-listing {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 28rem;
+    overflow-y: auto;
+  }
+  .fs-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    transition: background 0.08s;
+  }
+  .fs-row:hover { background: var(--bg-hover); }
+  .fs-row a {
+    flex: 1;
+    color: var(--fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.88rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fs-row a:hover { color: var(--accent); text-decoration: none; }
+  .fs-row a::before {
+    content: "📁";
+    margin-right: 0.5rem;
+    opacity: 0.6;
+    filter: grayscale(0.3);
+  }
+  .fs-row-marker { background: rgba(62,207,142,0.05); }
+  .fs-row-marker a::before { content: "📂"; opacity: 0.85; }
+  .fs-row-marker:hover { background: rgba(62,207,142,0.10); }
+
+  .fs-empty { padding: 0.6rem 0.7rem; font-size: 0.85rem; }
+
+  .marker-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--success-bg);
+    color: var(--success);
+    border: 1px solid rgba(62,207,142,0.4);
+    line-height: 1.4;
+  }
+  .marker-badge.inline-badge { font-size: 0.65rem; padding: 0.05rem 0.4rem; }
+
+  .manual-entry {
+    margin-top: 1.5rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg-elev);
+  }
+  .manual-entry > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.7rem 1rem;
+    font-weight: 500;
+    color: var(--fg-muted);
+    font-size: 0.88rem;
+  }
+  .manual-entry > summary::-webkit-details-marker { display: none; }
+  .manual-entry > summary::before { content: "›"; margin-right: 0.45rem; transition: transform 0.1s; display: inline-block; }
+  .manual-entry[open] > summary::before { transform: rotate(90deg); }
+  .manual-entry[open] > summary { border-bottom: 1px solid var(--line); }
+  .manual-entry .stack {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+  }
+
+  /* ============================================================
      Mobile collapse
      ============================================================ */
   @media (max-width: 980px) {

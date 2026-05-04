@@ -190,7 +190,22 @@ test('24 phase summary edit', async ({ page }) => {
   await shoot(page, '24-phase-summary-edit');
 });
 
-test('25 load existing project form', async ({ page }) => {
+test('25 load existing project (picker)', async ({ page }) => {
   await page.goto('/p/load');
-  await shoot(page, '25-load-project-form');
+  await shoot(page, '25-load-project-picker');
+});
+
+test('26 load picker — entered a directory', async ({ page }) => {
+  // Navigate the picker via htmx by clicking the "/" crumb so we land on
+  // a deterministic root the screenshot can capture.
+  await page.goto('/p/load?path=/');
+  await shoot(page, '26-load-picker-at-root');
+});
+
+test('27 load picker — manual entry expanded', async ({ page }) => {
+  await page.goto('/p/load');
+  // Open the manual-entry collapsible so the screenshot shows both options.
+  await page.locator('details.manual-entry > summary').click();
+  await page.waitForTimeout(200);
+  await shoot(page, '27-load-picker-manual-entry');
 });
