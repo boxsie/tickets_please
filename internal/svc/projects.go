@@ -39,7 +39,7 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 	}
 
 	slug = strings.TrimSpace(slug)
-	name = strings.TrimSpace(name)
+	name = normalizeLabel(name)
 	if err := requireSlug("slug", slug); err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 		ID:               uuid.NewString(),
 		Slug:             slug,
 		Name:             name,
-		Description:      strings.TrimSpace(description),
+		Description:      normalizeLabel(description),
 		CreatedByAgentID: &agent.ID,
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -241,10 +241,10 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 		return nil, fmt.Errorf("read project: %w", err)
 	}
 	if in.Name != nil {
-		rec.Name = strings.TrimSpace(*in.Name)
+		rec.Name = normalizeLabel(*in.Name)
 	}
 	if in.Description != nil {
-		rec.Description = strings.TrimSpace(*in.Description)
+		rec.Description = normalizeLabel(*in.Description)
 	}
 	rec.UpdatedAt = time.Now()
 

@@ -38,7 +38,7 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 	if err := requireNonEmptyTrimmed("title", in.Title); err != nil {
 		return nil, err
 	}
-	title := strings.TrimSpace(in.Title)
+	title := normalizeLabel(in.Title)
 	if in.Wave < 0 {
 		return nil, fmt.Errorf("%w: wave must be >= 0", domain.ErrInvalidArgument)
 	}
@@ -343,7 +343,7 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 	newBody := t.Body
 	newWave := t.Wave
 	if in.Title != nil {
-		nt := strings.TrimSpace(*in.Title)
+		nt := normalizeLabel(*in.Title)
 		if nt == "" {
 			return nil, fmt.Errorf("%w: title cannot be blanked", domain.ErrInvalidArgument)
 		}

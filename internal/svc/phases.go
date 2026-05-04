@@ -28,7 +28,7 @@ func (s *Service) CreatePhase(ctx context.Context, projectIDOrSlug, name, descri
 		return nil, err
 	}
 
-	name = strings.TrimSpace(name)
+	name = normalizeLabel(name)
 	if err := requireNonEmptyTrimmed("phase name", name); err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (s *Service) CreatePhase(ctx context.Context, projectIDOrSlug, name, descri
 		Slug:             phaseSlug,
 		Number:           number,
 		Name:             name,
-		Description:      strings.TrimSpace(description),
+		Description:      normalizeLabel(description),
 		CreatedByAgentID: &agent.ID,
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -227,10 +227,10 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 		return nil, fmt.Errorf("read phase: %w", err)
 	}
 	if in.Name != nil {
-		rec.Name = strings.TrimSpace(*in.Name)
+		rec.Name = normalizeLabel(*in.Name)
 	}
 	if in.Description != nil {
-		rec.Description = strings.TrimSpace(*in.Description)
+		rec.Description = normalizeLabel(*in.Description)
 	}
 	rec.UpdatedAt = time.Now()
 

@@ -2,11 +2,29 @@ package svc
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"strings"
 
 	"tickets_please/internal/domain"
 )
+
+// normalizeLabel trims whitespace and decodes HTML entities in a short
+// plain-text field (project / phase name + description, ticket title).
+//
+// Why decode entities here: html/template escapes `&` to `&amp;` on render,
+// so any pre-encoded `&amp;` in storage round-trips to a visible `&amp;` in
+// the browser. Some MCP clients (and the occasional copy-paste from a
+// rendered page) submit pre-encoded values; this normalizes them at the
+// write boundary so downstream rendering is the only escaping step.
+//
+// Markdown fields (summary, body, comment, completion fields) are NOT
+// run through this — they're rendered via goldmark, which is the right
+// place to handle entities, and an author may legitimately want to write
+// `&copy;` literally in markdown source.
+func normalizeLabel(s string) string {
+	return html.UnescapeString(strings.TrimSpace(s))
+}
 
 // slugRE is the SPEC-mandated server-side validation regex for project and
 // phase slugs. SPEC §Project loading: lowercase letters, digits, dashes,
