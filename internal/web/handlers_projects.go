@@ -2,11 +2,13 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"tickets_please/internal/domain"
 	"tickets_please/internal/svc"
@@ -220,18 +222,57 @@ func (a *app) renderLoadFormError(w http.ResponseWriter, r *http.Request, msg, p
 
 // --- detail / edit / update / delete --------------------------------------
 
-// projectDetailData is the payload for pages/projects/detail.tmpl. The
-// Phases list drives the inline "Phases" card on the detail page; the
-// per-project nav in the sidebar handles section navigation.
+// projectDetailData is the dashboard payload for pages/projects/detail.tmpl.
+// The Overview page is the human-facing "state of play" — metrics, ready
+// work, recent activity, recent learnings. The Summary view at
+// /p/{slug}/summary is the LLM-loadable canonical doc and stays separate.
 type projectDetailData struct {
-	Project *domain.Project
-	Phases  []*domain.Phase
+	Project          *domain.Project
+	Phases           []*domain.Phase
+	Metrics          dashboardMetrics
+	StatusSegments   []statusSegment
+	ReadyTickets     []*domain.Ticket
+	RecentActivity   []activityItem
+	RecentLearnings  []learningExcerpt
 }
 
-// handleProjectDetail serves GET /p/{slug} — project overview (summary +
-// phases card + danger-zone delete). Section navigation (Board / Phases /
-// Waves / Summary) lives in the sidebar's per-project nav; this page is
-// just the overview.
+// dashboardMetrics is the row of stat cards at the top of the dashboard.
+type dashboardMetrics struct {
+	Total      int
+	Active     int
+	InProgress int
+	Done       int
+}
+
+// statusSegment is one slice of the horizontal stacked bar showing
+// ticket distribution across columns.
+type statusSegment struct {
+	Column  domain.Column
+	Label   string
+	Count   int
+	Percent int // 0-100, integer for clean width: %d%% style values
+}
+
+// activityItem describes one row in the "Recent activity" list. The
+// underlying source is a ticket sorted by UpdatedAt desc — comments
+// would require a per-ticket walk we don't want on every dashboard load.
+type activityItem struct {
+	Ticket *domain.Ticket
+	Ago    string
+}
+
+// learningExcerpt is one row in the "Recent learnings" section. The
+// excerpt is the first line of the learnings field, capped to keep the
+// dashboard skim-friendly.
+type learningExcerpt struct {
+	Ticket  *domain.Ticket
+	Excerpt string
+	Ago     string
+}
+
+// handleProjectDetail serves GET /p/{slug} — the project dashboard.
+// Section navigation (Board / Phases / Waves / Summary) lives in the
+// sidebar's per-project nav.
 func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
@@ -241,14 +282,197 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	phases, _ := a.deps.Service.ListPhases(r.Context(), proj.Slug)
 
+	// One bulk read of every ticket in the project; the dashboard derives
+	// every metric from this slice. listTickets caps at 200 by default —
+	// fine for typical project sizes; large projects get a representative
+	// sample, the board shows the rest.
+	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
+		ProjectIDOrSlug: slug,
+		Limit:           200,
+	})
+	if err != nil {
+		// Best-effort: an error here degrades the dashboard to "no metrics"
+		// rather than 500ing the whole page.
+		a.deps.Logger.Warn("dashboard: list tickets", "err", err)
+		tickets = nil
+	}
+
+	data := projectDetailData{
+		Project:         proj,
+		Phases:          phases,
+		Metrics:         computeMetrics(tickets),
+		StatusSegments:  computeStatusSegments(tickets),
+		ReadyTickets:    pickReady(tickets, 5),
+		RecentActivity:  pickRecentActivity(tickets, 10),
+		RecentLearnings: pickRecentLearnings(tickets, 3),
+	}
+
 	a.renderer.Page(w, r, "projects/detail", PageOpts{
 		Title:       proj.Name + " · tickets_please",
 		CurrentSlug: proj.Slug,
-		Body: projectDetailData{
-			Project: proj,
-			Phases:  phases,
-		},
+		Body:        data,
 	})
+}
+
+// computeMetrics tallies the four headline stat-card numbers. Active
+// excludes done; InProgress is just the in_progress column.
+func computeMetrics(tickets []*domain.Ticket) dashboardMetrics {
+	m := dashboardMetrics{Total: len(tickets)}
+	for _, t := range tickets {
+		switch t.Column {
+		case domain.ColumnTodo, domain.ColumnTesting:
+			m.Active++
+		case domain.ColumnInProgress:
+			m.Active++
+			m.InProgress++
+		case domain.ColumnDone:
+			m.Done++
+		}
+	}
+	return m
+}
+
+// computeStatusSegments builds the four-segment horizontal bar.
+// Percentages are rounded down so they sum to <=100; the template renders
+// segments with a width: <p>% style. An empty project yields zero-count
+// segments which the template hides.
+func computeStatusSegments(tickets []*domain.Ticket) []statusSegment {
+	cols := []struct {
+		col   domain.Column
+		label string
+	}{
+		{domain.ColumnTodo, "To do"},
+		{domain.ColumnInProgress, "In progress"},
+		{domain.ColumnTesting, "Testing"},
+		{domain.ColumnDone, "Done"},
+	}
+	out := make([]statusSegment, 0, len(cols))
+	total := len(tickets)
+	for _, c := range cols {
+		count := 0
+		for _, t := range tickets {
+			if t.Column == c.col {
+				count++
+			}
+		}
+		percent := 0
+		if total > 0 {
+			percent = (count * 100) / total
+		}
+		out = append(out, statusSegment{Column: c.col, Label: c.label, Count: count, Percent: percent})
+	}
+	return out
+}
+
+// pickReady returns up to n unblocked tickets in todo or in_progress,
+// sorted by CreatedAt asc (oldest first → things that have been sitting
+// without progress get surfaced).
+func pickReady(tickets []*domain.Ticket, n int) []*domain.Ticket {
+	out := make([]*domain.Ticket, 0, n)
+	for _, t := range tickets {
+		if t.Column != domain.ColumnTodo && t.Column != domain.ColumnInProgress {
+			continue
+		}
+		if len(t.BlockedBy) > 0 {
+			continue
+		}
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out
+}
+
+// pickRecentActivity returns the n most-recently-updated tickets with a
+// pre-rendered "N ago" relative-time label. Today this is "what changed
+// recently"; a richer per-comment feed could come later via a service-
+// level activity log.
+func pickRecentActivity(tickets []*domain.Ticket, n int) []activityItem {
+	src := make([]*domain.Ticket, len(tickets))
+	copy(src, tickets)
+	sort.Slice(src, func(i, j int) bool { return src[i].UpdatedAt.After(src[j].UpdatedAt) })
+	if len(src) > n {
+		src = src[:n]
+	}
+	out := make([]activityItem, len(src))
+	for i, t := range src {
+		out[i] = activityItem{Ticket: t, Ago: humanizeAgo(t.UpdatedAt)}
+	}
+	return out
+}
+
+// pickRecentLearnings surfaces the last n completion learnings as the
+// "wisdom-at-a-glance" section. Excerpt is the first non-empty line of
+// the learnings field, capped to ~140 chars.
+func pickRecentLearnings(tickets []*domain.Ticket, n int) []learningExcerpt {
+	src := make([]*domain.Ticket, 0, len(tickets))
+	for _, t := range tickets {
+		if t.Column == domain.ColumnDone && t.Learnings != nil && strings.TrimSpace(*t.Learnings) != "" {
+			src = append(src, t)
+		}
+	}
+	sort.Slice(src, func(i, j int) bool {
+		ai, aj := src[i].CompletedAt, src[j].CompletedAt
+		if ai == nil {
+			return false
+		}
+		if aj == nil {
+			return true
+		}
+		return ai.After(*aj)
+	})
+	if len(src) > n {
+		src = src[:n]
+	}
+	out := make([]learningExcerpt, len(src))
+	for i, t := range src {
+		excerpt := firstLine(*t.Learnings, 140)
+		ago := ""
+		if t.CompletedAt != nil {
+			ago = humanizeAgo(*t.CompletedAt)
+		}
+		out[i] = learningExcerpt{Ticket: t, Excerpt: excerpt, Ago: ago}
+	}
+	return out
+}
+
+// humanizeAgo formats a past time as "N <unit> ago" — "just now", "5m
+// ago", "2h ago", "3d ago", "2w ago". Future times collapse to "just
+// now" since they shouldn't happen on real data.
+func humanizeAgo(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 14*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	case d < 60*24*time.Hour:
+		return fmt.Sprintf("%dw ago", int(d.Hours()/24/7))
+	default:
+		return t.Format("2006-01-02")
+	}
+}
+
+// firstLine returns the first non-blank line of s, trimmed and capped to
+// max runes (with an ellipsis if truncated).
+func firstLine(s string, max int) string {
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if len([]rune(line)) > max {
+			return string([]rune(line)[:max-1]) + "…"
+		}
+		return line
+	}
+	return ""
 }
 
 // handleProjectEditForm serves GET /p/{slug}/edit. Renders the form

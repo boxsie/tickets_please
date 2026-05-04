@@ -226,3 +226,11 @@ test('30 sidebar nav highlights board on /board', async ({ page }) => {
   await page.goto('/p/demo/phases');
   await shoot(page, '30-sidebar-active-phases');
 });
+
+test('31 dashboard with completed work', async ({ page }) => {
+  // The walkthrough already created+completed a ticket on /p/demo, so
+  // the dashboard has real numbers (1 done, status bar populated, one
+  // recent learning).
+  await page.goto('/p/demo');
+  await shoot(page, '31-dashboard-with-data');
+});

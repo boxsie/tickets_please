@@ -2,7 +2,9 @@ id: 5bb597ce-a55e-407f-b88a-165934602582
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 22
 title: Project overview → dashboard with metrics + recent activity
-column: in_progress
+column: done
 created_by: 3d6332f7-bf78-4911-b8c4-b8073bad26b4
+completed_by: 76b0b2c4-f90f-4cb0-ad1a-2998e7377a81
+completed_at: 2026-05-04T20:22:58.246709411+01:00
 created_at: 2026-05-04T20:16:48.897355509+01:00
-updated_at: 2026-05-04T20:17:01.891705576+01:00
+updated_at: 2026-05-04T20:22:58.246709411+01:00
