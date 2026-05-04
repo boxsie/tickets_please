@@ -2,12 +2,13 @@
 {{- $proj := .Body.Project -}}
 <section class="phases-index">
   <header class="page-header">
-    <h1>Phases <span class="muted">· {{$proj.Name}}</span></h1>
-    <p class="page-actions">
-      <a class="btn" href="/p/{{$proj.Slug}}/phases/new">[+] New phase</a>
+    <h1>Phases</h1>
+    <p class="subtitle"><a href="/p/{{$proj.Slug}}">{{$proj.Name}}</a></p>
+    <div class="page-actions">
+      <a class="btn btn-primary" href="/p/{{$proj.Slug}}/phases/new">New phase</a>
       <a class="btn" href="/p/{{$proj.Slug}}/waves">View waves</a>
       <a class="btn" href="/p/{{$proj.Slug}}">← back to project</a>
-    </p>
+    </div>
   </header>
   {{if .Body.Phases}}
   <table class="data-table">
@@ -24,14 +25,20 @@
       <tr>
         <td><a href="/p/{{$proj.Slug}}/phases/{{.Slug}}">{{.Name}}</a></td>
         <td><code>{{.Slug}}</code></td>
-        <td>{{.Description}}</td>
+        <td class="muted">{{.Description}}</td>
         <td>{{.ActiveTicketCount}} / {{.TicketCount}}</td>
       </tr>
       {{end}}
     </tbody>
   </table>
   {{else}}
-  <p class="hint">No phases yet. <a href="/p/{{$proj.Slug}}/phases/new">Create the first phase →</a></p>
+  <div class="empty-state">
+    <h1>No phases yet</h1>
+    <p class="subtitle">Phases are sub-projects for larger bodies of work — each one carries its own ≥200-char summary that LLM agents context-load.</p>
+    <div class="page-actions">
+      <a class="btn btn-primary" href="/p/{{$proj.Slug}}/phases/new">Create the first phase</a>
+    </div>
+  </div>
   {{end}}
 </section>
 {{end}}

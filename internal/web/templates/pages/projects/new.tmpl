@@ -3,16 +3,12 @@
 <section class="form-page">
   <header class="page-header">
     <h1>New project</h1>
-    <p class="hint">
-      Creates a project in the host data dir. Note that one host data dir holds
-      one project — to add more projects to this server, mount their repos via
-      <a href="/p/load">[+] Load existing project</a>.
-    </p>
+    <p class="subtitle">Creates a project in the host data dir. To add more projects to this server, mount their repos via <a href="/p/load">Load existing</a>.</p>
   </header>
   {{if $f.FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{$f.FormError}}</div>{{end}}
   <form method="post" action="/p" class="stack">
     <label for="slug">Slug <span class="muted">(URL-safe, immutable)</span></label>
-    <input type="text" id="slug" name="slug" required
+    <input type="text" id="slug" name="slug" required class="short"
            pattern="[a-z0-9][a-z0-9-]*"
            placeholder="my-project"
            value="{{$f.Submitted.Slug}}">
@@ -29,11 +25,13 @@
 
     <label for="summary">Summary <span class="muted">(markdown, ≥200 chars; load-bearing — agents read this first)</span></label>
     <textarea id="summary" name="summary" rows="12" required minlength="200"
-              placeholder="What is this project? What's the goal? What constraints matter?
-This text is embedded and surfaced to LLMs as the first context they see.">{{$f.Submitted.Summary}}</textarea>
+              placeholder="What is this project? What's the goal? What constraints matter? This text is embedded and surfaced to LLMs as the first context they see.">{{$f.Submitted.Summary}}</textarea>
 
     <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
-    <button type="submit">Create project</button>
+    <div class="form-actions">
+      <button type="submit">Create project</button>
+      <a class="btn-link" href="/p">Cancel</a>
+    </div>
   </form>
 </section>
 {{end}}

@@ -4,47 +4,46 @@
 <section class="phase-detail">
   <header class="page-header">
     <h1>{{$phase.Name}}</h1>
-    <p class="muted">
-      <a href="/p/{{$proj.Slug}}">{{$proj.Name}}</a> · phase
-      · <code>{{$phase.Slug}}</code>
-      {{if $phase.Description}}· {{$phase.Description}}{{end}}
-      · {{$phase.ActiveTicketCount}} active / {{$phase.TicketCount}} total
+    <p class="subtitle">
+      <a href="/p/{{$proj.Slug}}">{{$proj.Name}}</a>
+      <span class="breadcrumb-sep"></span>
+      <code>{{$phase.Slug}}</code>
+      {{if $phase.Description}}<span class="breadcrumb-sep"></span>{{$phase.Description}}{{end}}
+      <span class="breadcrumb-sep"></span>
+      {{$phase.ActiveTicketCount}} active / {{$phase.TicketCount}} total
     </p>
-    <p class="page-actions">
+    <div class="page-actions">
+      <a class="btn btn-primary" href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary">Summary</a>
       <a class="btn" href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/edit">Edit</a>
-      <a class="btn" href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary">Summary</a>
       <a class="btn" href="/p/{{$proj.Slug}}/phases">← all phases</a>
-    </p>
+    </div>
   </header>
 
   <section class="card">
     <h2>Summary</h2>
     {{if $phase.Summary}}
     <div class="markdown">{{markdown $phase.Summary}}</div>
-    <p><a href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary">Open the full summary editor →</a></p>
+    <p style="margin-top: 1rem;"><a href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary">Open the full summary editor →</a></p>
     {{else}}
     <p class="hint">No summary set. <a href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary?edit=1">Add one →</a></p>
     {{end}}
   </section>
 
-  {{if .Body.Waves}}
   <section class="card">
     <h2>Waves</h2>
+    {{if .Body.Waves}}
     <ul class="bare-list">
       {{range .Body.Waves}}
       <li>
         Wave {{if eq .Wave 0}}<span class="muted">(unassigned)</span>{{else}}<strong>{{.Wave}}</strong>{{end}}
-        <span class="muted">· {{.ActiveTicketCount}} active / {{.TicketCount}} total</span>
+        <span class="muted">— {{.ActiveTicketCount}} active / {{.TicketCount}} total</span>
       </li>
       {{end}}
     </ul>
-  </section>
-  {{else}}
-  <section class="card">
-    <h2>Waves</h2>
+    {{else}}
     <p class="hint">No tickets in this phase yet.</p>
+    {{end}}
   </section>
-  {{end}}
 
   <details class="danger-zone">
     <summary>Delete phase</summary>
@@ -55,7 +54,7 @@
     <form method="post" action="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/delete" onsubmit="return confirm('Delete phase {{$phase.Slug}}? Tickets must be reassigned or deleted first.');">
       <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
       <input type="hidden" name="confirm" value="yes">
-      <button type="submit" class="btn-danger">Delete this phase</button>
+      <button type="submit" class="btn btn-danger">Delete this phase</button>
     </form>
   </details>
 </section>

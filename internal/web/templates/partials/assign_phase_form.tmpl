@@ -8,8 +8,8 @@
     <option value="{{.Slug}}"{{if eq .Slug $.CurrentPhaseSlug}} selected{{end}}>{{.Name}}</option>
     {{end}}
   </select>
-  <label for="assign-comment">Comment <span class="muted">(required — captures the why)</span></label>
-  <textarea id="assign-comment" name="comment" rows="3" required></textarea>
+  <label for="assign-comment">Comment <span class="muted">(required)</span></label>
+  <textarea id="assign-comment" name="comment" rows="2" required placeholder="Why are you reassigning?"></textarea>
   <input type="hidden" name="_csrf" value="{{.CSRF}}">
   <div class="form-actions">
     <button type="submit">Reassign</button>

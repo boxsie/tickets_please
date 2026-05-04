@@ -4,19 +4,21 @@
 <section class="project-detail">
   <header class="page-header">
     <h1>{{$p.Name}}</h1>
-    <p class="muted">
+    <p class="subtitle">
       <code>{{$p.Slug}}</code>
-      {{if $p.Description}}· {{$p.Description}}{{end}}
+      {{if $p.Description}}<span class="breadcrumb-sep"></span>{{$p.Description}}{{end}}
     </p>
-    <p class="page-actions">
+    <div class="page-actions">
+      <a class="btn btn-primary" href="/p/{{$p.Slug}}/board">Open board</a>
       <a class="btn" href="/p/{{$p.Slug}}/edit">Edit</a>
       <a class="btn" href="/p/{{$p.Slug}}/summary">Summary</a>
-    </p>
+    </div>
   </header>
 
   <nav class="tabs" aria-label="Project sections">
     <a class="tab" href="/p/{{$p.Slug}}/board">Board</a>
     <a class="tab" href="/p/{{$p.Slug}}/phases">Phases ({{$phaseCount}})</a>
+    <a class="tab" href="/p/{{$p.Slug}}/waves">Waves</a>
     <a class="tab" href="/p/{{$p.Slug}}/summary">Summary</a>
   </nav>
 
@@ -24,7 +26,7 @@
     <h2>Summary</h2>
     {{if $p.Summary}}
     <div class="markdown">{{markdown $p.Summary}}</div>
-    <p><a href="/p/{{$p.Slug}}/summary">Open the full summary editor →</a></p>
+    <p style="margin-top: 1rem;"><a href="/p/{{$p.Slug}}/summary">Open the full summary editor →</a></p>
     {{else}}
     <p class="hint">No summary set. <a href="/p/{{$p.Slug}}/summary?edit=1">Add one →</a></p>
     {{end}}
@@ -35,7 +37,7 @@
     <h2>Phases</h2>
     <ul class="bare-list">
       {{range .Body.Phases}}
-      <li><a href="/p/{{$p.Slug}}/phases/{{.Slug}}">{{.Name}}</a> <span class="muted">· {{.ActiveTicketCount}} active / {{.TicketCount}} total</span></li>
+      <li><a href="/p/{{$p.Slug}}/phases/{{.Slug}}">{{.Name}}</a> <span class="muted">— {{.ActiveTicketCount}} active / {{.TicketCount}} total</span></li>
       {{end}}
     </ul>
   </section>
@@ -51,7 +53,7 @@
     <form method="post" action="/p/{{$p.Slug}}/delete" onsubmit="return confirm('Delete project {{$p.Slug}} and ALL its phases/tickets/comments? This cannot be undone.');">
       <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
       <input type="hidden" name="confirm" value="yes">
-      <button type="submit" class="btn-danger">Delete this project</button>
+      <button type="submit" class="btn btn-danger">Delete this project</button>
     </form>
   </details>
 </section>

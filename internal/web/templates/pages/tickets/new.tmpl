@@ -3,11 +3,9 @@
 {{- $proj := $f.Project -}}
 <section class="form-page">
   <header class="page-header">
-    <h1>New ticket <span class="muted">· {{$proj.Name}}</span></h1>
-    <p class="hint">
-      New tickets land in <code>todo</code>. Wave 0 means "unassigned" — leave
-      it 0 unless this work belongs to a specific wave inside its phase.
-    </p>
+    <h1>New ticket</h1>
+    <p class="subtitle"><a href="/p/{{$proj.Slug}}/board">{{$proj.Name}}</a></p>
+    <p class="hint">New tickets land in <code>todo</code>. Wave 0 means "unassigned".</p>
   </header>
   {{if $f.FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{$f.FormError}}</div>{{end}}
   <form method="post" action="/p/{{$proj.Slug}}/tickets" class="stack">
@@ -28,9 +26,9 @@
     {{end}}
 
     <label for="wave">Wave <span class="muted">(integer, 0 = unassigned)</span></label>
-    <input type="number" id="wave" name="wave" min="0" value="{{$f.Submitted.Wave}}">
+    <input type="number" id="wave" name="wave" min="0" class="short" value="{{$f.Submitted.Wave}}">
 
-    <label for="depends_on">Depends on <span class="muted">(ticket ids, comma-separated)</span></label>
+    <label for="depends_on_inline">Depends on <span class="muted">(ticket ids, comma-separated)</span></label>
     <input type="text" id="depends_on_inline" name="depends_on_inline"
            placeholder="abcd-1234, efgh-5678"
            value="{{range $i, $d := $f.Submitted.DependsOn}}{{if $i}}, {{end}}{{$d}}{{end}}">

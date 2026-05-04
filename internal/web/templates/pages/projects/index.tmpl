@@ -2,10 +2,11 @@
 <section class="project-index">
   <header class="page-header">
     <h1>Projects</h1>
-    <p class="page-actions">
-      <a class="btn" href="/p/new">[+] New project</a>
-      <a class="btn" href="/p/load">[+] Load existing project</a>
-    </p>
+    <p class="subtitle">All projects mounted on this server. Pick one to see its board, phases, or summary.</p>
+    <div class="page-actions">
+      <a class="btn btn-primary" href="/p/new">New project</a>
+      <a class="btn" href="/p/load">Load existing</a>
+    </div>
   </header>
   {{if .Body.Projects}}
   <table class="data-table">
@@ -21,13 +22,16 @@
       <tr>
         <td><a href="/p/{{.Slug}}">{{.Name}}</a></td>
         <td><code>{{.Slug}}</code></td>
-        <td>{{.Description}}</td>
+        <td class="muted">{{.Description}}</td>
       </tr>
       {{end}}
     </tbody>
   </table>
   {{else}}
-  <p class="hint">No projects mounted. Use the buttons above to create or load one.</p>
+  <div class="empty-state">
+    <h1>No projects mounted</h1>
+    <p class="subtitle">Create a fresh project for this server's data dir, or load an existing one from a repo on disk.</p>
+  </div>
   {{end}}
 </section>
 {{end}}

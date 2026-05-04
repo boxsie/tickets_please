@@ -2,15 +2,16 @@
 {{- $proj := .Body.Project -}}
 <section class="waves-page">
   <header class="page-header">
-    <h1>Waves <span class="muted">· {{$proj.Name}}</span></h1>
-    <p class="muted">
-      Soft integer groupings across the whole project. Wave 0 (unassigned)
-      sorts last so structured waves come first.
+    <h1>Waves</h1>
+    <p class="subtitle">
+      <a href="/p/{{$proj.Slug}}">{{$proj.Name}}</a>
+      <span class="breadcrumb-sep"></span>
+      Soft integer groupings across the whole project. Wave 0 (unassigned) sorts last.
     </p>
-    <p class="page-actions">
+    <div class="page-actions">
       <a class="btn" href="/p/{{$proj.Slug}}/phases">All phases</a>
       <a class="btn" href="/p/{{$proj.Slug}}">← back to project</a>
-    </p>
+    </div>
   </header>
 
   {{if .Body.Waves}}
@@ -18,21 +19,27 @@
     <section class="card wave-section{{if .IsUnassigned}} muted-section{{end}}">
       <h2>
         {{if .IsUnassigned}}Wave 0 <span class="muted">(unassigned)</span>{{else}}Wave {{.Wave}}{{end}}
-        <span class="muted">· {{len .Tickets}} ticket{{if ne (len .Tickets) 1}}s{{end}}</span>
+        <span class="muted">— {{len .Tickets}} ticket{{if ne (len .Tickets) 1}}s{{end}}</span>
       </h2>
       <ul class="bare-list">
         {{range .Tickets}}
         <li>
           <a href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a>
-          <span class="muted">· {{.Column}}</span>
-          {{if .PhaseID}}<span class="muted">· phase {{.PhaseID}}</span>{{end}}
+          <span class="badge badge-{{.Column}}">{{.Column}}</span>
+          {{if .PhaseID}}<span class="muted">— phase {{.PhaseID}}</span>{{end}}
         </li>
         {{end}}
       </ul>
     </section>
     {{end}}
   {{else}}
-  <p class="hint">No tickets in this project yet.</p>
+  <div class="empty-state">
+    <h1>No tickets yet</h1>
+    <p class="subtitle">Create some tickets and they'll show up here grouped by their wave number.</p>
+    <div class="page-actions">
+      <a class="btn btn-primary" href="/p/{{$proj.Slug}}/tickets/new">New ticket</a>
+    </div>
+  </div>
   {{end}}
 </section>
 {{end}}

@@ -53,7 +53,7 @@ func TestBoard_Empty(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
 	}
-	for _, want := range []string{"To do", "In progress", "Testing", "Done", "(0)"} {
+	for _, want := range []string{"To do", "In progress", "Testing", "Done", `class="count"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("board missing %q", want)
 		}

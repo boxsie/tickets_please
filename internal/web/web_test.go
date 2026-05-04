@@ -315,7 +315,7 @@ func TestRenderer_Page(t *testing.T) {
 		"action=\"/search\"",        // search form target
 		"id=\"sidebar\"",            // sidebar present
 		"No projects mounted",       // sidebar empty state
-		"No projects mounted yet",   // home empty state copy
+		"Welcome to tickets_please", // home empty state copy
 		"/p/load",                   // sidebar action link
 		"/p/new",                    // sidebar action link
 		"/static/htmx.min.js",       // htmx loaded
