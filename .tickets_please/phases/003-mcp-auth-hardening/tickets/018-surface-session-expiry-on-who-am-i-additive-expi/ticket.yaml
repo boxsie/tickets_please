@@ -2,11 +2,13 @@ id: a35a1468-0ca6-449e-b4cd-ad9b9baa504f
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 18
 title: Surface session expiry on who_am_i (additive expired field)
-column: in_progress
+column: done
 phase_id: 2fe42e90-3c01-443c-a4d2-40dbc9088d90
 wave: 1
 parallelizable_with:
     - 9b06036c-c1e7-4f0e-b944-e7ce551822ff
 created_by: ea83c4a0-f653-4656-b69e-cdc5c69f57b2
+completed_by: ea83c4a0-f653-4656-b69e-cdc5c69f57b2
+completed_at: 2026-05-04T12:55:00.246416094+01:00
 created_at: 2026-05-04T12:48:57.517140761+01:00
-updated_at: 2026-05-04T12:52:54.174712384+01:00
+updated_at: 2026-05-04T12:55:00.246416094+01:00
