@@ -2,11 +2,13 @@ id: 73e63f34-49f4-4923-ad42-8cb8fda539ea
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 26
 title: 'Phase detail: replace bare wave summary with the polished wave list'
-column: in_progress
+column: done
 phase_id: ba77af7e-a855-49b3-8136-8567123d019d
 wave: 3
 depends_on:
     - a7f80d53-ade2-43e2-bd3e-8dafeb7a06e2
 created_by: d1ce69dc-b647-4fdc-9d7e-f83fe5a21426
+completed_by: 165748a1-5c10-4450-9931-bd6267c85268
+completed_at: 2026-05-04T22:19:14.900029629+01:00
 created_at: 2026-05-04T22:15:11.309635709+01:00
-updated_at: 2026-05-04T22:15:25.918504326+01:00
+updated_at: 2026-05-04T22:19:14.900029629+01:00
