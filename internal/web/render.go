@@ -35,6 +35,9 @@ type Chrome struct {
 	Flash           *Flash
 	CSRF            string
 	ShowLocalBanner bool
+	// URL is the request path (no query string). Used by the sidebar's
+	// per-project nav to highlight the active item via suffix-match.
+	URL string
 }
 
 // PageData is the full payload templates receive. Templates use `.Title`,
@@ -310,6 +313,10 @@ var funcMap = template.FuncMap{
 	// for short ad-hoc enumerations like search-tab kinds where stating them
 	// inline beats threading a Go-side constant through the page data.
 	"list": func(items ...string) []string { return items },
+	// hasSuffix is strings.HasSuffix exposed to templates. The sidebar uses
+	// it to highlight the active per-project nav item by matching the
+	// request URL against /board, /phases, /waves, /summary, etc.
+	"hasSuffix": strings.HasSuffix,
 	// phaseSlug returns the slug of the ticket's current phase, or "" if
 	// it's phase-less or the phase is missing from the slice.
 	"phaseSlug": func(t *domain.Ticket, phases []*domain.Phase) string {

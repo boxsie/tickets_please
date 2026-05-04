@@ -209,3 +209,20 @@ test('27 load picker — manual entry expanded', async ({ page }) => {
   await page.waitForTimeout(200);
   await shoot(page, '27-load-picker-manual-entry');
 });
+
+test('28 sidebar picker — closed', async ({ page }) => {
+  await page.goto('/p/demo/board');
+  await shoot(page, '28-sidebar-with-project-nav');
+});
+
+test('29 sidebar picker — open', async ({ page }) => {
+  await page.goto('/p/demo/board');
+  await page.locator('details.project-picker > summary').click();
+  await page.waitForTimeout(200);
+  await shoot(page, '29-sidebar-picker-open');
+});
+
+test('30 sidebar nav highlights board on /board', async ({ page }) => {
+  await page.goto('/p/demo/phases');
+  await shoot(page, '30-sidebar-active-phases');
+});

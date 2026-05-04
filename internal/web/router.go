@@ -144,6 +144,7 @@ func (a *app) Chrome(w http.ResponseWriter, r *http.Request) Chrome {
 		Flash:           readAndClearFlash(w, r),
 		CSRF:            csrf,
 		ShowLocalBanner: !isLoopbackHost(r.Host),
+		URL:             r.URL.Path,
 	}
 }
 

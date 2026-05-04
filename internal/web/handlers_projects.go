@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -452,15 +453,44 @@ func (a *app) handleProjectSummaryUpdate(w http.ResponseWriter, r *http.Request)
 // (PageData with Chrome populated) so the template's `.Chrome.Projects` /
 // `.CurrentSlug` references resolve.
 func (a *app) handleSidebarPartial(w http.ResponseWriter, r *http.Request) {
-	// CurrentSlug isn't known here (the sidebar refresh is body-scoped, the
-	// caller's URL isn't part of the trigger). Future tickets can pass a
-	// `?slug=` query string when they want the active highlight preserved
-	// across a refresh.
+	// CurrentSlug + URL aren't known from the partial endpoint itself (the
+	// sidebar refresh is body-scoped). htmx sends the page URL via
+	// HX-Current-URL on every triggered request — use it to keep the active
+	// highlight + per-project nav stable across refreshes. Fall back to a
+	// `?slug=` query for non-htmx callers.
 	currentSlug := r.URL.Query().Get("slug")
+	chrome := a.Chrome(w, r)
+	if hxURL := r.Header.Get("HX-Current-URL"); hxURL != "" {
+		if u, err := url.Parse(hxURL); err == nil {
+			chrome.URL = u.Path
+			if currentSlug == "" {
+				currentSlug = slugFromPath(u.Path)
+			}
+		}
+	}
 	a.renderer.Partial(w, r, "sidebar", PageData{
-		Chrome:      a.Chrome(w, r),
+		Chrome:      chrome,
 		CurrentSlug: currentSlug,
 	})
+}
+
+// slugFromPath extracts the project slug from a /p/{slug}/... URL path.
+// Returns "" for paths that don't match. Used by the sidebar refresh to
+// recover the active project context from htmx's HX-Current-URL.
+func slugFromPath(path string) string {
+	if !strings.HasPrefix(path, "/p/") {
+		return ""
+	}
+	rest := strings.TrimPrefix(path, "/p/")
+	if i := strings.Index(rest, "/"); i >= 0 {
+		rest = rest[:i]
+	}
+	// Filter out the literal segments that aren't real slugs.
+	switch rest {
+	case "", "new", "load":
+		return ""
+	}
+	return rest
 }
 
 // --- middleware ------------------------------------------------------------

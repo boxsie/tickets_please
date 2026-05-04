@@ -356,6 +356,7 @@ func TestRenderer_Sidebar_ActiveItem(t *testing.T) {
 			{Slug: "beta", Name: "Beta"},
 		},
 		AgentLabel: "Web UI · abc123",
+		URL:        "/p/beta",
 	}}
 	r := NewRenderer(templatesFS(false), false, provider)
 	rec := httptest.NewRecorder()
@@ -364,14 +365,15 @@ func TestRenderer_Sidebar_ActiveItem(t *testing.T) {
 
 	body := rec.Body.String()
 
-	// Both project links present.
+	// Both project links present in the picker.
 	for _, slug := range []string{"alpha", "beta"} {
 		if !strings.Contains(body, "/p/"+slug) {
 			t.Errorf("sidebar missing /p/%s link", slug)
 		}
 	}
 
-	// Only beta gets aria-current.
+	// The "Overview" link in the per-project nav for beta should carry
+	// aria-current="page" — that's the URL we said we're on.
 	if !strings.Contains(body, `aria-current="page"`) {
 		t.Errorf("active item missing aria-current\n%s", body)
 	}

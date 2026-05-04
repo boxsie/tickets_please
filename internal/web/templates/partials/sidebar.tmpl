@@ -1,11 +1,15 @@
 {{define "sidebar.tmpl"}}{{- /*
-  The sidebar wires itself to a body-scoped htmx event so handlers that mutate
-  the project set (POST /p, POST /p/load, POST /p/{slug}/delete) can refresh
-  just the rail by emitting `HX-Trigger: sidebar-refresh`.
+  Sidebar: project picker (combobox) + per-project nav.
 
-  hx-get points at /_partials/sidebar (a dedicated handler that always
-  returns just the sidebar fragment, irrespective of HX-Request semantics) so
-  the swap is self-contained.
+  The picker is the switcher; clicking the toggle reveals a search input,
+  filterable list, and "+ New project" / "+ Load existing" actions. The
+  per-project nav below is rendered only when the user is "inside" a
+  project (CurrentSlug matches a known project) and gives access to every
+  project view from anywhere in the app.
+
+  The whole rail re-fetches itself from /_partials/sidebar on the
+  body-scoped `sidebar-refresh` event — handlers that mutate the project
+  set emit that via HX-Trigger so the picker stays in sync.
 */ -}}
 <aside
   id="sidebar"
@@ -14,26 +18,28 @@
   hx-trigger="sidebar-refresh from:body"
   hx-swap="outerHTML"
 >
-  <h2 class="sidebar-heading">Projects</h2>
-  {{if .Chrome.Projects}}
-  <ul class="sidebar-list">
-    {{- $cur := .CurrentSlug -}}
-    {{range .Chrome.Projects}}
-    <li>
-      <a
-        href="/p/{{.Slug}}"
-        class="sidebar-link{{if eq .Slug $cur}} is-active{{end}}"
-        {{- if eq .Slug $cur}} aria-current="page"{{end}}
-      >{{.Name}}</a>
-    </li>
-    {{end}}
-  </ul>
-  {{else}}
-  <p class="sidebar-empty">No projects mounted.</p>
-  {{end}}
-  <nav class="sidebar-actions" aria-label="Project actions">
-    <a class="sidebar-action" href="/p/new">New project</a>
-    <a class="sidebar-action" href="/p/load">Load existing</a>
+  {{template "project_picker.tmpl" .}}
+
+  {{- $cur := .CurrentSlug -}}
+  {{- $url := .Chrome.URL -}}
+  {{- $active := "" -}}
+  {{- range .Chrome.Projects -}}{{if eq .Slug $cur}}{{$active = .}}{{end}}{{- end -}}
+
+  {{if $active}}
+  <nav class="project-nav" aria-label="{{$active.Name}} navigation">
+    <h2 class="sidebar-heading">{{$active.Name}}</h2>
+    {{$overview := printf "/p/%s" $cur}}
+    <a class="project-nav-link{{if eq $url $overview}} active{{end}}" href="{{$overview}}"{{if eq $url $overview}} aria-current="page"{{end}}>Overview</a>
+    <a class="project-nav-link{{if hasSuffix $url "/board"}} active{{end}}" href="/p/{{$cur}}/board"{{if hasSuffix $url "/board"}} aria-current="page"{{end}}>Board</a>
+    <a class="project-nav-link{{if hasSuffix $url "/phases"}} active{{end}}" href="/p/{{$cur}}/phases"{{if hasSuffix $url "/phases"}} aria-current="page"{{end}}>Phases</a>
+    <a class="project-nav-link{{if hasSuffix $url "/waves"}} active{{end}}" href="/p/{{$cur}}/waves"{{if hasSuffix $url "/waves"}} aria-current="page"{{end}}>Waves</a>
+    <a class="project-nav-link{{if hasSuffix $url "/summary"}} active{{end}}" href="/p/{{$cur}}/summary"{{if hasSuffix $url "/summary"}} aria-current="page"{{end}}>Summary</a>
+    <hr class="project-nav-sep">
+    <a class="project-nav-cta{{if hasSuffix $url "/tickets/new"}} active{{end}}" href="/p/{{$cur}}/tickets/new"{{if hasSuffix $url "/tickets/new"}} aria-current="page"{{end}}>+ New ticket</a>
+    <a class="project-nav-link muted{{if hasSuffix $url "/edit"}} active{{end}}" href="/p/{{$cur}}/edit"{{if hasSuffix $url "/edit"}} aria-current="page"{{end}}>Edit project</a>
   </nav>
+  {{else}}
+  <p class="sidebar-empty">No project selected. Pick one from the dropdown above or create a new one.</p>
+  {{end}}
 </aside>
 {{end}}
