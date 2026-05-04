@@ -1,0 +1,22 @@
+{{define "project_summary_edit.tmpl"}}<div id="summary-region" class="card">
+  {{if .FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{.FormError}}</div>{{end}}
+  <form method="post"
+        action="/p/{{.Project.Slug}}/summary"
+        class="stack"
+        hx-post="/p/{{.Project.Slug}}/summary"
+        hx-target="#summary-region"
+        hx-swap="outerHTML">
+    <label for="summary">Summary <span class="muted">(markdown, ≥200 chars)</span></label>
+    <textarea id="summary" name="summary" rows="16" required minlength="200">{{.Summary}}</textarea>
+    <input type="hidden" name="_csrf" value="{{.CSRF}}">
+    <div class="form-actions">
+      <button type="submit">Save</button>
+      <button type="button"
+              class="btn-link"
+              hx-get="/p/{{.Project.Slug}}/summary"
+              hx-target="#summary-region"
+              hx-swap="outerHTML">Cancel</button>
+    </div>
+  </form>
+</div>
+{{end}}

@@ -1,0 +1,23 @@
+{{define "main"}}
+{{- $f := .Body -}}
+<section class="form-page">
+  <header class="page-header">
+    <h1>Load existing project</h1>
+    <p class="hint">
+      Point at a directory containing a <code>.tickets_please/project.yaml</code>
+      marker file. The path must be absolute and readable by the server
+      process (which runs as the same user that started <code>tickets_please serve</code>).
+    </p>
+  </header>
+  {{if $f.FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{$f.FormError}}</div>{{end}}
+  <form method="post" action="/p/load" class="stack">
+    <label for="path">Absolute path</label>
+    <input type="text" id="path" name="path" required
+           placeholder="/home/you/code/some-repo"
+           autocomplete="off"
+           value="{{$f.Path}}">
+    <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
+    <button type="submit">Load project</button>
+  </form>
+</section>
+{{end}}

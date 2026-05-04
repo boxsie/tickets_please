@@ -1,0 +1,42 @@
+{{define "main"}}
+{{- $proj := .Body.Project -}}
+{{- $phaseSlug := .Body.PhaseSlug -}}
+<section class="board-page">
+  <header class="page-header">
+    <h1>Board <span class="muted">· {{$proj.Name}}</span></h1>
+    <p class="page-actions">
+      <a class="btn" href="/p/{{$proj.Slug}}/tickets/new">[+] New ticket</a>
+      <a class="btn" href="/p/{{$proj.Slug}}/waves">View waves</a>
+      <a class="btn" href="/p/{{$proj.Slug}}">← back to project</a>
+    </p>
+    {{if .Body.Phases}}
+    <form method="get" action="/p/{{$proj.Slug}}/board" class="inline-filter">
+      <label for="phase">Phase filter</label>
+      <select id="phase" name="phase" onchange="this.form.submit()">
+        <option value="">— all —</option>
+        {{range .Body.Phases}}
+        <option value="{{.Slug}}"{{if eq .Slug $phaseSlug}} selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </form>
+    {{end}}
+  </header>
+
+  <div class="board-columns">
+    {{range .Body.Columns}}
+    <section class="board-column board-column-{{.Column}}{{if eq (printf "%s" .Column) "done"}} muted-section{{end}}">
+      <header class="board-column-header">
+        <h2>{{.Title}} <span class="muted">({{len .Tickets}})</span></h2>
+      </header>
+      <ul class="ticket-cards">
+        {{range .Tickets}}
+        {{template "ticket_card.tmpl" (mkTicketCard . $proj.Slug)}}
+        {{else}}
+        <li class="ticket-cards-empty muted">—</li>
+        {{end}}
+      </ul>
+    </section>
+    {{end}}
+  </div>
+</section>
+{{end}}

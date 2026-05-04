@@ -1,0 +1,37 @@
+{{define "main"}}
+{{- $proj := .Body.Project -}}
+<section class="phases-index">
+  <header class="page-header">
+    <h1>Phases <span class="muted">· {{$proj.Name}}</span></h1>
+    <p class="page-actions">
+      <a class="btn" href="/p/{{$proj.Slug}}/phases/new">[+] New phase</a>
+      <a class="btn" href="/p/{{$proj.Slug}}/waves">View waves</a>
+      <a class="btn" href="/p/{{$proj.Slug}}">← back to project</a>
+    </p>
+  </header>
+  {{if .Body.Phases}}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Slug</th>
+        <th>Description</th>
+        <th>Active / Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Body.Phases}}
+      <tr>
+        <td><a href="/p/{{$proj.Slug}}/phases/{{.Slug}}">{{.Name}}</a></td>
+        <td><code>{{.Slug}}</code></td>
+        <td>{{.Description}}</td>
+        <td>{{.ActiveTicketCount}} / {{.TicketCount}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="hint">No phases yet. <a href="/p/{{$proj.Slug}}/phases/new">Create the first phase →</a></p>
+  {{end}}
+</section>
+{{end}}

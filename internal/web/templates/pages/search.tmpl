@@ -1,0 +1,37 @@
+{{define "main"}}
+{{- $b := .Body -}}
+<section class="search-page">
+  <header class="page-header">
+    <h1>Search</h1>
+    <p class="muted">
+      Searching {{$b.MountedCount}} mounted project{{if ne $b.MountedCount 1}}s{{end}}.
+      Vector search over completion learnings is the most useful tab — that's where past wisdom lives.
+    </p>
+  </header>
+
+  <form method="get" action="/search" class="search-form">
+    <input type="search" name="q" autofocus placeholder="What did we learn about…?"
+           value="{{$b.Query}}"
+           hx-get="/search"
+           hx-trigger="keyup changed delay:300ms, search"
+           hx-include="[name='kind'],[name='slug'],[name='limit']"
+           hx-target="#results"
+           hx-swap="innerHTML"
+           hx-sync="this:replace">
+    <input type="hidden" name="kind" value="{{$b.Kind}}">
+    <input type="hidden" name="slug" value="{{$b.Slug}}">
+    <input type="hidden" name="limit" value="{{$b.Limit}}">
+
+    <nav class="search-tabs" aria-label="Search kind">
+      {{range $k := list "learnings" "tickets" "comments" "projects"}}
+      <a class="search-tab{{if eq $k $b.Kind}} active{{end}}"
+         href="/search?q={{$b.Query}}&kind={{$k}}{{if $b.Slug}}&slug={{$b.Slug}}{{end}}">{{$k}}</a>
+      {{end}}
+    </nav>
+  </form>
+
+  <div id="results" class="search-results">
+    {{template "search_results.tmpl" $b}}
+  </div>
+</section>
+{{end}}

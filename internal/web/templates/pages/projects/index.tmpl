@@ -1,0 +1,33 @@
+{{define "main"}}
+<section class="project-index">
+  <header class="page-header">
+    <h1>Projects</h1>
+    <p class="page-actions">
+      <a class="btn" href="/p/new">[+] New project</a>
+      <a class="btn" href="/p/load">[+] Load existing project</a>
+    </p>
+  </header>
+  {{if .Body.Projects}}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Slug</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Body.Projects}}
+      <tr>
+        <td><a href="/p/{{.Slug}}">{{.Name}}</a></td>
+        <td><code>{{.Slug}}</code></td>
+        <td>{{.Description}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="hint">No projects mounted. Use the buttons above to create or load one.</p>
+  {{end}}
+</section>
+{{end}}

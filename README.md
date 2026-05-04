@@ -61,6 +61,18 @@ claude mcp add --transport http tickets_please http://localhost:8765/mcp
 
 `/healthz` returns `ok` for liveness probes.
 
+### Web UI
+
+The same `serve` process also exposes a browser UI at `http://localhost:8765/`. Open it in any browser — projects, phases, tickets, and search are all reachable. Human edits show up in the audit trail attributed to a `web-ui:<random>` agent (cookie-scoped, valid for 7 days).
+
+**Localhost only — no auth.** Don't expose `:8765` to a network without putting authentication in front of it.
+
+For UI development, run with `--dev` so template and static-asset edits show up on refresh without rebuilding:
+
+```bash
+./tickets_please serve --addr :8765 --dev
+```
+
 ### Claude Desktop
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or the equivalent on your platform:

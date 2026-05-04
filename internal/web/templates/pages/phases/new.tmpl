@@ -1,0 +1,36 @@
+{{define "main"}}
+{{- $f := .Body -}}
+{{- $proj := $f.Project -}}
+<section class="form-page">
+  <header class="page-header">
+    <h1>New phase <span class="muted">· {{$proj.Name}}</span></h1>
+    <p class="hint">
+      Phases are sub-projects for larger bodies of work. Slug is auto-derived
+      from name on the server side; supply a clear, scoped name.
+    </p>
+  </header>
+  {{if $f.FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{$f.FormError}}</div>{{end}}
+  <form method="post" action="/p/{{$proj.Slug}}/phases" class="stack">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required
+           placeholder="Web Frontend"
+           value="{{$f.Submitted.Name}}">
+
+    <label for="description">Description <span class="muted">(short, optional)</span></label>
+    <input type="text" id="description" name="description"
+           placeholder="One-line summary for the phase list"
+           value="{{$f.Submitted.Description}}">
+
+    <label for="summary">Summary <span class="muted">(markdown, ≥200 chars; load-bearing — agents read this first)</span></label>
+    <textarea id="summary" name="summary" rows="12" required minlength="200"
+              placeholder="What is this phase? What's the goal? What constraints matter?
+This text is embedded and surfaced to LLMs as the first context they see when working in this phase.">{{$f.Submitted.Summary}}</textarea>
+
+    <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
+    <div class="form-actions">
+      <button type="submit">Create phase</button>
+      <a class="btn-link" href="/p/{{$proj.Slug}}/phases">Cancel</a>
+    </div>
+  </form>
+</section>
+{{end}}

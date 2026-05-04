@@ -1,0 +1,217 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   Hand-authored layer.
+
+   Tailwind utilities cover the long tail of one-offs; the chrome that every
+   page extends (topbar, sidebar, flash, empty-state) lives here as semantic
+   classes so the templates stay readable. Keep this file under ~150 lines —
+   if it grows, lean harder on Tailwind utilities in the templates instead.
+   --------------------------------------------------------------------------- */
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: theme("fontFamily.sans");
+    background: theme("colors.base");
+    color: theme("colors.fg");
+    line-height: 1.5;
+  }
+  * { box-sizing: border-box; }
+  a { color: theme("colors.accent"); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    background: #1a1d24;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-family: theme("fontFamily.mono");
+  }
+}
+
+@layer components {
+  /* Top bar -------------------------------------------------------------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid theme("colors.line");
+    background: theme("colors.bar");
+  }
+  .topbar .brand {
+    color: theme("colors.fg");
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .topbar .brand:hover { text-decoration: none; }
+  .topbar .search {
+    flex: 1;
+    max-width: 32rem;
+  }
+  .topbar .search input[type="search"] {
+    width: 100%;
+    background: theme("colors.base");
+    color: theme("colors.fg");
+    border: 1px solid theme("colors.line");
+    border-radius: 6px;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+  }
+  .topbar .search input[type="search"]:focus {
+    outline: none;
+    border-color: theme("colors.accent");
+    box-shadow: 0 0 0 2px rgba(106, 169, 255, 0.2);
+  }
+  .topbar .agent {
+    color: theme("colors.muted");
+    font-size: 0.85rem;
+    font-family: theme("fontFamily.mono");
+  }
+
+  /* Localhost-only banner ------------------------------------------------- */
+  .banner-warn {
+    background: theme("colors.warnbg");
+    color: theme("colors.warn");
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    border-bottom: 1px solid #43320a;
+  }
+  .banner-warn strong { color: theme("colors.warn"); }
+  .banner-warn code { color: inherit; }
+
+  /* Layout shell --------------------------------------------------------- */
+  .layout {
+    display: flex;
+    flex-direction: row;
+    min-height: calc(100vh - 3rem);
+  }
+  main#content {
+    flex: 1;
+    padding: 2rem 1.5rem;
+    max-width: 64rem;
+  }
+
+  /* Sidebar -------------------------------------------------------------- */
+  .sidebar {
+    width: 16rem;
+    flex-shrink: 0;
+    border-right: 1px solid theme("colors.line");
+    background: theme("colors.bar");
+    padding: 1rem;
+    font-size: 0.9rem;
+  }
+  .sidebar-heading {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: theme("colors.muted");
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+  }
+  .sidebar-list {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .sidebar-link {
+    display: block;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    color: theme("colors.fg");
+  }
+  .sidebar-link:hover {
+    background: theme("colors.hover");
+    text-decoration: none;
+  }
+  .sidebar-link.is-active {
+    background: theme("colors.active");
+    color: theme("colors.fg");
+    font-weight: 600;
+  }
+  .sidebar-empty {
+    color: theme("colors.muted");
+    font-style: italic;
+    margin: 0 0 1rem;
+  }
+  .sidebar-actions {
+    border-top: 1px solid theme("colors.line");
+    padding-top: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .sidebar-action {
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+  .sidebar-action:hover { background: theme("colors.hover"); text-decoration: none; }
+
+  /* Flash banner --------------------------------------------------------- */
+  .flash {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid theme("colors.line");
+    font-size: 0.9rem;
+  }
+  .flash-success { background: rgba(62, 207, 142, 0.1); color: theme("colors.success"); }
+  .flash-info    { background: rgba(106, 169, 255, 0.1); color: theme("colors.accent"); }
+  .flash-error   { background: rgba(255, 107, 107, 0.1); color: theme("colors.error"); }
+
+  /* Empty / form pages --------------------------------------------------- */
+  .empty-state h1 { margin-top: 0; }
+  .empty-state .hint, .form-page .hint { color: theme("colors.muted"); font-size: 0.9rem; }
+  .form-page .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 30rem;
+  }
+  .form-page input[type="text"] {
+    background: theme("colors.base");
+    color: theme("colors.fg");
+    border: 1px solid theme("colors.line");
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    font-family: theme("fontFamily.mono");
+  }
+  .form-page button {
+    align-self: flex-start;
+    background: theme("colors.accent");
+    color: #061224;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .form-page button:hover { filter: brightness(1.1); }
+
+  /* Inline error partial ------------------------------------------------- */
+  .error {
+    border: 1px solid theme("colors.error");
+    border-left-width: 4px;
+    padding: 0.7rem 1rem;
+    margin: 1rem 0;
+    background: rgba(255, 107, 107, 0.08);
+    border-radius: 4px;
+  }
+  .error strong { color: theme("colors.error"); }
+
+  /* Mobile collapse ------------------------------------------------------ */
+  @media (max-width: 720px) {
+    .layout { flex-direction: column; }
+    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid theme("colors.line"); }
+    .topbar .search { max-width: none; }
+  }
+}

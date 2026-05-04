@@ -1,0 +1,15 @@
+{{define "comment_form.tmpl"}}<form class="comment-form" method="post"
+      action="/tickets/{{.TicketID}}/comments{{if .ProjectSlug}}?slug={{.ProjectSlug}}{{end}}"
+      hx-post="/tickets/{{.TicketID}}/comments{{if .ProjectSlug}}?slug={{.ProjectSlug}}{{end}}"
+      hx-target="#comments-list"
+      hx-swap="beforeend"
+      hx-on::after-request="if (event.detail.successful) this.reset()">
+  <label for="comment-body">New comment</label>
+  <textarea id="comment-body" name="body" rows="3" required minlength="1" placeholder="Add a note — markdown welcome."></textarea>
+  <input type="hidden" name="_csrf" value="{{.CSRF}}">
+  <div class="form-actions">
+    <button type="submit">Add comment</button>
+    <span class="hint">Comments are append-only — no edits, no deletes.</span>
+  </div>
+</form>
+{{end}}

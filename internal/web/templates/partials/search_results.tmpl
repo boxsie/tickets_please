@@ -1,0 +1,44 @@
+{{define "search_results.tmpl"}}{{- $b := . -}}{{if $b.Err}}<div class="form-error" role="alert"><strong>Error:</strong> {{$b.Err}}</div>{{else if eq $b.Query ""}}<p class="hint">Type to search.</p>{{else if and (eq $b.Kind "learnings") (not $b.LearningHits)}}<p class="hint">No matches. Try broadening the query or switching tabs.</p>{{else if and (eq $b.Kind "tickets") (not $b.TicketHits)}}<p class="hint">No matches. Try broadening the query or switching tabs.</p>{{else if and (eq $b.Kind "projects") (not $b.ProjectHits)}}<p class="hint">No matches. Try broadening the query or switching tabs.</p>{{else if and (eq $b.Kind "comments") (not $b.CommentHits)}}<p class="hint">No matches. Try broadening the query or switching tabs.</p>{{else if eq $b.Kind "learnings"}}<ul class="search-hits">
+  {{range $b.LearningHits}}
+  <li class="search-hit">
+    <div class="search-hit-row">
+      <a class="search-hit-title" href="/tickets/{{.TicketID}}?slug={{.ProjectSlug}}">{{.Title}}</a>
+      <span class="badge">{{.ProjectSlug}}</span>
+      <span class="muted score">{{printf "%.2f" .Score}}</span>
+    </div>
+    <div class="search-hit-snippet">{{.Learnings}}</div>
+  </li>
+  {{end}}
+</ul>{{else if eq $b.Kind "tickets"}}<ul class="search-hits">
+  {{range $b.TicketHits}}
+  <li class="search-hit">
+    <div class="search-hit-row">
+      <a class="search-hit-title" href="/tickets/{{.Ticket.ID}}?slug={{$b.Slug}}">{{.Ticket.Title}}</a>
+      <span class="badge badge-{{.Ticket.Column}}">{{.Ticket.Column}}</span>
+      <span class="muted score">{{printf "%.2f" .Score}}</span>
+    </div>
+    {{if .Ticket.Body}}<div class="search-hit-snippet">{{.Ticket.Body}}</div>{{end}}
+  </li>
+  {{end}}
+</ul>{{else if eq $b.Kind "projects"}}<ul class="search-hits">
+  {{range $b.ProjectHits}}
+  <li class="search-hit">
+    <div class="search-hit-row">
+      <a class="search-hit-title" href="/p/{{.ProjectSlug}}">{{.Project.Name}}</a>
+      <span class="badge">{{.ProjectSlug}}</span>
+      <span class="muted score">{{printf "%.2f" .Score}}</span>
+    </div>
+    {{if .Project.Description}}<div class="search-hit-snippet">{{.Project.Description}}</div>{{end}}
+  </li>
+  {{end}}
+</ul>{{else if eq $b.Kind "comments"}}<ul class="search-hits">
+  {{range $b.CommentHits}}
+  <li class="search-hit">
+    <div class="search-hit-row">
+      <a class="search-hit-title" href="/tickets/{{.Comment.TicketID}}#comment-{{.Comment.ID}}">Re: {{.TicketTitle}}</a>
+      <span class="muted score">{{printf "%.2f" .Score}}</span>
+    </div>
+    <div class="search-hit-snippet">{{.Comment.Body}}</div>
+  </li>
+  {{end}}
+</ul>{{end}}{{end}}

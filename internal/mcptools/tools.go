@@ -3,6 +3,7 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -296,8 +297,16 @@ func jsonResult(v any) (*mcp.CallToolResult, error) {
 // callWithRetry looks up the per-session identity from the registry and
 // invokes fn under a context carrying the svc-layer agent session id. If no
 // session is registered for this MCP session, it returns ErrUnauthenticated
-// immediately — the LLM should call register_agent (upcoming ticket) to
-// self-register, or for stdio the session is pre-registered at startup.
+// immediately — the LLM should call register_agent to self-register, or for
+// stdio the session is pre-registered at startup.
+//
+// If fn returns ErrUnauthenticated (the svc-layer AgentRecord has expired
+// since the Session was cached), callWithRetry attempts a single silent
+// refresh via refreshSession using the cached identity, then retries fn
+// once. Mutating svc methods run requireSession before any state change, so
+// an ErrUnauthenticated return guarantees the original call was a no-op and
+// the retry is safe. A second ErrUnauthenticated is returned verbatim — no
+// looping.
 func (t *Tools) callWithRetry(ctx context.Context, fn func(ctx context.Context) error) error {
 	sessionID := t.sessionIDFromContext(ctx)
 	sess, ok := t.registry.Get(sessionID)
@@ -305,8 +314,47 @@ func (t *Tools) callWithRetry(ctx context.Context, fn func(ctx context.Context) 
 		return fmt.Errorf("%w: no agent registered for session %q; call register_agent first",
 			domain.ErrUnauthenticated, sessionID)
 	}
-	ctx2 := svc.WithSessionID(ctx, sess.AgentID)
-	return fn(ctx2)
+	err := fn(svc.WithSessionID(ctx, sess.AgentID))
+	if err == nil || !errors.Is(err, domain.ErrUnauthenticated) {
+		return err
+	}
+	newSess, refreshErr := t.refreshSession(ctx, sessionID, sess)
+	if refreshErr != nil {
+		return fmt.Errorf("%w: session expired and auto-refresh failed (%v); call register_agent",
+			domain.ErrUnauthenticated, refreshErr)
+	}
+	return fn(svc.WithSessionID(ctx, newSess.AgentID))
+}
+
+// refreshSession mints a fresh svc-layer agent for the cached identity in
+// prev, swaps it into the registry under sessionID, and returns the updated
+// Session. The cached AgentKey, AgentName, and Metadata are reused so the
+// audit trail stays continuous; ProjectSlug/ProjectPath copy through. The
+// project mount lives in svc memory and survives the in-process retry, so
+// no re-mount is needed.
+func (t *Tools) refreshSession(ctx context.Context, sessionID string, prev *Session) (*Session, error) {
+	agentID, expiresAt, err := t.svc.RegisterAgent(ctx, prev.AgentKey, prev.AgentName, prev.Metadata, 0)
+	if err != nil {
+		return nil, err
+	}
+	next := &Session{
+		AgentID:     agentID,
+		AgentKey:    prev.AgentKey,
+		AgentName:   prev.AgentName,
+		Metadata:    prev.Metadata,
+		ProjectSlug: prev.ProjectSlug,
+		ProjectPath: prev.ProjectPath,
+		ExpiresAt:   expiresAt,
+	}
+	if err := t.registry.Register(sessionID, next); err != nil {
+		return nil, err
+	}
+	t.logger.Info("auto-refreshed expired mcp session",
+		"session_id", sessionID,
+		"agent_key", prev.AgentKey,
+		"expires_at", expiresAt.UTC().Format(time.RFC3339),
+	)
+	return next, nil
 }
 
 // errorResult builds an MCP error result from a domain-mapped error message.
@@ -1127,6 +1175,10 @@ func (t *Tools) handleWhoAmI(ctx context.Context, _ mcp.CallToolRequest) (*mcp.C
 		"name":       sess.AgentName,
 		"agent_id":   sess.AgentID,
 		"expires_at": formatTime(sess.ExpiresAt),
+		// Computed on read (not cached) so the value never lies as time
+		// passes. The IsZero guard covers the bootstrap stdio Session,
+		// which is registered before svc.RegisterAgent populates ExpiresAt.
+		"expired": !sess.ExpiresAt.IsZero() && time.Now().After(sess.ExpiresAt),
 	}
 	if len(sess.Metadata) > 0 {
 		out["metadata"] = sess.Metadata

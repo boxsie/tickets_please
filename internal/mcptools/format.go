@@ -249,7 +249,7 @@ func formatError(err error) string {
 	case errors.Is(err, domain.ErrFailedPrecondition):
 		return "precondition failed: " + stripSentinel(err, domain.ErrFailedPrecondition)
 	case errors.Is(err, domain.ErrUnauthenticated):
-		return "unauthenticated; re-registering..."
+		return "unauthenticated: " + stripSentinel(err, domain.ErrUnauthenticated)
 	default:
 		return err.Error()
 	}

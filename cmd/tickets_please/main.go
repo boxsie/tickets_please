@@ -28,6 +28,7 @@ import (
 	"tickets_please/internal/config"
 	"tickets_please/internal/mcptools"
 	"tickets_please/internal/svc"
+	"tickets_please/internal/web"
 )
 
 // version is the MCP server version reported to clients. Bump when meaningful
@@ -178,6 +179,7 @@ func runServe(args []string, cfg config.Config, log *slog.Logger) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", ":8765", "HTTP listen address")
 	dataRoot := fs.String("data-root", "", "override central data root (default: cfg.DataRoot)")
+	dev := fs.Bool("dev", false, "developer mode: reparse web templates and static files from disk on every request")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("parse serve flags: %w", err)
 	}
@@ -213,6 +215,7 @@ func runServe(args []string, cfg config.Config, log *slog.Logger) error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok")
 	})
+	web.Mount(mux, web.Deps{Service: s, Logger: log, Cfg: cfg, Dev: *dev})
 
 	srv := &http.Server{
 		Addr:              *addr,
@@ -224,6 +227,8 @@ func runServe(args []string, cfg config.Config, log *slog.Logger) error {
 		"addr", *addr,
 		"data_root", cfg.DataRoot,
 		"tools", totalTools,
+		"web_ui", true,
+		"dev", *dev,
 	)
 
 	errCh := make(chan error, 1)

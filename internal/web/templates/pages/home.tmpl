@@ -1,0 +1,16 @@
+{{define "main"}}
+<section class="empty-state">
+  <h1>No projects mounted yet</h1>
+  <p>tickets_please can't find any projects in the host data dir or in any per-repo mount. Mount one to get started.</p>
+  <p>
+    <a href="/p/load">Load an existing project from disk</a>
+    &nbsp;·&nbsp;
+    <a href="/p/new">Create a new project</a>
+  </p>
+  <p class="hint">
+    Or run <code>tickets_please mcp</code> from a repo containing a
+    <code>.tickets_please/project.yaml</code> to bind a session and have
+    the project appear in the sidebar.
+  </p>
+</section>
+{{end}}

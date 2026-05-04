@@ -1,0 +1,15 @@
+{{define "project_summary_view.tmpl"}}<div id="summary-region" class="card markdown">
+  {{if .Summary}}
+    {{markdown .Summary}}
+  {{else}}
+    <p class="hint">No summary set yet.</p>
+  {{end}}
+  <p class="form-actions">
+    <button type="button"
+            class="btn"
+            hx-get="/p/{{.Project.Slug}}/summary?edit=1"
+            hx-target="#summary-region"
+            hx-swap="outerHTML">Edit</button>
+  </p>
+</div>
+{{end}}

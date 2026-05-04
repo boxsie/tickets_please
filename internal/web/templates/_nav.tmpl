@@ -1,0 +1,14 @@
+{{define "_nav.tmpl"}}<header class="topbar">
+  <a class="brand" href="/">tickets_please</a>
+  <form class="search" action="/search" method="get" role="search">
+    <input
+      type="search"
+      name="q"
+      placeholder="Search projects, tickets, learnings…"
+      autocomplete="off"
+      aria-label="Search"
+    >
+  </form>
+  {{if .Chrome.AgentLabel}}<span class="agent" title="Web UI session — visible in the audit trail">{{.Chrome.AgentLabel}}</span>{{end}}
+</header>
+{{end}}

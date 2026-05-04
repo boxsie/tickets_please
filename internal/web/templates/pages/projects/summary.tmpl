@@ -1,0 +1,18 @@
+{{define "main"}}
+{{- $b := .Body -}}
+{{- $p := $b.Project -}}
+<section class="project-summary">
+  <header class="page-header">
+    <h1>{{$p.Name}} <span class="muted">· summary</span></h1>
+    <p class="muted"><a href="/p/{{$p.Slug}}">← back to project</a></p>
+  </header>
+
+  <div id="summary-region">
+    {{if eq $b.Mode "edit"}}
+      {{template "project_summary_edit.tmpl" $b}}
+    {{else}}
+      {{template "project_summary_view.tmpl" $b}}
+    {{end}}
+  </div>
+</section>
+{{end}}

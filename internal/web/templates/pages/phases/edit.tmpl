@@ -1,0 +1,28 @@
+{{define "main"}}
+{{- $f := .Body -}}
+{{- $proj := $f.Project -}}
+{{- $phase := $f.Phase -}}
+<section class="form-page">
+  <header class="page-header">
+    <h1>Edit {{$phase.Name}}</h1>
+    <p class="muted">
+      Slug <code>{{$phase.Slug}}</code> is immutable.
+      Edit summary on the <a href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary">Summary page</a>.
+    </p>
+  </header>
+  {{if $f.FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{$f.FormError}}</div>{{end}}
+  <form method="post" action="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}" class="stack">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required value="{{$f.Submitted.Name}}">
+
+    <label for="description">Description</label>
+    <input type="text" id="description" name="description" value="{{$f.Submitted.Description}}">
+
+    <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
+    <div class="form-actions">
+      <button type="submit">Save</button>
+      <a class="btn-link" href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}">Cancel</a>
+    </div>
+  </form>
+</section>
+{{end}}

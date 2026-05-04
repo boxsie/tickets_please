@@ -240,6 +240,217 @@ func TestRegisterAgent_WhoAmIReflectsMetadata(t *testing.T) {
 	}
 }
 
+// TestWhoAmI_ExpiredField pins the additive `expired` boolean on who_am_i so
+// MCP clients can detect a stale session without parsing `expires_at`. Today
+// the in-memory Registry entry survives even after the underlying svc-layer
+// AgentRecord expires; the field surfaces that gap to the LLM.
+func TestWhoAmI_ExpiredField(t *testing.T) {
+	tools, repo, _ := freshToolsForRegister(t)
+	ctx := context.Background()
+
+	res := callRegister(t, tools, map[string]any{
+		"model":        "claude-opus-4-7",
+		"client_name":  "Claude Code",
+		"project_path": repo,
+	})
+	if res.IsError {
+		t.Fatalf("register failed: %s", extractText(t, res))
+	}
+
+	// Fresh session: expired must be false.
+	who, err := tools.handleWhoAmI(ctx, mcp.CallToolRequest{})
+	if err != nil {
+		t.Fatalf("who_am_i: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(extractText(t, who)), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["expired"] != false {
+		t.Errorf("fresh session: expired=%v want false", got["expired"])
+	}
+	if got["registered"] != true {
+		t.Errorf("fresh session: registered=%v want true", got["registered"])
+	}
+
+	// Force the cached Session's ExpiresAt into the past. who_am_i reads
+	// from the registry (not the AgentStore), so this is the right knob.
+	sess, ok := tools.registry.Get("stdio")
+	if !ok {
+		t.Fatal("session missing")
+	}
+	sess.ExpiresAt = time.Now().Add(-time.Minute)
+
+	who, err = tools.handleWhoAmI(ctx, mcp.CallToolRequest{})
+	if err != nil {
+		t.Fatalf("who_am_i (after expiry): %v", err)
+	}
+	got = map[string]any{}
+	if err := json.Unmarshal([]byte(extractText(t, who)), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["expired"] != true {
+		t.Errorf("expired session: expired=%v want true", got["expired"])
+	}
+	if got["registered"] != true {
+		t.Errorf("expired session: registered=%v want true (semantic = entry exists, not authenticated)",
+			got["registered"])
+	}
+}
+
+// TestWhoAmI_UnregisteredOmitsExpired pins that the un-registered shape is
+// unchanged: no `expired` key when there's no expiry to report.
+func TestWhoAmI_UnregisteredOmitsExpired(t *testing.T) {
+	tools, _, _ := freshToolsForRegister(t)
+	// Skip register_agent — registry stays empty so the unregistered branch
+	// of handleWhoAmI fires.
+	who, err := tools.handleWhoAmI(context.Background(), mcp.CallToolRequest{})
+	if err != nil {
+		t.Fatalf("who_am_i: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(extractText(t, who)), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["registered"] != false {
+		t.Errorf("registered=%v want false", got["registered"])
+	}
+	if _, present := got["expired"]; present {
+		t.Errorf("unregistered response should omit expired field, got %v", got["expired"])
+	}
+}
+
+// TestCallWithRetry_AutoRefreshOnExpiry exercises the bug from the Codex
+// report: a mutating tool call after the underlying svc-layer AgentRecord
+// has expired should silently mint a fresh session and complete the original
+// call, rather than surfacing "unauthenticated; re-registering..." without
+// actually re-registering.
+func TestCallWithRetry_AutoRefreshOnExpiry(t *testing.T) {
+	tools, repo, _ := freshToolsForRegister(t)
+	ctx := context.Background()
+
+	// 1. Register, capture initial identity.
+	res := callRegister(t, tools, map[string]any{
+		"model":        "claude-opus-4-7",
+		"client_name":  "Claude Code",
+		"project_path": repo,
+	})
+	if res.IsError {
+		t.Fatalf("initial register failed: %s", extractText(t, res))
+	}
+	prev, ok := tools.registry.Get("stdio")
+	if !ok {
+		t.Fatal("session missing after register")
+	}
+	prevAgentID := prev.AgentID
+	prevExpiresAt := prev.ExpiresAt
+
+	// 2. Force-expire the AgentRecord on disk so the next requireSession
+	//    rejects with ErrUnauthenticated. Bypass the cache by writing
+	//    directly through the AgentStore.
+	rec, err := tools.svc.AgentStore.ReadAgent(prevAgentID)
+	if err != nil {
+		t.Fatalf("ReadAgent: %v", err)
+	}
+	rec.ExpiresAt = time.Now().Add(-time.Minute)
+	if err := tools.svc.AgentStore.WriteAgentRecord(rec); err != nil {
+		t.Fatalf("WriteAgentRecord: %v", err)
+	}
+
+	// 3. Invoke a mutating handler. If auto-refresh works, this succeeds
+	//    silently; if not, IsError is true and the response carries the
+	//    misleading legacy string.
+	createReq := mcp.CallToolRequest{}
+	createReq.Params.Arguments = map[string]any{
+		"title": "auto-refresh smoke",
+		"body":  "ticket created across an expiry boundary",
+	}
+	createRes, err := tools.handleCreateTicket(ctx, createReq)
+	if err != nil {
+		t.Fatalf("handleCreateTicket: %v", err)
+	}
+	if createRes.IsError {
+		t.Fatalf("create_ticket failed (auto-refresh did not kick in): %s", extractText(t, createRes))
+	}
+
+	// 4. Registry now holds a fresh session under the same MCP session id.
+	next, ok := tools.registry.Get("stdio")
+	if !ok {
+		t.Fatal("session missing after auto-refresh")
+	}
+	if next.AgentID == prevAgentID {
+		t.Errorf("AgentID did not rotate: still %q", next.AgentID)
+	}
+	if !next.ExpiresAt.After(prevExpiresAt) {
+		t.Errorf("ExpiresAt did not advance: prev=%s next=%s", prevExpiresAt, next.ExpiresAt)
+	}
+	if next.AgentKey != prev.AgentKey {
+		t.Errorf("AgentKey changed: prev=%q next=%q (refresh should reuse the cached key)",
+			prev.AgentKey, next.AgentKey)
+	}
+	if next.ProjectSlug != prev.ProjectSlug || next.ProjectPath != prev.ProjectPath {
+		t.Errorf("project binding lost across refresh: prev=(%s,%s) next=(%s,%s)",
+			prev.ProjectSlug, prev.ProjectPath, next.ProjectSlug, next.ProjectPath)
+	}
+}
+
+// TestCallWithRetry_RefreshFailureSurfaces exercises the structured fallback
+// path: when refreshSession itself fails, callWithRetry must return a
+// wrapped ErrUnauthenticated whose message includes the underlying reason,
+// not the misleading legacy string.
+func TestCallWithRetry_RefreshFailureSurfaces(t *testing.T) {
+	tools, repo, _ := freshToolsForRegister(t)
+	ctx := context.Background()
+
+	res := callRegister(t, tools, map[string]any{
+		"model":        "claude-opus-4-7",
+		"client_name":  "Claude Code",
+		"project_path": repo,
+	})
+	if res.IsError {
+		t.Fatalf("initial register failed: %s", extractText(t, res))
+	}
+	sess, ok := tools.registry.Get("stdio")
+	if !ok {
+		t.Fatal("session missing after register")
+	}
+
+	// Expire the underlying record so the first fn call returns
+	// ErrUnauthenticated and triggers the refresh path.
+	rec, err := tools.svc.AgentStore.ReadAgent(sess.AgentID)
+	if err != nil {
+		t.Fatalf("ReadAgent: %v", err)
+	}
+	rec.ExpiresAt = time.Now().Add(-time.Minute)
+	if err := tools.svc.AgentStore.WriteAgentRecord(rec); err != nil {
+		t.Fatalf("WriteAgentRecord: %v", err)
+	}
+
+	// Sabotage the cached identity so refreshSession's RegisterAgent fails
+	// with ErrInvalidArgument ("agent key required").
+	sess.AgentKey = ""
+
+	createReq := mcp.CallToolRequest{}
+	createReq.Params.Arguments = map[string]any{"title": "should fail"}
+	createRes, err := tools.handleCreateTicket(ctx, createReq)
+	if err != nil {
+		t.Fatalf("handleCreateTicket: %v", err)
+	}
+	if !createRes.IsError {
+		t.Fatalf("expected error result, got success: %s", extractText(t, createRes))
+	}
+	msg := extractText(t, createRes)
+	if !contains(msg, "unauthenticated:") {
+		t.Errorf("error missing structured prefix: %q", msg)
+	}
+	if !contains(msg, "auto-refresh failed") {
+		t.Errorf("error missing auto-refresh-failed signal: %q", msg)
+	}
+	if contains(msg, "re-registering...") {
+		t.Errorf("legacy misleading string still surfaces: %q", msg)
+	}
+}
+
 // contains is a tiny helper to keep the test free of strings.Contains imports
 // noise; equivalent to strings.Contains.
 func contains(s, sub string) bool {

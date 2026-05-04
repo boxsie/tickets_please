@@ -55,6 +55,9 @@ tickets_please serve --addr :8765
 Mounts:
 - `/mcp` — the StreamableHTTP MCP endpoint (per-connection sessions handled natively by mcp-go).
 - `/healthz` — `200 ok` plaintext liveness probe.
+- `/` and `/static/` — server-rendered web UI (`internal/web`). `html/template` + htmx, single binary, no separate process.
+
+The web UI shares the same `svc.Service` instance as `/mcp`, so a human action in the browser and an LLM tool call from MCP write through the same concurrency-safe path. Cookie-scoped synthetic agents (`Web UI · <suffix>`) carry the audit trail. `--dev` swaps the embedded template/static FS for `os.DirFS` so edits show up on refresh without rebuilding.
 
 Wire it up in Claude Code:
 

@@ -347,7 +347,7 @@ func TestFormatError(t *testing.T) {
 		{"notfound", fmt.Errorf("%w: ticket xyz", domain.ErrNotFound), "not found: ticket xyz"},
 		{"exists", fmt.Errorf("%w: project demo", domain.ErrAlreadyExists), "already exists: project demo"},
 		{"precond", fmt.Errorf("%w: still active", domain.ErrFailedPrecondition), "precondition failed: still active"},
-		{"unauth", fmt.Errorf("%w: session expired", domain.ErrUnauthenticated), "unauthenticated; re-registering..."},
+		{"unauth", fmt.Errorf("%w: session expired", domain.ErrUnauthenticated), "unauthenticated: session expired"},
 	}
 	for _, tc := range cases {
 		got := formatError(tc.err)

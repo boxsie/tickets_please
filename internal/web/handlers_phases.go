@@ -1,0 +1,445 @@
+package web
+
+import (
+	"errors"
+	"net/http"
+	"sort"
+	"strings"
+
+	"tickets_please/internal/domain"
+)
+
+// Phases & waves CRUD. Mirrors handlers_projects.go's shape:
+//   - withCSRF wraps every POST (router applies it via wrap()).
+//   - classifyServiceError maps domain sentinels to HTTP statuses for
+//     inline form responses.
+//   - Summary editor uses the same view/edit partial swap pattern.
+//
+// Path convention: phases live under their project, so URLs are
+// /p/{slug}/phases/... — ticket 4 owns these paths exclusively, no overlap
+// with tickets 3/5/7.
+//
+// Cross-cutting endpoint: POST /tickets/{id}/assign-phase reassigns a ticket
+// between phases (or to phase-less). The "?slug=" query hint convention is
+// reserved here for ticket 5 to share, even though Service.AssignTicketToPhase
+// doesn't currently take a slug — the hint would skip
+// hostStoreForTicket's O(mounts) walk if Service grows a hinted variant later.
+
+// --- list / create ---------------------------------------------------------
+
+type phasesIndexData struct {
+	Project *domain.Project
+	Phases  []*domain.Phase
+}
+
+func (a *app) handlePhasesIndex(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	proj, err := a.deps.Service.GetProject(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	phases, err := a.deps.Service.ListPhases(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	a.renderer.Page(w, r, "phases/index", PageOpts{
+		Title:       proj.Name + " · phases · tickets_please",
+		CurrentSlug: slug,
+		Body:        phasesIndexData{Project: proj, Phases: phases},
+	})
+}
+
+type phaseFormData struct {
+	Mode      string // "new" or "edit"
+	Project   *domain.Project
+	Phase     *domain.Phase
+	FormError string
+	Submitted phaseFormSubmitted
+}
+
+type phaseFormSubmitted struct {
+	Slug        string
+	Name        string
+	Description string
+	Summary     string
+}
+
+func (a *app) handlePhaseNewForm(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	proj, err := a.deps.Service.GetProject(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	a.renderer.Page(w, r, "phases/new", PageOpts{
+		Title:       "New phase · " + proj.Name,
+		CurrentSlug: proj.Slug,
+		Body: phaseFormData{
+			Mode:    "new",
+			Project: proj,
+		},
+	})
+}
+
+func (a *app) handlePhaseCreate(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	proj, err := a.deps.Service.GetProject(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	in := phaseFormSubmitted{
+		Name:        strings.TrimSpace(r.Form.Get("name")),
+		Description: r.Form.Get("description"),
+		Summary:     r.Form.Get("summary"),
+	}
+	phase, err := a.deps.Service.CreatePhase(r.Context(), slug, in.Name, in.Description, in.Summary)
+	if err != nil {
+		a.renderPhaseFormError(w, r, "phases/new", "new", proj, nil, in, err)
+		return
+	}
+	SetFlash(w, r, "success", "Phase "+phase.Name+" created.")
+	http.Redirect(w, r, "/p/"+proj.Slug+"/phases/"+phase.Slug, http.StatusSeeOther)
+}
+
+func (a *app) renderPhaseFormError(w http.ResponseWriter, r *http.Request, page, mode string, proj *domain.Project, phase *domain.Phase, in phaseFormSubmitted, err error) {
+	w.WriteHeader(classifyServiceError(err))
+	title := "New phase · " + proj.Name
+	if mode == "edit" && phase != nil {
+		title = "Edit " + phase.Name + " · " + proj.Name
+	}
+	a.renderer.Page(w, r, page, PageOpts{
+		Title:       title,
+		CurrentSlug: proj.Slug,
+		Body: phaseFormData{
+			Mode:      mode,
+			Project:   proj,
+			Phase:     phase,
+			FormError: err.Error(),
+			Submitted: in,
+		},
+	})
+}
+
+// --- detail / edit / update / delete --------------------------------------
+
+type phaseDetailData struct {
+	Project *domain.Project
+	Phase   *domain.Phase
+	Waves   []domain.WaveSummary
+}
+
+func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	phaseSlug := r.PathValue("phase")
+	proj, err := a.deps.Service.GetProject(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	waves, err := a.deps.Service.ListWaves(r.Context(), slug, &phaseSlug)
+	if err != nil {
+		// Wave summary errors degrade to empty list — the page still renders
+		// useful info without it. Same posture as sidebarProjects on chrome.
+		a.deps.Logger.Warn("phases: list waves", "err", err)
+		waves = nil
+	}
+	a.renderer.Page(w, r, "phases/detail", PageOpts{
+		Title:       phase.Name + " · " + proj.Name,
+		CurrentSlug: proj.Slug,
+		Body: phaseDetailData{
+			Project: proj,
+			Phase:   phase,
+			Waves:   waves,
+		},
+	})
+}
+
+func (a *app) handlePhaseEditForm(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	phaseSlug := r.PathValue("phase")
+	proj, err := a.deps.Service.GetProject(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	a.renderer.Page(w, r, "phases/edit", PageOpts{
+		Title:       "Edit " + phase.Name + " · " + proj.Name,
+		CurrentSlug: proj.Slug,
+		Body: phaseFormData{
+			Mode:    "edit",
+			Project: proj,
+			Phase:   phase,
+			Submitted: phaseFormSubmitted{
+				Slug:        phase.Slug,
+				Name:        phase.Name,
+				Description: phase.Description,
+			},
+		},
+	})
+}
+
+func (a *app) handlePhaseUpdate(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	phaseSlug := r.PathValue("phase")
+	proj, err := a.deps.Service.GetProject(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	in := phaseFormSubmitted{
+		Slug:        phase.Slug,
+		Name:        strings.TrimSpace(r.Form.Get("name")),
+		Description: r.Form.Get("description"),
+	}
+	updateIn := domain.UpdatePhaseInput{Name: &in.Name, Description: &in.Description}
+	if _, err := a.deps.Service.UpdatePhase(r.Context(), slug, phaseSlug, updateIn); err != nil {
+		a.renderPhaseFormError(w, r, "phases/edit", "edit", proj, phase, in, err)
+		return
+	}
+	SetFlash(w, r, "success", "Phase updated.")
+	http.Redirect(w, r, "/p/"+slug+"/phases/"+phase.Slug, http.StatusSeeOther)
+}
+
+func (a *app) handlePhaseDelete(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	phaseSlug := r.PathValue("phase")
+	if r.Form.Get("confirm") != "yes" {
+		a.renderer.Error(w, r, http.StatusBadRequest, errors.New("delete requires explicit confirmation; use the form on the phase page"))
+		return
+	}
+	if err := a.deps.Service.DeletePhase(r.Context(), slug, phaseSlug); err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	SetFlash(w, r, "success", "Phase "+phaseSlug+" deleted.")
+	http.Redirect(w, r, "/p/"+slug+"/phases", http.StatusSeeOther)
+}
+
+// --- summary view + in-place editor ---------------------------------------
+
+type phaseSummaryData struct {
+	Project   *domain.Project
+	Phase     *domain.Phase
+	Mode      string // "view" or "edit"
+	Summary   string
+	FormError string
+	CSRF      string
+}
+
+func (a *app) handlePhaseSummaryView(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	phaseSlug := r.PathValue("phase")
+	proj, err := a.deps.Service.GetProject(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	mode := "view"
+	if r.URL.Query().Get("edit") == "1" {
+		mode = "edit"
+	}
+	body := phaseSummaryData{
+		Project: proj,
+		Phase:   phase,
+		Mode:    mode,
+		Summary: phase.Summary,
+		CSRF:    a.summaryCSRF(r),
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		partial := "phase_summary_view"
+		if mode == "edit" {
+			partial = "phase_summary_edit"
+		}
+		a.renderer.Partial(w, r, partial, body)
+		return
+	}
+	a.renderer.Page(w, r, "phases/summary", PageOpts{
+		Title:       phase.Name + " · summary · " + proj.Name,
+		CurrentSlug: proj.Slug,
+		Body:        body,
+	})
+}
+
+func (a *app) handlePhaseSummaryUpdate(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	phaseSlug := r.PathValue("phase")
+	proj, err := a.deps.Service.GetProject(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	summary := r.Form.Get("summary")
+	csrf := a.summaryCSRF(r)
+	if _, err := a.deps.Service.UpdatePhase(r.Context(), slug, phaseSlug, domain.UpdatePhaseInput{Summary: &summary}); err != nil {
+		w.WriteHeader(classifyServiceError(err))
+		body := phaseSummaryData{
+			Project: proj, Phase: phase, Mode: "edit",
+			Summary: summary, FormError: err.Error(), CSRF: csrf,
+		}
+		if r.Header.Get("HX-Request") == "true" {
+			a.renderer.Partial(w, r, "phase_summary_edit", body)
+			return
+		}
+		a.renderer.Page(w, r, "phases/summary", PageOpts{
+			Title: phase.Name + " · summary · " + proj.Name, CurrentSlug: proj.Slug, Body: body,
+		})
+		return
+	}
+	updated, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	body := phaseSummaryData{Project: proj, Phase: updated, Mode: "view", Summary: updated.Summary, CSRF: csrf}
+	if r.Header.Get("HX-Request") == "true" {
+		a.renderer.Partial(w, r, "phase_summary_view", body)
+		return
+	}
+	SetFlash(w, r, "success", "Summary updated.")
+	http.Redirect(w, r, "/p/"+slug+"/phases/"+phase.Slug+"/summary", http.StatusSeeOther)
+}
+
+// --- waves view ------------------------------------------------------------
+
+// wavesPageData groups WaveSummary + the actual tickets in each wave so the
+// view can render a section per wave.
+type wavesPageData struct {
+	Project *domain.Project
+	Waves   []waveSection
+}
+
+type waveSection struct {
+	Wave    int
+	Tickets []*domain.Ticket
+	// IsUnassigned is true for the wave-0 bucket; templates render it with
+	// muted styling per the ticket's gotcha #2.
+	IsUnassigned bool
+}
+
+func (a *app) handleWaves(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	proj, err := a.deps.Service.GetProject(r.Context(), slug)
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+
+	// ListWaves with phaseIDOrSlug=nil only covers phase-less tickets per its
+	// docstring; the page wants the *project* view across all phases. The
+	// simpler-and-correct path: ListTickets once for the whole project,
+	// bucket in-handler.
+	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
+		ProjectIDOrSlug: slug,
+		Limit:           200,
+	})
+	if err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+
+	buckets := map[int][]*domain.Ticket{}
+	for _, t := range tickets {
+		buckets[t.Wave] = append(buckets[t.Wave], t)
+	}
+	// Sort each bucket by title for deterministic rendering. Stable across
+	// page reloads is more useful here than freshness.
+	for _, ts := range buckets {
+		sort.Slice(ts, func(i, j int) bool { return ts[i].Title < ts[j].Title })
+	}
+
+	// Order: ascending wave number, with wave 0 (unassigned) last. Same
+	// convention as svc.ListWaves.
+	waves := make([]int, 0, len(buckets))
+	for w := range buckets {
+		waves = append(waves, w)
+	}
+	sort.Slice(waves, func(i, j int) bool {
+		ai, aj := waves[i], waves[j]
+		if ai == 0 {
+			ai = int(^uint(0) >> 1)
+		}
+		if aj == 0 {
+			aj = int(^uint(0) >> 1)
+		}
+		return ai < aj
+	})
+
+	sections := make([]waveSection, 0, len(waves))
+	for _, w := range waves {
+		sections = append(sections, waveSection{
+			Wave:         w,
+			Tickets:      buckets[w],
+			IsUnassigned: w == 0,
+		})
+	}
+
+	a.renderer.Page(w, r, "phases/waves", PageOpts{
+		Title:       "Waves · " + proj.Name,
+		CurrentSlug: proj.Slug,
+		Body:        wavesPageData{Project: proj, Waves: sections},
+	})
+}
+
+// --- assign ticket to phase -----------------------------------------------
+
+// handleAssignTicketToPhase serves POST /tickets/{id}/assign-phase. Form
+// fields: `phase` (phase id/slug; empty = no phase) and `comment` (required).
+// On success, redirects to the ticket detail page (/tickets/{id}, ticket 5
+// owns) so the user lands on the canonical view of the just-moved ticket.
+//
+// On AssignTicketToPhase's "comment required" error (or any other svc
+// error), renders an inline error partial — htmx swap target where the form
+// lives expects an error.tmpl-shape response.
+func (a *app) handleAssignTicketToPhase(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	comment := r.Form.Get("comment")
+	phaseSlug := r.Form.Get("phase")
+
+	var phasePtr *string
+	if phaseSlug != "" {
+		phasePtr = &phaseSlug
+	}
+
+	if _, err := a.deps.Service.AssignTicketToPhase(r.Context(), id, phasePtr, comment); err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+
+	// Slug hint forwarded back through the redirect so the ticket detail
+	// handler in ticket 5 can use it to skip hostStoreForTicket. The /
+	// catch-all 404s today; this URL goes live once ticket 5 lands.
+	target := "/tickets/" + id
+	if hint := r.URL.Query().Get("slug"); hint != "" {
+		target += "?slug=" + hint
+	}
+	SetFlash(w, r, "success", "Ticket reassigned.")
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}

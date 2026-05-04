@@ -1,0 +1,28 @@
+{{define "_layout.tmpl"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{if .Title}}{{.Title}}{{else}}tickets_please{{end}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+  {{if .Chrome.ShowLocalBanner}}
+  <div class="banner-warn" role="alert">
+    <strong>Heads up:</strong>
+    tickets_please serves with no auth. You're hitting it from a non-loopback host —
+    put authentication in front of <code>:8765</code> before exposing it to a network.
+  </div>
+  {{end}}
+  {{template "_nav.tmpl" .}}
+  {{if .Chrome.Flash}}{{template "flash.tmpl" .Chrome.Flash}}{{end}}
+  <div class="layout">
+    {{template "sidebar.tmpl" .}}
+    <main id="content">
+      {{block "main" .}}{{end}}
+    </main>
+  </div>
+</body>
+</html>
+{{end}}
