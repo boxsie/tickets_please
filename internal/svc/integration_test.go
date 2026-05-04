@@ -476,14 +476,25 @@ func TestIntegration_ProjectCacheEvictionReloads(t *testing.T) {
 // store helper (mirrors the existing agents_test.go style; setting
 // AgentSessionTTLMinutes=0 falls back to the 60m default in svc.New). A
 // mutating call with the expired session must return ErrUnauthenticated.
+//
+// Uses a non-bootstrap mutation (CreateTicket on an existing project) because
+// CreateProject is intentionally auth-soft and would silently no-op the
+// expired session — see TestCreateProject_NoSessionSucceedsWithNilCreatedBy.
 func TestIntegration_AgentSessionExpiry(t *testing.T) {
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx := context.Background()
+
+	// Bootstrap: create a project under a fresh authed session so we have
+	// somewhere to attempt a follow-on mutation.
+	bootCtx, _ := authedCtx(t, s)
+	if _, err := s.CreateProject(bootCtx, "alpha", "Alpha", "", validSummary()); err != nil {
+		t.Fatalf("bootstrap CreateProject: %v", err)
+	}
+
 	id, _, err := s.RegisterAgent(ctx, "expiring-key", "ExpiringAgent", nil, 0)
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
-	// Backdate.
 	rec, err := s.AgentStore.ReadAgent(id)
 	if err != nil {
 		t.Fatal(err)
@@ -494,7 +505,11 @@ func TestIntegration_AgentSessionExpiry(t *testing.T) {
 	}
 
 	authed := WithSessionID(ctx, id)
-	_, err = s.CreateProject(authed, "expired-prj", "Expired", "", validSummary())
+	_, err = s.CreateTicket(authed, domain.CreateTicketInput{
+		ProjectIDOrSlug: "alpha",
+		Title:           "expired write",
+		Body:            "should reject",
+	})
 	if !errors.Is(err, domain.ErrUnauthenticated) {
 		t.Fatalf("expected ErrUnauthenticated for expired session, got %v", err)
 	}

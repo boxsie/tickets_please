@@ -41,6 +41,36 @@ func (s *Service) requireSession(ctx context.Context) (context.Context, *domain.
 	return WithAgent(ctx, a), a, nil
 }
 
+// optionalSession is the auth-soft variant of requireSession: when a valid
+// session is on the context it returns the agent (and an agent-bearing ctx),
+// when there isn't one it returns (ctx, nil, nil). Callers MUST handle the
+// nil-agent case — leaving created_by / committed_by empty, skipping the
+// auto-commit (StageOp.Commit already no-ops when agent is nil), etc.
+//
+// Used by the rare mutations that need to work pre-auth. Today that's just
+// CreateProject — the very first write a fresh repo ever does, where there's
+// no project to be authorized against yet. Every other mutation calls
+// requireSession.
+func (s *Service) optionalSession(ctx context.Context) (context.Context, *domain.Agent, error) {
+	id, ok := SessionIDFrom(ctx)
+	if !ok {
+		return ctx, nil, nil
+	}
+	rec, err := s.AgentStore.ReadAgent(id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return ctx, nil, nil
+		}
+		return ctx, nil, err
+	}
+	if rec.ExpiresAt.Before(time.Now()) {
+		return ctx, nil, nil
+	}
+	a := rec.ToDomain()
+	s.touchAgentDebounced(a.ID)
+	return WithAgent(ctx, a), a, nil
+}
+
 // touchAgentDebounced bumps LastSeenAt for the given agent id, but only if
 // we haven't already written within touchDebounceWindow. Best-effort: a
 // failed touch logs a warning and is dropped — touches are not on the

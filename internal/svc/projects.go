@@ -32,8 +32,15 @@ type LoadProjectResult struct {
 // flock and returns the hydrated *domain.Project. Slug uniqueness is checked
 // by walking the projects dir before staging — race-safe because the global
 // flock is held for the staged commit.
+//
+// CreateProject is auth-soft: if a session is on the context it gets attributed
+// as created_by; if not, the project lands with no creator and the auto-commit
+// is skipped. This is the single bootstrap escape valve — every other mutation
+// requires a session, but the very first project a repo creates can't be
+// authorized against itself. (register_agent reads project.yaml; if it
+// required a session to create the file it would deadlock.)
 func (s *Service) CreateProject(ctx context.Context, slug, name, description, summary string) (*domain.Project, error) {
-	ctx, agent, err := s.requireSession(ctx)
+	ctx, agent, err := s.optionalSession(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -67,13 +74,15 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 
 	now := time.Now()
 	rec := &store.ProjectRecord{
-		ID:               uuid.NewString(),
-		Slug:             slug,
-		Name:             name,
-		Description:      normalizeLabel(description),
-		CreatedByAgentID: &agent.ID,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:          uuid.NewString(),
+		Slug:        slug,
+		Name:        name,
+		Description: normalizeLabel(description),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if agent != nil {
+		rec.CreatedByAgentID = &agent.ID
 	}
 	yamlBytes, err := store.MarshalYAML(rec)
 	if err != nil {
@@ -133,9 +142,11 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 		Name:        rec.Name,
 		Description: rec.Description,
 		Summary:     summary,
-		CreatedBy:   &domain.AgentRef{ID: agent.ID, Name: agent.Name},
 		CreatedAt:   rec.CreatedAt,
 		UpdatedAt:   rec.UpdatedAt,
+	}
+	if agent != nil {
+		proj.CreatedBy = &domain.AgentRef{ID: agent.ID, Name: agent.Name}
 	}
 	return proj, nil
 }

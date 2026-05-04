@@ -17,11 +17,14 @@ func TestServerInstructionsContainsLoadBearingPhrases(t *testing.T) {
 		"Every column move requires a non-empty comment",
 		"frozen",
 		"immutable",
-		// Bootstrapping section (Bootstrap UX phase, T2): the cold-start
-		// flow must live in the persistent context every turn.
+		// Bootstrapping section: the cold-start flow must live in the
+		// persistent context every turn. After the auth-soft CreateProject
+		// landed, the bootstrap is just "call create_project, then register_agent"
+		// — the section pins those phrases plus the escape-valve framing.
 		"Bootstrapping a new project",
 		"create_project",
-		"pre-registers",
+		"bootstrap escape valve",
+		"register_agent",
 	}
 	for _, w := range wants {
 		if !strings.Contains(ServerInstructions, w) {

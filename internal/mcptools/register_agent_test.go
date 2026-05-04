@@ -141,9 +141,9 @@ func TestRegisterAgent_MissingProjectYAML(t *testing.T) {
 	if want := "no .tickets_please/project.yaml at " + bare; msg == "" || !contains(msg, want) {
 		t.Errorf("expected helpful message containing %q, got %q", want, msg)
 	}
-	// Cold-start error must name the bootstrap path so an agent can recover
-	// without spelunking the source code (see Bootstrap UX phase, T1).
-	for _, want := range []string{"create_project", "stdio", "pre-registered"} {
+	// Cold-start error must point at create_project as the escape valve
+	// (no session required — the auth-soft bootstrap path).
+	for _, want := range []string{"create_project", "no session required", "register_agent"} {
 		if !contains(msg, want) {
 			t.Errorf("expected bootstrap-guidance phrase %q in message, got %q", want, msg)
 		}
@@ -460,8 +460,8 @@ func TestCallWithRetry_RefreshFailureSurfaces(t *testing.T) {
 
 // TestCallWithRetry_NoSessionMessage exercises the cold-start error path: when
 // callWithRetry runs without a registered session, the returned message must
-// name the bootstrap flow (create_project from a stdio session) so an agent can
-// recover from the error text alone. See Bootstrap UX phase, T1.
+// point at create_project as the bootstrap escape valve (no session required)
+// so an agent can recover from the error text alone.
 func TestCallWithRetry_NoSessionMessage(t *testing.T) {
 	tools, _, _ := freshToolsForRegister(t)
 	// No callRegister. Use any handler that flows through callWithRetry —
@@ -477,10 +477,38 @@ func TestCallWithRetry_NoSessionMessage(t *testing.T) {
 	if !contains(msg, "unauthenticated:") {
 		t.Errorf("missing structured prefix: %q", msg)
 	}
-	for _, want := range []string{"register_agent", "create_project", "stdio", "pre-registered"} {
+	for _, want := range []string{"register_agent", "create_project", "no session required"} {
 		if !contains(msg, want) {
 			t.Errorf("expected bootstrap-guidance phrase %q in message, got %q", want, msg)
 		}
+	}
+}
+
+// TestCreateProject_NoSessionSucceeds covers the auth-soft bootstrap path at
+// the MCP layer: handleCreateProject must succeed without a registered session
+// and emit a project record with no created_by.
+func TestCreateProject_NoSessionSucceeds(t *testing.T) {
+	tools, _, _ := freshToolsForRegister(t)
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"slug":    "bootstrap-smoke",
+		"name":    "Bootstrap Smoke",
+		"summary": "A test project created via MCP without a registered session, exercising the auth-soft bootstrap path that breaks the chicken-and-egg between create_project and register_agent. The project should land with created_by empty.",
+	}
+	res, err := tools.handleCreateProject(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handleCreateProject: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected success without session, got error: %s", extractText(t, res))
+	}
+	body := extractText(t, res)
+	if !contains(body, `"slug":"bootstrap-smoke"`) {
+		t.Errorf("expected slug in response, got: %s", body)
+	}
+	if contains(body, `"created_by":{`) {
+		t.Errorf("expected created_by to be omitted/null without session, got: %s", body)
 	}
 }
 

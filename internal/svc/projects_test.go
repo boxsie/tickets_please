@@ -128,11 +128,26 @@ func TestCreateProject_DuplicateSlug(t *testing.T) {
 	}
 }
 
-func TestCreateProject_RequiresSession(t *testing.T) {
+// CreateProject is intentionally auth-soft: it's the bootstrap escape valve,
+// the one mutation that has to work pre-auth (every other mutation requires
+// a session). With no session on the context, the project is created with
+// no created_by attribution and the auto-commit is skipped.
+func TestCreateProject_NoSessionSucceedsWithNilCreatedBy(t *testing.T) {
 	s := freshServiceWithCfg(t, config.Config{})
-	_, err := s.CreateProject(context.Background(), "alpha", "n", "", validSummary())
-	if !errors.Is(err, domain.ErrUnauthenticated) {
-		t.Fatalf("expected ErrUnauthenticated, got %v", err)
+	p, err := s.CreateProject(context.Background(), "alpha", "Alpha", "", validSummary())
+	if err != nil {
+		t.Fatalf("CreateProject without session: %v", err)
+	}
+	if p.CreatedBy != nil {
+		t.Errorf("CreatedBy should be nil with no session, got %+v", p.CreatedBy)
+	}
+	// Still mounted normally so subsequent reads work.
+	got, err := s.GetProject(context.Background(), "alpha")
+	if err != nil {
+		t.Fatalf("GetProject after no-session create: %v", err)
+	}
+	if got.Slug != "alpha" {
+		t.Errorf("post-create slug: got %q want %q", got.Slug, "alpha")
 	}
 }
 

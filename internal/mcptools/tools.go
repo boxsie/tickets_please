@@ -312,8 +312,8 @@ func (t *Tools) callWithRetry(ctx context.Context, fn func(ctx context.Context) 
 	sess, ok := t.registry.Get(sessionID)
 	if !ok {
 		return fmt.Errorf("%w: no agent registered for session %q. "+
-			"If this repo already has .tickets_please/project.yaml, call register_agent with the absolute project_path. "+
-			"If the repo has no project yet, bootstrap from a stdio launch of `tickets_please mcp` (its session is pre-registered, no project.yaml required) and call create_project there; HTTP clients can register_agent afterward.",
+			"If this repo has no project yet, call create_project (no session required — it's the bootstrap escape valve), then register_agent. "+
+			"If project.yaml already exists, call register_agent with the absolute project_path.",
 			domain.ErrUnauthenticated, sessionID)
 	}
 	err := fn(svc.WithSessionID(ctx, sess.AgentID))
@@ -401,17 +401,20 @@ func (t *Tools) handleCreateProject(ctx context.Context, req mcp.CallToolRequest
 	}
 	description := req.GetString("description", "")
 
-	var p *domain.Project
-	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
-		out, err := t.svc.CreateProject(ctx, slug, name, description, summary)
-		if err != nil {
-			return err
-		}
-		p = out
-		return nil
-	})
-	if cerr != nil {
-		return errorResult(cerr), nil
+	// CreateProject is the bootstrap mutation — it doesn't go through
+	// callWithRetry. If a session happens to be registered for this MCP
+	// session we thread its agent ID into ctx so created_by gets attributed;
+	// otherwise the call proceeds with no agent and svc.CreateProject's
+	// optionalSession leaves created_by empty. This breaks the chicken-and-egg
+	// (register_agent needs project.yaml; project.yaml only exists after
+	// create_project) — call create_project first from any client, then
+	// register_agent for everything else.
+	if sess, ok := t.registry.Get(t.sessionIDFromContext(ctx)); ok {
+		ctx = svc.WithSessionID(ctx, sess.AgentID)
+	}
+	p, err := t.svc.CreateProject(ctx, slug, name, description, summary)
+	if err != nil {
+		return errorResult(err), nil
 	}
 	return jsonResult(formatProject(p))
 }
@@ -1243,8 +1246,8 @@ func (t *Tools) handleRegisterAgent(ctx context.Context, req mcp.CallToolRequest
 		if os.IsNotExist(err) {
 			return mcp.NewToolResultError(fmt.Sprintf(
 				"no .tickets_please/project.yaml at %s — this repo has no project yet. "+
-					"To bootstrap: launch `tickets_please mcp` from a stdio client (its session is pre-registered, no project.yaml required) and call create_project; "+
-					"once project.yaml exists, register_agent works from any client.",
+					"Call create_project first (no session required — it's the bootstrap escape valve); "+
+					"once project.yaml exists, register_agent works.",
 				projectPath,
 			)), nil
 		}
