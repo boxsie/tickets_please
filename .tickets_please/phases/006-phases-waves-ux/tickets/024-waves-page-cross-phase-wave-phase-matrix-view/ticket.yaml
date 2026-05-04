@@ -1,0 +1,12 @@
+id: 82ff144b-3a84-44d8-b153-3ee6b055bb2c
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+number: 24
+title: 'Waves page: cross-phase wave × phase matrix view'
+column: todo
+phase_id: ba77af7e-a855-49b3-8136-8567123d019d
+wave: 1
+parallelizable_with:
+    - 2e85a781-988e-4a0c-a8c1-3bfe120ebd5a
+created_by: 087a6d76-bd4f-4858-8dfe-4c138d772d06
+created_at: 2026-05-04T21:18:17.051835341+01:00
+updated_at: 2026-05-04T21:18:17.051835341+01:00
