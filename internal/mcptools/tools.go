@@ -80,9 +80,10 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 	), t.handleListProjects)
 
 	s.AddTool(mcp.NewTool("create_project",
-		mcp.WithDescription("Create a new project. Slug must be unique and URL-safe. **Requires a `summary` field — a markdown document (≥200 chars) describing the project's goals, key components, and constraints.** This summary becomes the load-bearing context any future agent reads before working in this project. Be thorough."),
+		mcp.WithDescription("Create a new project. Slug must be unique and URL-safe. **Requires a `summary` field — a markdown document (≥200 chars) describing the project's goals, key components, and constraints.** This summary becomes the load-bearing context any future agent reads before working in this project. Be thorough. Also requires `project_path` — the absolute filesystem path of the repo where the project should live; `<project_path>/.tickets_please/` will be created if it doesn't exist. This is the bootstrap mutation: no session required."),
 		mcp.WithString("slug", mcp.Required(), mcp.Description("URL-safe unique slug for the project")),
 		mcp.WithString("name", mcp.Required(), mcp.Description("Display name for the project")),
+		mcp.WithString("project_path", mcp.Required(), mcp.Description("Absolute filesystem path of the repo where the project should live. `<project_path>/.tickets_please/` will be created if missing.")),
 		mcp.WithString("description", mcp.Description("One-line description")),
 		mcp.WithString("summary", mcp.Required(), mcp.Description("Markdown summary (≥200 chars) — the load-bearing context doc")),
 	), t.handleCreateProject)
@@ -312,7 +313,7 @@ func (t *Tools) callWithRetry(ctx context.Context, fn func(ctx context.Context) 
 	sess, ok := t.registry.Get(sessionID)
 	if !ok {
 		return fmt.Errorf("%w: no agent registered for session %q. "+
-			"If this repo has no project yet, call create_project (no session required — it's the bootstrap escape valve), then register_agent. "+
+			"If this repo has no project yet, call create_project with `project_path` set to the absolute repo path (no session required — it's the bootstrap escape valve), then register_agent. "+
 			"If project.yaml already exists, call register_agent with the absolute project_path.",
 			domain.ErrUnauthenticated, sessionID)
 	}
@@ -399,20 +400,24 @@ func (t *Tools) handleCreateProject(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
+	projectPath, err := req.RequireString("project_path")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
 	description := req.GetString("description", "")
 
-	// CreateProject is the bootstrap mutation — it doesn't go through
+	// CreateProjectAt is the bootstrap mutation — it doesn't go through
 	// callWithRetry. If a session happens to be registered for this MCP
 	// session we thread its agent ID into ctx so created_by gets attributed;
-	// otherwise the call proceeds with no agent and svc.CreateProject's
-	// optionalSession leaves created_by empty. This breaks the chicken-and-egg
-	// (register_agent needs project.yaml; project.yaml only exists after
-	// create_project) — call create_project first from any client, then
+	// otherwise the call proceeds with no agent and svc's optionalSession
+	// leaves created_by empty. This breaks the chicken-and-egg (register_agent
+	// needs project.yaml; project.yaml only exists after create_project) —
+	// call create_project with project_path first from any client, then
 	// register_agent for everything else.
 	if sess, ok := t.registry.Get(t.sessionIDFromContext(ctx)); ok {
 		ctx = svc.WithSessionID(ctx, sess.AgentID)
 	}
-	p, err := t.svc.CreateProject(ctx, slug, name, description, summary)
+	p, err := t.svc.CreateProjectAt(ctx, projectPath, slug, name, description, summary)
 	if err != nil {
 		return errorResult(err), nil
 	}
@@ -1246,9 +1251,9 @@ func (t *Tools) handleRegisterAgent(ctx context.Context, req mcp.CallToolRequest
 		if os.IsNotExist(err) {
 			return mcp.NewToolResultError(fmt.Sprintf(
 				"no .tickets_please/project.yaml at %s — this repo has no project yet. "+
-					"Call create_project first (no session required — it's the bootstrap escape valve); "+
+					"Call create_project first with `project_path=%s` (no session required — it's the bootstrap escape valve); "+
 					"once project.yaml exists, register_agent works.",
-				projectPath,
+				projectPath, projectPath,
 			)), nil
 		}
 		return mcp.NewToolResultError("invalid argument: read project.yaml: " + err.Error()), nil

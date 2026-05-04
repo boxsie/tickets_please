@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,18 +29,70 @@ type LoadProjectResult struct {
 	ActiveTicketCount int
 }
 
-// CreateProject stages the project.yaml + summary.md write under the global
-// flock and returns the hydrated *domain.Project. Slug uniqueness is checked
-// by walking the projects dir before staging — race-safe because the global
-// flock is held for the staged commit.
+// CreateProject is the legacy path-implicit constructor: writes through
+// s.Store (whichever Store cfg.DataDir resolved at service-start time) and
+// post-mounts under cfg.DataDir's parent if the convention applies. It's
+// retained for backward compat with the web handler and most tests, where
+// the data dir is fixed at process start.
 //
-// CreateProject is auth-soft: if a session is on the context it gets attributed
-// as created_by; if not, the project lands with no creator and the auto-commit
-// is skipped. This is the single bootstrap escape valve — every other mutation
-// requires a session, but the very first project a repo creates can't be
-// authorized against itself. (register_agent reads project.yaml; if it
-// required a session to create the file it would deadlock.)
+// HTTP/MCP callers should use CreateProjectAt — the server has no cwd to
+// derive a destination from, so the project path must be explicit. Both
+// paths share the same auth-soft bootstrap behaviour.
 func (s *Service) CreateProject(ctx context.Context, slug, name, description, summary string) (*domain.Project, error) {
+	return s.createProjectImpl(ctx, "", s.Store, slug, name, description, summary)
+}
+
+// CreateProjectAt writes the project under <repoPath>/.tickets_please/ and
+// mounts it there. Used by the MCP create_project tool: the HTTP server has
+// no cwd, so the LLM must declare the destination. Auth-soft like the legacy
+// path — no session required, created_by left empty for the bootstrap call.
+//
+// repoPath must be an absolute directory path. .tickets_please/ is created
+// inside it if missing (mkdir -p semantics).
+func (s *Service) CreateProjectAt(ctx context.Context, repoPath, slug, name, description, summary string) (*domain.Project, error) {
+	repoPath = strings.TrimSpace(repoPath)
+	if repoPath == "" {
+		return nil, fmt.Errorf("%w: repo_path required", domain.ErrInvalidArgument)
+	}
+	if !filepath.IsAbs(repoPath) {
+		return nil, fmt.Errorf("%w: repo_path %q must be absolute", domain.ErrInvalidArgument, repoPath)
+	}
+	if info, err := os.Stat(repoPath); err != nil {
+		return nil, fmt.Errorf("%w: repo_path %s: %v", domain.ErrInvalidArgument, repoPath, err)
+	} else if !info.IsDir() {
+		return nil, fmt.Errorf("%w: repo_path %s is not a directory", domain.ErrInvalidArgument, repoPath)
+	}
+
+	dataDir := filepath.Join(repoPath, ".tickets_please")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", dataDir, err)
+	}
+	stagingDir := filepath.Join(dataDir, ".staging")
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", stagingDir, err)
+	}
+
+	st, err := s.buildMountStore(dataDir)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.createProjectImpl(ctx, repoPath, st, slug, name, description, summary)
+}
+
+// createProjectImpl is the shared body. repoPath empty + targetStore == s.Store
+// is the legacy CreateProject path; repoPath set + targetStore == path-specific
+// is the explicit CreateProjectAt path.
+//
+// Stages the project.yaml + summary.md write under targetStore's global flock
+// and returns the hydrated *domain.Project. Slug uniqueness is checked by
+// walking targetStore before staging — race-safe because the global flock is
+// held for the staged commit.
+//
+// Auth-soft: if a session is on the context it gets attributed as created_by;
+// if not, the project lands with no creator and the auto-commit is skipped.
+// This is the single bootstrap escape valve.
+func (s *Service) createProjectImpl(ctx context.Context, repoPath string, targetStore *store.Store, slug, name, description, summary string) (*domain.Project, error) {
 	ctx, agent, err := s.optionalSession(ctx)
 	if err != nil {
 		return nil, err
@@ -62,14 +115,14 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 	// any create — same-slug or otherwise — because writing would overwrite
 	// the existing record.
 	var existingSlug string
-	if err := s.Store.WalkProjects(func(existing string, _ *store.ProjectRecord) error {
+	if err := targetStore.WalkProjects(func(existing string, _ *store.ProjectRecord) error {
 		existingSlug = existing
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("walk projects: %w", err)
 	}
 	if existingSlug != "" {
-		return nil, fmt.Errorf("%w: project %q already exists at %s (one project per data dir)", domain.ErrAlreadyExists, existingSlug, s.Store.Root)
+		return nil, fmt.Errorf("%w: project %q already exists at %s (one project per data dir)", domain.ErrAlreadyExists, existingSlug, targetStore.Root)
 	}
 
 	now := time.Now()
@@ -89,7 +142,7 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 		return nil, err
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := targetStore.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -105,21 +158,20 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 		return nil, fmt.Errorf("commit create project: %w", err)
 	}
 
-	// Self-register the freshly-created project as a mount so it appears in
-	// the persistent registry and survives a restart. Without this,
-	// CreateProject leaves the project reachable only via the s.Store
-	// fallback in ResolveProjectStore — which works in-process but loses
-	// the mount on the next boot.
+	// Mount the freshly-created project so list_projects, register_agent, and
+	// every per-slug routing path can find it.
 	//
-	// Only runs when DataDir follows the `<repo>/.tickets_please` convention
-	// (the prod shape — see cfg.DataDir comment). Tests that pass a bare
-	// tempdir as DataDir skip this since there's no sensible repo parent.
-	// Best-effort: log-and-ignore the error; the project itself is on disk
-	// and reachable, the registry is just a hint for the next boot.
-	if s.Store != nil && filepath.Base(s.Store.Root) == ".tickets_please" {
-		repoPath := filepath.Dir(s.Store.Root)
-		if _, regErr := s.RegisterProjectMount(ctx, repoPath); regErr != nil && s.Logger != nil {
-			s.Logger.Warn("svc: post-create register mount failed", "repo", repoPath, "err", regErr)
+	// CreateProjectAt path: repoPath is set explicitly — mount there.
+	// CreateProject (legacy) path: repoPath is empty; fall back to the old
+	// convention check (cfg.DataDir's parent) which only fires when DataDir
+	// follows the `<repo>/.tickets_please` shape (prod stdio dogfood).
+	mountPath := repoPath
+	if mountPath == "" && targetStore != nil && filepath.Base(targetStore.Root) == ".tickets_please" {
+		mountPath = filepath.Dir(targetStore.Root)
+	}
+	if mountPath != "" {
+		if _, regErr := s.RegisterProjectMount(ctx, mountPath); regErr != nil && s.Logger != nil {
+			s.Logger.Warn("svc: post-create register mount failed", "repo", mountPath, "err", regErr)
 		}
 	}
 
@@ -128,8 +180,8 @@ func (s *Service) CreateProject(ctx context.Context, slug, name, description, su
 	if s.Worker != nil {
 		s.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobProjectSummary,
-			SourcePath:  filepath.Join(s.Store.Root, "summary.md"),
-			SidecarPath: filepath.Join(s.Store.Root, "summary.embedding.json"),
+			SourcePath:  filepath.Join(targetStore.Root, "summary.md"),
+			SidecarPath: filepath.Join(targetStore.Root, "summary.embedding.json"),
 			EntryID:     rec.ID,
 			Owner:       slug,
 			Text:        summary,

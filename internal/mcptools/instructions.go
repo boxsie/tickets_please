@@ -33,11 +33,11 @@ const ServerInstructions = `tickets_please is a Trello-shaped, LLM-first ticketi
 
 ` + "`create_project`" + ` is the one mutation that does NOT require a session — it's the bootstrap escape valve. Cold-starting in a fresh repo:
 
-1. Call ` + "`create_project`" + ` from any client. This writes ` + "`project.yaml`" + ` and mounts the project. ` + "`created_by`" + ` is left empty when no session is registered (attribution begins with the next mutation).
-2. Call ` + "`register_agent`" + ` with the repo's ` + "`project_path`" + ` to bind your session to the new project.
+1. Call ` + "`create_project`" + ` from any client with ` + "`project_path`" + ` set to the absolute path of the repo (e.g. ` + "`/home/dan/code/foo`" + `). The server creates ` + "`<project_path>/.tickets_please/`" + `, writes ` + "`project.yaml`" + `, and mounts the project. ` + "`created_by`" + ` is left empty when no session is registered (attribution begins with the next mutation).
+2. Call ` + "`register_agent`" + ` with the same ` + "`project_path`" + ` to bind your session.
 3. All other tools work normally.
 
-If you see ` + "`no .tickets_please/project.yaml at <path>`" + ` from ` + "`register_agent`" + `, the repo has no project yet — call ` + "`create_project`" + ` first.
+If you see ` + "`no .tickets_please/project.yaml at <path>`" + ` from ` + "`register_agent`" + `, the repo has no project yet — call ` + "`create_project`" + ` with ` + "`project_path=<path>`" + ` first.
 
 ## Identity
 

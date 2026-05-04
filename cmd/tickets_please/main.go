@@ -572,15 +572,15 @@ const dataDirReadme = "# .tickets_please/ — the per-repo data directory\n\n" +
 	"so a single server instance can serve multiple repos without each one holding\n" +
 	"a copy of the agent registry.\n\n" +
 	"## Cold-starting a fresh repo\n\n" +
-	"If you've just run `tickets_please init` here, this dir has only `.staging/`\n" +
-	"and this README — there's no project yet. From any MCP client (HTTP or\n" +
-	"stdio) just call:\n\n" +
-	"1. `create_project` with `slug`, `name`, and a substantive `summary`\n" +
-	"   (≥200 chars — the summary is load-bearing context for future work).\n" +
-	"   This is the only mutation that doesn't require a registered session;\n" +
-	"   it's the bootstrap escape valve. `created_by` is left empty for the\n" +
-	"   bootstrap call.\n" +
-	"2. `register_agent` with this repo's absolute `project_path` to bind your\n" +
-	"   session to the new project. Every subsequent mutation gets attributed.\n\n" +
+	"If this dir has only `.staging/` and this README, there's no project yet.\n" +
+	"From any MCP client (HTTP or stdio) just call:\n\n" +
+	"1. `create_project` with `slug`, `name`, a substantive `summary` (≥200\n" +
+	"   chars — load-bearing context for future work), and `project_path` set\n" +
+	"   to the absolute path of this repo. The server writes `project.yaml`\n" +
+	"   here and mounts the project. This is the only mutation that doesn't\n" +
+	"   require a registered session — the bootstrap escape valve.\n" +
+	"   `created_by` is left empty for the bootstrap call.\n" +
+	"2. `register_agent` with the same `project_path` to bind your session\n" +
+	"   to the new project. Every subsequent mutation gets attributed.\n\n" +
 	"See `../SPEC.md` (Data layout) for the canonical schema. Repos still on the\n" +
 	"v0.1 `projects/<slug>/` shape can be flattened with `tickets_please migrate`.\n"

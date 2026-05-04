@@ -486,15 +486,19 @@ func TestCallWithRetry_NoSessionMessage(t *testing.T) {
 
 // TestCreateProject_NoSessionSucceeds covers the auth-soft bootstrap path at
 // the MCP layer: handleCreateProject must succeed without a registered session
-// and emit a project record with no created_by.
+// and emit a project record with no created_by. It also exercises the
+// project_path bootstrap parameter — without project_path the server has no
+// idea where to write, so it's required.
 func TestCreateProject_NoSessionSucceeds(t *testing.T) {
 	tools, _, _ := freshToolsForRegister(t)
 
+	repoDir := t.TempDir() // empty dir, no .tickets_please/ yet
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
-		"slug":    "bootstrap-smoke",
-		"name":    "Bootstrap Smoke",
-		"summary": "A test project created via MCP without a registered session, exercising the auth-soft bootstrap path that breaks the chicken-and-egg between create_project and register_agent. The project should land with created_by empty.",
+		"slug":         "bootstrap-smoke",
+		"name":         "Bootstrap Smoke",
+		"project_path": repoDir,
+		"summary":      "A test project created via MCP without a registered session, exercising the auth-soft bootstrap path that breaks the chicken-and-egg between create_project and register_agent. The project should land with created_by empty.",
 	}
 	res, err := tools.handleCreateProject(context.Background(), req)
 	if err != nil {
@@ -509,6 +513,12 @@ func TestCreateProject_NoSessionSucceeds(t *testing.T) {
 	}
 	if contains(body, `"created_by":{`) {
 		t.Errorf("expected created_by to be omitted/null without session, got: %s", body)
+	}
+	// project.yaml landed under the explicit repo path, not the service's
+	// default DataDir.
+	wantPath := filepath.Join(repoDir, ".tickets_please", "project.yaml")
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Errorf("expected project.yaml at %s, got: %v", wantPath, err)
 	}
 }
 
