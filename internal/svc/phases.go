@@ -41,6 +41,11 @@ func (s *Service) CreatePhase(ctx context.Context, projectIDOrSlug, name, descri
 		return nil, err
 	}
 
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
+	if err != nil {
+		return nil, err
+	}
+
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -81,7 +86,7 @@ func (s *Service) CreatePhase(ctx context.Context, projectIDOrSlug, name, descri
 		return nil, err
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +105,7 @@ func (s *Service) CreatePhase(ctx context.Context, projectIDOrSlug, name, descri
 	// Async embed: phase summary → resident SummaryIdx (phase summaries
 	// share the same kind as project summaries — see SPEC §Vector search).
 	if s.Worker != nil {
-		phaseDirAbs := filepath.Join(s.Store.Root, phaseDirRel)
+		phaseDirAbs := filepath.Join(st.Root, phaseDirRel)
 		s.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobProjectSummary,
 			SourcePath:  filepath.Join(phaseDirAbs, "summary.md"),
@@ -140,6 +145,10 @@ func (s *Service) GetPhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlug s
 	if err != nil {
 		return nil, err
 	}
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
+	if err != nil {
+		return nil, err
+	}
 	lp.Lock.RLock()
 	defer lp.Lock.RUnlock()
 
@@ -147,7 +156,7 @@ func (s *Service) GetPhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlug s
 	if !ok {
 		return nil, fmt.Errorf("%w: phase %q in project %s", domain.ErrNotFound, phaseIDOrSlug, lp.Project.Slug)
 	}
-	out := hydratePhaseWithSummary(s.Store, lp, ph)
+	out := hydratePhaseWithSummary(st, lp, ph)
 	return out, nil
 }
 
@@ -158,12 +167,16 @@ func (s *Service) ListPhases(ctx context.Context, projectIDOrSlug string) ([]*do
 	if err != nil {
 		return nil, err
 	}
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
+	if err != nil {
+		return nil, err
+	}
 	lp.Lock.RLock()
 	defer lp.Lock.RUnlock()
 
 	out := make([]*domain.Phase, 0, len(lp.Phases))
 	for _, ph := range lp.Phases {
-		out = append(out, hydratePhaseWithSummary(s.Store, lp, ph))
+		out = append(out, hydratePhaseWithSummary(st, lp, ph))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
 	return out, nil
@@ -183,6 +196,10 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 	}
 
 	lp, _, err := s.Cache.Get(ctx, projectIDOrSlug)
+	if err != nil {
+		return nil, err
+	}
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +223,7 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 	phaseDirRel := filepath.Join("phases", phaseDirName)
 
 	rec := &store.PhaseRecord{}
-	if err := store.ReadYAML(filepath.Join(s.Store.Root, phaseDirRel, "phase.yaml"), rec); err != nil {
+	if err := store.ReadYAML(filepath.Join(st.Root, phaseDirRel, "phase.yaml"), rec); err != nil {
 		return nil, fmt.Errorf("read phase: %w", err)
 	}
 	if in.Name != nil {
@@ -222,7 +239,7 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 		return nil, err
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +264,7 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 	if newSummary != nil {
 		ph.Summary = *newSummary
 		if s.Worker != nil {
-			phaseDirAbs := filepath.Join(s.Store.Root, phaseDirRel)
+			phaseDirAbs := filepath.Join(st.Root, phaseDirRel)
 			s.Worker.Enqueue(worker.Job{
 				Kind:        worker.JobProjectSummary,
 				SourcePath:  filepath.Join(phaseDirAbs, "summary.md"),
@@ -259,7 +276,7 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 		}
 	}
 
-	out := hydratePhaseWithSummary(s.Store, lp, ph)
+	out := hydratePhaseWithSummary(st, lp, ph)
 	return out, nil
 }
 
@@ -275,6 +292,10 @@ func (s *Service) DeletePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 	}
 
 	lp, _, err := s.Cache.Get(ctx, projectIDOrSlug)
+	if err != nil {
+		return err
+	}
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
 	if err != nil {
 		return err
 	}
@@ -307,7 +328,7 @@ func (s *Service) DeletePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 		s.Worker.Flush(ctx)
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return err
 	}

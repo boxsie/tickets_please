@@ -17,6 +17,7 @@ import (
 
 	"tickets_please/internal/cache"
 	"tickets_please/internal/config"
+	"tickets_please/internal/domain"
 	"tickets_please/internal/embed"
 	"tickets_please/internal/store"
 	"tickets_please/internal/vecindex"
@@ -520,4 +521,41 @@ func (s *Service) cacheWalkAllStores(fn func(*store.Store) error) error {
 		}
 	}
 	return nil
+}
+
+// hostStoreForTicket finds the store and project slug that host a ticket id by
+// walking every mounted store + the default s.Store. Returns ErrNotFound when
+// no store hosts the ticket.
+//
+// Replacement for the legacy resolveTicketProject which walked s.Store only —
+// callers MUST use the returned store for any subsequent ops on this ticket
+// (BeginOp / filepath.Join(st.Root, ...)) so mutations land in the same store
+// the lookup found rather than blindly into s.Store.
+func (s *Service) hostStoreForTicket(id string) (*store.Store, string, error) {
+	var hostStore *store.Store
+	var hostSlug string
+	err := s.cacheWalkAllStores(func(st *store.Store) error {
+		if hostSlug != "" {
+			return nil
+		}
+		return st.WalkProjects(func(slug string, _ *store.ProjectRecord) error {
+			if hostSlug != "" {
+				return nil
+			}
+			return st.WalkTickets(slug, func(_, _ string, tr *store.TicketRecord) error {
+				if tr.ID == id {
+					hostStore = st
+					hostSlug = slug
+				}
+				return nil
+			})
+		})
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("walk projects: %w", err)
+	}
+	if hostSlug == "" {
+		return nil, "", fmt.Errorf("%w: ticket %s", domain.ErrNotFound, id)
+	}
+	return hostStore, hostSlug, nil
 }

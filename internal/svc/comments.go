@@ -43,7 +43,7 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 	}
 	trimmed := strings.TrimSpace(body)
 
-	slug, err := s.findTicketProjectSlug(ctx, ticketID)
+	st, slug, err := s.hostStoreForTicket(ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 	defer lp.Lock.Unlock()
 
 	// Defensive re-check after the lock — the project could have been
-	// evicted+reloaded between findTicketProjectSlug and Cache.Get, or the
+	// evicted+reloaded between hostStoreForTicket and Cache.Get, or the
 	// ticket could have been deleted by a concurrent process (T05/T07).
 	if _, ok := lp.Tickets[ticketID]; !ok {
 		return nil, fmt.Errorf("%w: ticket %q", domain.ErrNotFound, ticketID)
@@ -85,7 +85,7 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 	// projects/<slug>/tickets/ or projects/<slug>/phases/<NNN>-<phase-slug>/tickets/.
 	// domain.Ticket doesn't carry Number (the spec keeps that off the
 	// hydrated type), so we read it off the disk record in the same walk.
-	relTicketDir, ticketNumber, err := s.findTicketDirAndNumber(slug, ticketID)
+	relTicketDir, ticketNumber, err := s.findTicketDirAndNumber(st, slug, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 		return nil, fmt.Errorf("encode comment: %w", err)
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 
 	// Async embed: the comment body → resident CommentsIdx.
 	if s.Worker != nil {
-		commentAbs := filepath.Join(s.Store.Root, relCommentPath)
+		commentAbs := filepath.Join(st.Root, relCommentPath)
 		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
 		s.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobComment,
@@ -159,7 +159,7 @@ func (s *Service) ListComments(ctx context.Context, ticketID string) ([]*domain.
 		return nil, err
 	}
 
-	slug, err := s.findTicketProjectSlug(ctx, ticketID)
+	_, slug, err := s.hostStoreForTicket(ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -196,54 +196,22 @@ func (s *Service) ListComments(ctx context.Context, ticketID string) ([]*domain.
 	return out, nil
 }
 
-// findTicketProjectSlug returns the slug of the project that owns ticketID by
-// walking projects + their tickets on disk. Returns domain.ErrNotFound when
-// no project owns the ticket.
-//
-// We intentionally avoid touching internal/svc/tickets.go — T05 is implementing
-// it concurrently. The cache exposes Len but not its slug list, so we don't
-// short-circuit through in-memory state here; the disk walk is ms-fast at the
-// hobby scale this project targets, and `early-exit on first hit` keeps it
-// proportional to "projects walked until match" rather than "all tickets".
-func (s *Service) findTicketProjectSlug(ctx context.Context, ticketID string) (string, error) {
-	_ = ctx
-	var found string
-	walkErr := s.Store.WalkProjects(func(slug string, _ *store.ProjectRecord) error {
-		if found != "" {
-			return nil
-		}
-		err := s.Store.WalkTickets(slug, func(_ string, _ string, tr *store.TicketRecord) error {
-			if tr.ID == ticketID {
-				found = slug
-			}
-			return nil
-		})
-		return err
-	})
-	if walkErr != nil {
-		return "", fmt.Errorf("walk for ticket: %w", walkErr)
-	}
-	if found == "" {
-		return "", fmt.Errorf("%w: ticket %q", domain.ErrNotFound, ticketID)
-	}
-	return found, nil
-}
-
 // findTicketDirAndNumber returns the ticket's directory path relative to the
-// data dir (e.g. `projects/foo/tickets/001-bar` or
-// `projects/foo/phases/001-build/tickets/004-baz`) plus the project-level
-// ticket number. Used both to build the StageOp.Write relative path and the
-// auto-commit caption.
-func (s *Service) findTicketDirAndNumber(slug, ticketID string) (string, int, error) {
+// store's root plus the project-level ticket number. Used both to build the
+// StageOp.Write relative path and the auto-commit caption. The supplied store
+// must be the one that hosts the ticket (i.e. the one returned by
+// hostStoreForTicket / ResolveProjectStore) — we explicitly avoid s.Store so
+// per-repo mounts compute paths against the correct root.
+func (s *Service) findTicketDirAndNumber(st *store.Store, slug, ticketID string) (string, int, error) {
 	var rel string
 	var number int
-	err := s.Store.WalkTickets(slug, func(ticketDir, _ string, tr *store.TicketRecord) error {
+	err := st.WalkTickets(slug, func(ticketDir, _ string, tr *store.TicketRecord) error {
 		if tr.ID != ticketID {
 			return nil
 		}
 		// Convert absolute ticketDir back to a path relative to the store
 		// root. Use filepath.Rel to be portable across separator quirks.
-		r, relErr := filepath.Rel(s.Store.Root, ticketDir)
+		r, relErr := filepath.Rel(st.Root, ticketDir)
 		if relErr != nil {
 			return relErr
 		}

@@ -39,7 +39,7 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 		return nil, fmt.Errorf("%w: comment required", domain.ErrInvalidArgument)
 	}
 
-	hostSlug, err := s.resolveTicketProject(ticketID)
+	st, hostSlug, err := s.hostStoreForTicket(ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 
 	// Find the ticket's current on-disk dir (relative to store root) plus
 	// number, so we can compute the new path and the auto-commit caption.
-	oldRel, _, err := s.findTicketDir(lp.Project.Slug, ticketID)
+	oldRel, _, err := s.findTicketDir(st, lp.Project.Slug, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 	// Re-read the on-disk record so we don't drop fields the cache doesn't
 	// model (e.g. CompletedByAgentID set by T07).
 	rec := &store.TicketRecord{}
-	if err := store.ReadYAML(filepath.Join(s.Store.Root, oldRel, "ticket.yaml"), rec); err != nil {
+	if err := store.ReadYAML(filepath.Join(st.Root, oldRel, "ticket.yaml"), rec); err != nil {
 		return nil, fmt.Errorf("read ticket: %w", err)
 	}
 	rec.PhaseID = newPhaseID
@@ -139,7 +139,7 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 	// Single StageOp: rename dir, then write the updated ticket.yaml AND the
 	// new comment file at their post-rename paths. The rename runs first, so
 	// the writes land in the new location.
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 
 	// Async embed: the system_move comment for the phase reassignment.
 	if s.Worker != nil {
-		commentAbs := filepath.Join(s.Store.Root, commentRel)
+		commentAbs := filepath.Join(st.Root, commentRel)
 		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
 		s.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobComment,

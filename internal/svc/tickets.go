@@ -48,6 +48,14 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		return nil, err
 	}
 
+	// Resolve the host store for this project once — every BeginOp / path
+	// build below must target it, not s.Store, so per-repo mounts write back
+	// to the correct on-disk location.
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
+	if err != nil {
+		return nil, err
+	}
+
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -83,12 +91,12 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 	// Project-global ticket numbering. We scan disk because the cache
 	// hydrates tickets without their on-disk Number — and deletions can
 	// leave gaps, so max+1 is the only safe answer.
-	number, err := s.nextTicketNumber(lp.Project.Slug)
+	number, err := s.nextTicketNumber(st, lp.Project.Slug)
 	if err != nil {
 		return nil, err
 	}
 
-	dirName, err := s.uniqueTicketDirName(lp.Project.Slug, number, title)
+	dirName, err := s.uniqueTicketDirName(st, lp.Project.Slug, number, title)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +129,7 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		return nil, err
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +147,7 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 
 	// Async embed: title + body → resident TicketsIdx.
 	if s.Worker != nil {
-		ticketDirAbs := filepath.Join(s.Store.Root, ticketDirRel)
+		ticketDirAbs := filepath.Join(st.Root, ticketDirRel)
 		s.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobTicketBody,
 			SourcePath:  filepath.Join(ticketDirAbs, "body.md"),
@@ -190,7 +198,7 @@ func (s *Service) GetTicket(ctx context.Context, id string) (*domain.Ticket, err
 		return nil, err
 	}
 
-	hostSlug, err := s.resolveTicketProject(id)
+	_, hostSlug, err := s.hostStoreForTicket(id)
 	if err != nil {
 		return nil, err
 	}
@@ -308,9 +316,11 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 		return nil, fmt.Errorf("%w: wave must be >= 0", domain.ErrInvalidArgument)
 	}
 
-	// Find the host project. Reuse GetTicket's resolution machinery — but
-	// return ErrNotFound on miss without lazy-loading every project.
-	hostSlug, err := s.resolveTicketProject(id)
+	// Find the host project + store. Reuse GetTicket's resolution machinery —
+	// but return ErrNotFound on miss without lazy-loading every project. The
+	// store returned is the one we'll write back to (per-repo mounts vs the
+	// default central store).
+	st, hostSlug, err := s.hostStoreForTicket(id)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +365,7 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 	// Re-read the on-disk record so we don't drop fields the cache doesn't
 	// model (e.g. CompletedByAgentID after a T07 lands and then this T05
 	// path runs concurrently).
-	ticketDirRel, ticketDirAbs, err := s.findTicketDir(lp.Project.Slug, id)
+	ticketDirRel, ticketDirAbs, err := s.findTicketDir(st, lp.Project.Slug, id)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +382,7 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 		return nil, err
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +401,7 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 	}
 
 	if (titleChanged || bodyChanged) && s.Worker != nil {
-		ticketDirAbs := filepath.Join(s.Store.Root, ticketDirRel)
+		ticketDirAbs := filepath.Join(st.Root, ticketDirRel)
 		s.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobTicketBody,
 			SourcePath:  filepath.Join(ticketDirAbs, "body.md"),
@@ -449,7 +459,7 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 		return nil, err
 	}
 
-	slug, err := s.resolveTicketProject(ticketID)
+	st, slug, err := s.hostStoreForTicket(ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +497,7 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 	// Resolve the on-disk ticket dir + number for the StageOp paths and the
 	// auto-commit caption. This walks the project tree but is cheap at hobby
 	// scale and matches the pattern T05 uses elsewhere in this file.
-	relTicketDir, ticketNumber, err := s.findTicketDirAndNumber(slug, ticketID)
+	relTicketDir, ticketNumber, err := s.findTicketDirAndNumber(st, slug, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -496,7 +506,7 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 	// model (forward-compat: another agent's binary may write fields ours
 	// doesn't recognize).
 	rec := &store.TicketRecord{}
-	absYAML := filepath.Join(s.Store.Root, relTicketDir, "ticket.yaml")
+	absYAML := filepath.Join(st.Root, relTicketDir, "ticket.yaml")
 	if err := store.ReadYAML(absYAML, rec); err != nil {
 		return nil, fmt.Errorf("read ticket: %w", err)
 	}
@@ -533,7 +543,7 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 	// Single StageOp stages BOTH writes; Commit applies them under the
 	// per-project flock, so a reader observes either old-state or new-state —
 	// never a half-applied move.
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -551,7 +561,7 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 
 	// Async embed: system_move comment.
 	if s.Worker != nil {
-		commentAbs := filepath.Join(s.Store.Root, relCommentPath)
+		commentAbs := filepath.Join(st.Root, relCommentPath)
 		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
 		s.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobComment,
@@ -614,7 +624,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		return nil, err
 	}
 
-	slug, err := s.resolveTicketProject(ticketID)
+	st, slug, err := s.hostStoreForTicket(ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -634,7 +644,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		return nil, fmt.Errorf("%w: ticket %s is already done", domain.ErrFailedPrecondition, ticketID)
 	}
 
-	relTicketDir, ticketNumber, err := s.findTicketDirAndNumber(slug, ticketID)
+	relTicketDir, ticketNumber, err := s.findTicketDirAndNumber(st, slug, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +657,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 
 	// Re-read on-disk record to preserve any fields the cache doesn't model.
 	rec := &store.TicketRecord{}
-	absYAML := filepath.Join(s.Store.Root, relTicketDir, "ticket.yaml")
+	absYAML := filepath.Join(st.Root, relTicketDir, "ticket.yaml")
 	if err := store.ReadYAML(absYAML, rec); err != nil {
 		return nil, fmt.Errorf("read ticket: %w", err)
 	}
@@ -694,7 +704,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		return nil, fmt.Errorf("encode system_completion comment: %w", err)
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -716,7 +726,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 	// Async embed: learnings → resident LearningsIdx, plus the
 	// system_completion comment → resident CommentsIdx.
 	if s.Worker != nil {
-		ticketDirAbs := filepath.Join(s.Store.Root, relTicketDir)
+		ticketDirAbs := filepath.Join(st.Root, relTicketDir)
 		s.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobTicketLearnings,
 			SourcePath:  filepath.Join(ticketDirAbs, "completion.md"),
@@ -781,9 +791,9 @@ func resolvePhase(lp *cache.LoadedProject, idOrSlug string) (*domain.Phase, bool
 // nextTicketNumber returns max(existing)+1 for the project's tickets,
 // scanning every yaml under both phase-less and phased dirs. Numbering is
 // project-global per SPEC.
-func (s *Service) nextTicketNumber(slug string) (int, error) {
+func (s *Service) nextTicketNumber(st *store.Store, slug string) (int, error) {
 	max := 0
-	if err := s.Store.WalkTickets(slug, func(_, _ string, tr *store.TicketRecord) error {
+	if err := st.WalkTickets(slug, func(_, _ string, tr *store.TicketRecord) error {
 		if tr.Number > max {
 			max = tr.Number
 		}
@@ -798,9 +808,9 @@ func (s *Service) nextTicketNumber(slug string) (int, error) {
 // disk within the project (across both phase-less and phased tickets).
 // Collisions on the same NNN-slug pair (rare with the number prefix) get
 // a `-2`, `-3`, … suffix.
-func (s *Service) uniqueTicketDirName(slug string, number int, title string) (string, error) {
+func (s *Service) uniqueTicketDirName(st *store.Store, slug string, number int, title string) (string, error) {
 	taken := map[string]bool{}
-	if err := s.Store.WalkTickets(slug, func(ticketDir, _ string, _ *store.TicketRecord) error {
+	if err := st.WalkTickets(slug, func(ticketDir, _ string, _ *store.TicketRecord) error {
 		taken[filepath.Base(ticketDir)] = true
 		return nil
 	}); err != nil {
@@ -836,36 +846,14 @@ func computeBlockedBy(depIDs []string, tickets map[string]*domain.Ticket) []stri
 	return out
 }
 
-// resolveTicketProject finds which project hosts the given ticket id by
-// walking disk. Returns ErrNotFound if no project does.
-func (s *Service) resolveTicketProject(id string) (string, error) {
-	var hostSlug string
-	if err := s.Store.WalkProjects(func(slug string, _ *store.ProjectRecord) error {
-		if hostSlug != "" {
-			return nil
-		}
-		return s.Store.WalkTickets(slug, func(_, _ string, tr *store.TicketRecord) error {
-			if tr.ID == id {
-				hostSlug = slug
-			}
-			return nil
-		})
-	}); err != nil {
-		return "", fmt.Errorf("walk projects: %w", err)
-	}
-	if hostSlug == "" {
-		return "", fmt.Errorf("%w: ticket %s", domain.ErrNotFound, id)
-	}
-	return hostSlug, nil
-}
-
 // findTicketDir returns the relative-to-Store.Root and absolute path of the
 // ticket directory matching the given ticket id within the named project.
 // Used by UpdateTicket so it can write back to the existing directory (which
-// might be phased or phase-less).
-func (s *Service) findTicketDir(slug, id string) (string, string, error) {
+// might be phased or phase-less). The supplied store must host `slug` —
+// callers obtain it via hostStoreForTicket or ResolveProjectStore.
+func (s *Service) findTicketDir(st *store.Store, slug, id string) (string, string, error) {
 	var relDir, absDir string
-	if err := s.Store.WalkTickets(slug, func(ticketDir, phaseDirName string, tr *store.TicketRecord) error {
+	if err := st.WalkTickets(slug, func(ticketDir, phaseDirName string, tr *store.TicketRecord) error {
 		if tr.ID != id {
 			return nil
 		}

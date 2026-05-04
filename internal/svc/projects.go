@@ -137,34 +137,46 @@ func (s *Service) GetProject(ctx context.Context, idOrSlug string) (*domain.Proj
 	return &cp, nil
 }
 
-// ListProjects returns lightweight Project summaries for every project on
-// disk. Does NOT lazy-load — projects not already in the cache are read
-// off disk directly so listing can't unexpectedly populate the cache.
+// ListProjects returns lightweight Project summaries for every project the
+// service knows about — including those mounted from per-repo data dirs via
+// register_agent, not just whatever lives in the central s.Store. Does NOT
+// lazy-load: projects not already in the cache are read off disk directly so
+// listing can't unexpectedly populate the cache.
 func (s *Service) ListProjects(ctx context.Context) ([]*domain.Project, error) {
 	out := make([]*domain.Project, 0)
-	err := s.Store.WalkProjects(func(slug string, rec *store.ProjectRecord) error {
-		summary, err := s.Store.ReadProjectSummary(slug)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-		p := &domain.Project{
-			ID:          rec.ID,
-			Slug:        rec.Slug,
-			Name:        rec.Name,
-			Description: rec.Description,
-			Summary:     summary,
-			CreatedAt:   rec.CreatedAt,
-			UpdatedAt:   rec.UpdatedAt,
-		}
-		if rec.CreatedByAgentID != nil {
-			if agentRec, err := s.AgentStore.ReadAgent(*rec.CreatedByAgentID); err == nil {
-				p.CreatedBy = &domain.AgentRef{ID: agentRec.ID, Name: agentRec.Name}
-			} else {
-				p.CreatedBy = &domain.AgentRef{ID: *rec.CreatedByAgentID}
+	seenSlug := make(map[string]struct{})
+	err := s.cacheWalkAllStores(func(st *store.Store) error {
+		return st.WalkProjects(func(slug string, rec *store.ProjectRecord) error {
+			// Distinct stores must not surface the same slug twice; defensive
+			// dedupe so a misconfigured mount + matching central project
+			// doesn't double-count.
+			if _, dup := seenSlug[slug]; dup {
+				return nil
 			}
-		}
-		out = append(out, p)
-		return nil
+			seenSlug[slug] = struct{}{}
+			summary, err := st.ReadProjectSummary(slug)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+			p := &domain.Project{
+				ID:          rec.ID,
+				Slug:        rec.Slug,
+				Name:        rec.Name,
+				Description: rec.Description,
+				Summary:     summary,
+				CreatedAt:   rec.CreatedAt,
+				UpdatedAt:   rec.UpdatedAt,
+			}
+			if rec.CreatedByAgentID != nil {
+				if agentRec, err := s.AgentStore.ReadAgent(*rec.CreatedByAgentID); err == nil {
+					p.CreatedBy = &domain.AgentRef{ID: agentRec.ID, Name: agentRec.Name}
+				} else {
+					p.CreatedBy = &domain.AgentRef{ID: *rec.CreatedByAgentID}
+				}
+			}
+			out = append(out, p)
+			return nil
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -186,6 +198,10 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	if err != nil {
 		return nil, err
 	}
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
+	if err != nil {
+		return nil, err
+	}
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -202,7 +218,7 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 
 	// Re-read the on-disk record so we don't drop fields we don't know
 	// about (forward-compat: an older binary plus newer yaml shape).
-	rec, err := s.Store.ReadProject(slug)
+	rec, err := st.ReadProject(slug)
 	if err != nil {
 		return nil, fmt.Errorf("read project: %w", err)
 	}
@@ -219,7 +235,7 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 		return nil, err
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return nil, err
 	}
@@ -247,8 +263,8 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 		if s.Worker != nil {
 			s.Worker.Enqueue(worker.Job{
 				Kind:        worker.JobProjectSummary,
-				SourcePath:  filepath.Join(s.Store.Root, "summary.md"),
-				SidecarPath: filepath.Join(s.Store.Root, "summary.embedding.json"),
+				SourcePath:  filepath.Join(st.Root, "summary.md"),
+				SidecarPath: filepath.Join(st.Root, "summary.embedding.json"),
 				EntryID:     rec.ID,
 				Owner:       slug,
 				Text:        *newSummary,
@@ -270,6 +286,10 @@ func (s *Service) DeleteProject(ctx context.Context, idOrSlug string) error {
 	}
 
 	lp, _, err := s.Cache.Get(ctx, idOrSlug)
+	if err != nil {
+		return err
+	}
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
 	if err != nil {
 		return err
 	}
@@ -303,7 +323,7 @@ func (s *Service) DeleteProject(ctx context.Context, idOrSlug string) error {
 		s.Worker.Flush(ctx)
 	}
 
-	op, err := s.Store.BeginOp()
+	op, err := st.BeginOp()
 	if err != nil {
 		return err
 	}
