@@ -1,0 +1,12 @@
+id: 0aabb5af-5680-4be2-86cb-3220f0605e7e
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+number: 10
+title: Layout, navigation, and project sidebar
+column: todo
+phase_id: 4d570481-e395-4ca6-9e21-4bb78dc0d2e9
+wave: 1
+depends_on:
+    - 5f8bcc39-f453-426a-96f4-d79582c2fe8b
+created_by: ce26ef78-6d8d-4b1b-96cf-46e83b963189
+created_at: 2026-05-04T12:00:24.531712646+01:00
+updated_at: 2026-05-04T12:00:24.531712646+01:00
