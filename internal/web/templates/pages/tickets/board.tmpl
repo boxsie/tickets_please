@@ -7,7 +7,6 @@
     <h1>Board</h1>
     <div class="page-actions">
       <a class="btn btn-primary" href="/p/{{$proj.Slug}}/tickets/new">New ticket</a>
-      <a class="btn" href="/p/{{$proj.Slug}}/waves">View waves</a>
       {{if .Body.Phases}}
       <form method="get" action="/p/{{$proj.Slug}}/board" class="inline-filter">
         <label for="phase">Phase</label>
