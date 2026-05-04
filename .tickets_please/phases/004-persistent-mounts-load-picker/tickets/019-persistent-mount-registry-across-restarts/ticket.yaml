@@ -2,9 +2,9 @@ id: 4e5f97d5-1c58-4b46-96f0-3d22fa6b46ba
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 19
 title: Persistent mount registry across restarts
-column: todo
+column: in_progress
 phase_id: 15f4d3e4-8849-4c38-94ee-3af5600aa27d
 wave: 1
 created_by: d369da33-a86c-40ef-8b5a-6666c456e9a0
 created_at: 2026-05-04T19:15:06.625359564+01:00
-updated_at: 2026-05-04T19:15:06.625359564+01:00
+updated_at: 2026-05-04T19:16:17.355009291+01:00
