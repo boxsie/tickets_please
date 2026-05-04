@@ -27,21 +27,37 @@
     {{end}}
   </section>
 
-  <section class="card">
-    <h2>Waves</h2>
-    {{if .Body.Waves}}
-    <ul class="bare-list">
-      {{range .Body.Waves}}
-      <li>
-        Wave {{if eq .Wave 0}}<span class="muted">(unassigned)</span>{{else}}<strong>{{.Wave}}</strong>{{end}}
-        <span class="muted">— {{.ActiveTicketCount}} active / {{.TicketCount}} total</span>
-      </li>
-      {{end}}
-    </ul>
-    {{else}}
-    <p class="hint">No tickets in this phase yet.</p>
+  {{if .Body.Waves}}
+  <div class="phase-row-waves phase-detail-waves">
+    {{range .Body.Waves}}
+    <section class="phase-wave{{if .IsUnassigned}} muted-section{{end}}">
+      <header class="phase-wave-head">
+        <span class="phase-wave-chip{{if .IsUnassigned}} phase-wave-chip-unassigned{{end}}">
+          {{if .IsUnassigned}}W0{{else}}W{{.Wave}}{{end}}
+        </span>
+        <span class="phase-wave-title">
+          {{if .IsUnassigned}}Unassigned wave{{else}}Wave {{.Wave}}{{end}}
+        </span>
+        <span class="phase-wave-count muted">{{len .Tickets}} ticket{{if ne (len .Tickets) 1}}s{{end}}</span>
+      </header>
+      <ul class="phase-wave-tickets">
+        {{range .Tickets}}
+        <li class="phase-wave-ticket">
+          <span class="dot dot-{{.Column}}" title="{{.Column}}"></span>
+          <a class="phase-wave-ticket-title" href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a>
+          <span class="badge badge-{{.Column}}">{{.Column}}</span>
+        </li>
+        {{end}}
+      </ul>
+    </section>
     {{end}}
-  </section>
+  </div>
+  {{else}}
+  <div class="phase-row-empty">
+    <p class="hint">No tickets in this phase yet.</p>
+    <a class="btn btn-sm" href="/p/{{$proj.Slug}}/tickets/new">+ New ticket</a>
+  </div>
+  {{end}}
 
   <details class="danger-zone">
     <summary>Delete phase</summary>

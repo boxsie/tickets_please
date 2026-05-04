@@ -249,7 +249,7 @@ func (a *app) renderPhaseFormError(w http.ResponseWriter, r *http.Request, page,
 type phaseDetailData struct {
 	Project *domain.Project
 	Phase   *domain.Phase
-	Waves   []domain.WaveSummary
+	Waves   []waveSection
 }
 
 func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
@@ -265,13 +265,19 @@ func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
 		a.renderer.Error(w, r, classifyServiceError(err), err)
 		return
 	}
-	waves, err := a.deps.Service.ListWaves(r.Context(), slug, &phaseSlug)
+	// Pull tickets scoped to this phase, then bucket by wave the same way the
+	// phases-index expanded view does so both pages render identically.
+	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
+		ProjectIDOrSlug: slug,
+		PhaseIDOrSlug:   &phaseSlug,
+		Limit:           200,
+	})
 	if err != nil {
-		// Wave summary errors degrade to empty list — the page still renders
-		// useful info without it. Same posture as sidebarProjects on chrome.
-		a.deps.Logger.Warn("phases: list waves", "err", err)
-		waves = nil
+		// Soft-degrade: an empty wave list still renders the rest of the page.
+		a.deps.Logger.Warn("phases: list tickets for detail", "err", err)
+		tickets = nil
 	}
+	waves := bucketTicketsByWave(tickets)
 	a.renderer.Page(w, r, "phases/detail", PageOpts{
 		Title:       phase.Name + " · " + proj.Name,
 		CurrentSlug: proj.Slug,

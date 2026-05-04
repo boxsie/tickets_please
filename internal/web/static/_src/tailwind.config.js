@@ -60,6 +60,7 @@ module.exports = {
     "search-hit-title", "search-hit-snippet", "score",
     "assign-phase-form",
     "phases-index", "phase-detail", "phase-summary", "phases-empty",
+    "phase-detail-waves",
     "phase-list", "phase-row", "phase-row-summary", "phase-row-chevron",
     "phase-row-headline", "phase-row-name", "phase-row-desc",
     "phase-row-meta", "phase-row-bar", "phase-row-bar-empty",

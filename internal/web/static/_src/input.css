@@ -1582,6 +1582,17 @@
   }
   .phase-row-empty .hint { margin: 0; }
 
+  /* Phase-detail uses the same per-wave block as the phases-index expanded
+     view. Wrap it in its own card-shaped container so it sits naturally
+     between the summary card and the danger zone. */
+  .phase-detail-waves {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    margin: 1rem 0;
+  }
+
   @media (max-width: 720px) {
     .phase-row > summary {
       grid-template-columns: auto 1fr;
