@@ -22,3 +22,11 @@ coverage.html
 # flock files for per-project mutation serialization (held while a process is alive)
 .tickets_please/.lock
 .tickets_please/projects/*/.lock
+
+# Playwright e2e harness
+e2e/node_modules/
+e2e/screenshots/
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+e2e/.auth/
