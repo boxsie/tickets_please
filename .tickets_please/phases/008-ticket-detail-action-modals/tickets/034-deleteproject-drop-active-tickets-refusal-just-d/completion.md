@@ -1,0 +1,33 @@
+## Testing evidence
+Flipped TestDeleteProject_RefusesActiveTickets → TestDeleteProject_DeletesEvenWithActiveTickets — seeds an active todo ticket on disk, then asserts DeleteProject succeeds, project siblings (project.yaml, summary.md, tickets/) are all gone, and the cache is empty. TestDeleteProject_HappyPath_RemovesViaStageOp continues to pass unchanged.
+
+- `go test ./internal/svc/ -run TestDeleteProject -count=1 -v` → both PASS (DeletesEvenWithActiveTickets, HappyPath_RemovesViaStageOp)
+- `go test ./... -count=1` → all green across cache/embed/mcptools/store/svc/vecindex/web/worker
+
+Built (`make build`) + restarted `tickets-please.service`; `/healthz` returns ok with the new behavior live.
+
+## Work summary
+Removed the active-ticket refusal from `Service.DeleteProject` (internal/svc/projects.go). Active-count loop is gone; the only thing the read-lock snapshots now is the slug. Cache eviction → worker flush → StageOp.RemovePath of project.yaml/summary.md/summary.embedding.json/phases/tickets → mount + persistent-registry cleanup all sequence the same way, so atomicity, audit-trail commit, and registry sync are unchanged. Updated the docstring to call out that per-ticket "completion is sacred" is a per-ticket rule and the project-level delete bypasses it.
+
+Tool description in `internal/mcptools/tools.go` rewritten: drops the "Refuses if any tickets are still active." line and explicitly names what gets nuked (every phase, every ticket including in-progress/testing/done, every comment, every embedding sidecar) plus the unmount + registry-removal side effects.
+
+Web detail-page danger-zone hint (`internal/web/templates/pages/projects/detail.tmpl`) updated to drop the "Refuses if any ticket is still active" text — now just warns about full data loss including active tickets. The `onsubmit="return confirm(...)"` JS confirm prompt was already accurate, left as-is.
+
+SPEC tool-table row for `delete_project` rewritten to match. The Service-API list entry for `DeleteProject` now spells out the unconditional behaviour and explicitly flags the per-ticket vs project-level rule split.
+
+Test flipped: `TestDeleteProject_RefusesActiveTickets` → `TestDeleteProject_DeletesEvenWithActiveTickets`. The body keeps the same on-disk-stub-ticket seeding pattern but now asserts the delete succeeds, project content is gone, and the cache is empty. The other DeleteProject test (HappyPath_RemovesViaStageOp) is unchanged.
+
+Built + restarted the local service. Full repo `go test ./...` green.
+
+## Learnings
+- The atomicity story for DeleteProject doesn't depend on the refusal; it depends on the cache.Evict → Worker.Flush → StageOp ordering. Removing the refusal block didn't perturb any of that — they're independent concerns. Same shape applies to any future "drop a guard, keep the safety" change in this codebase: locate the gate cleanly and remove only the gate.
+
+- The active-count snapshot was holding `lp.Lock.RLock()` purely to count tickets. Once that's gone, we still need the RLock briefly to read `lp.Project.Slug` because the cache could theoretically have its `Stale` flag flipped by fsnotify mid-call. Cheaper but still required — don't drop the RLock entirely just because the loop body shrank.
+
+- Per-ticket vs project-level immutability is a worthwhile semantic distinction to call out in tool descriptions and the SPEC. An LLM reading the delete_ticket vs delete_project tool descriptions side-by-side will now see the asymmetry: per-ticket cannot bypass `done`; per-project can. Saves a future "but why does delete_ticket refuse done and delete_project not?" round-trip.
+
+- The web danger-zone uses a native `confirm()` JS prompt rather than a `<dialog>` modal — that pattern was deliberately documented as fine in the ticket-detail-action-modals phase summary ("the existing browser confirm() pattern (delete project) — that pattern is fine for destructive single-button confirmations; modals here host multi-field forms"). Don't over-correct by promoting it to a modal unless there's a multi-field reason.
+
+- When loosening a destructive-op gate, sweep callers: tool description, web hints, SPEC tool table, SPEC service-API list, README. README didn't need a body change here because it only mentions delete_project by name in the count row, but checking the four other surfaces is still mandatory. The pattern: `grep -rn delete_project SPEC.md README.md internal/web/templates/`.
+
+- A flipped test name (`Refuses` → `DeletesEven`) reads better than just inverting the assertion. Keeping the seeding shape (stub ticket on disk) intact is the right move because it preserves the "we tested this with active tickets present" intent — only the expectation changes.

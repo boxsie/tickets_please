@@ -2,8 +2,10 @@ id: 150d7367-36ff-423a-a59c-098673bb7b0a
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 34
 title: 'DeleteProject: drop active-tickets refusal — just delete'
-column: in_progress
+column: done
 phase_id: 5915b10d-53c3-4243-b2a9-3549ea8a5c01
 created_by: 86b6712b-b98d-4479-b19b-7f51b63060cc
+completed_by: 7607bcec-2e33-41ce-95d5-19e9f50d9870
+completed_at: 2026-05-05T20:43:51.097158093+01:00
 created_at: 2026-05-05T20:40:21.156598315+01:00
-updated_at: 2026-05-05T20:40:27.219097535+01:00
+updated_at: 2026-05-05T20:43:51.097158093+01:00
