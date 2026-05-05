@@ -23,6 +23,11 @@ coverage.html
 .tickets_please/.lock
 .tickets_please/projects/*/.lock
 
+# Embedding sidecars — derived data, regenerable by the boot backfill, and
+# provider-specific (Ollama vs OpenAI vectors aren't interchangeable). Keeping
+# them out of git avoids huge diffs on every body edit.
+.tickets_please/**/*.embedding.json
+
 # Playwright e2e harness
 e2e/node_modules/
 e2e/screenshots/
