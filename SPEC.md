@@ -798,7 +798,7 @@ func New(cfg config.Config) (*Service, error)
 - `MoveTicket(ctx, id string, target domain.Column, comment string) (*domain.Ticket, error)` — both required; rejects `done`.
 - `CompleteTicket(ctx, id string, testingEvidence, workSummary, learnings string) (*domain.Ticket, error)` — all three required, ≥10 chars each.
 - `AssignTicketToPhase(ctx, id string, phaseIDOrSlug *string, comment string) (*domain.Ticket, error)` — `nil` = phase-less.
-- `DeleteTicket(ctx, id string) error` — irreversibly removes a non-`done` ticket and its directory (body, comments, embedding sidecars). Refuses on `done` (preserves the no-reopen rule) and on tickets that other tickets still list in `DependsOn` (no dangling refs). Auto-commit captures the removal; no tombstone written.
+- `DeleteTicket(ctx, id string) error` — irreversibly removes a non-`done` ticket and its directory (body, comments, embedding sidecars). Refuses on `done` (preserves the no-reopen rule). Any other ticket in the same project whose `DependsOn` or `ParallelizableWith` slice contains the doomed id is rewritten in the same StageOp to drop the reference, so the cascade and the delete commit atomically — no dangling refs ever observed. Auto-commit captures the removal; no tombstone written.
 
 ### Comments
 - `CreateComment(ctx, ticketID, body string) (*domain.Comment, error)` — always `kind=user`
@@ -973,7 +973,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `move_ticket` | Move a ticket between columns. Requires a comment explaining *why* you're moving it. Cannot be used to move to `done` — use `complete_ticket` for that. |
 | `complete_ticket` | Mark a ticket done. Requires `testing_evidence` (what you tested and how), `work_summary` (what you actually changed), `learnings` (gotchas, surprises, insights for future work). Be thorough — `learnings` are searchable by future tickets. |
 | `assign_ticket_to_phase` | Move a ticket between phases (or to no phase). Requires a comment explaining why — same audit-trail rule as `move_ticket`. |
-| `delete_ticket` | **Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once finished, a ticket stays finished) and refuses if any other ticket lists this one in `depends_on` (would leave dangling refs). For finished work that you regret, file a new ticket instead. |
+| `delete_ticket` | **Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once finished, a ticket stays finished). Any other tickets that reference this one in `depends_on` or `parallelizable_with` are auto-updated to drop the reference, atomically with the delete — no dangling refs. For finished work that you regret, file a new ticket instead. |
 
 ### Comments (2)
 

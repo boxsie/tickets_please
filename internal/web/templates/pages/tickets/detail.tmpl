@@ -105,7 +105,7 @@
     </div>
     <div class="modal-body">
       <p>This will <strong>permanently remove</strong> &ldquo;{{$tkt.Title}}&rdquo;, including its body, comments, and embeddings. This cannot be undone.</p>
-      <p class="hint">Tickets in <code>done</code> can never be deleted (completion is sacred). Tickets that other tickets depend on will refuse — clear the dependency first.</p>
+      <p class="hint">Any other tickets that reference this one in <code>depends_on</code> or <code>parallelizable_with</code> will be auto-updated to drop the reference. Tickets in <code>done</code> can never be deleted (completion is sacred).</p>
       <form method="post" action="/tickets/{{$tkt.ID}}/delete?slug={{$proj.Slug}}" class="stack">
         <input type="hidden" name="_csrf" value="{{$b.CSRF}}">
         <div class="form-actions">

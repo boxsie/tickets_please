@@ -774,14 +774,18 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 
 // DeleteTicket hard-removes a non-`done` ticket and everything under its
 // directory (body, comments, embedding sidecars). Refuses on `done` so the
-// SPEC's "completion is sacred" rule survives, and refuses if any other
-// ticket lists this one in DependsOn so we don't leave dangling refs.
+// SPEC's "completion is sacred" rule survives.
 //
-// The on-disk delete goes through StageOp.RemovePath under the per-project
-// flock, so the auto-commit captures it; no separate tombstone is written.
+// Cascade behaviour: any other ticket in the same project whose DependsOn or
+// ParallelizableWith slice contains the doomed id has those entries stripped
+// and its `ticket.yaml` rewritten under the same StageOp. The doomed ticket's
+// RemovePath plus the cascade rewrites all commit together under the
+// per-project flock, so callers never observe dangling refs.
+//
 // In-memory cache + the resident vec indexes (TicketsIdx, LearningsIdx,
 // CommentsIdx) are pruned post-commit so the now-deleted ticket and its
-// comments stop appearing in search.
+// comments stop appearing in search; affected dependents have their cached
+// slices mutated in place and BlockedBy recomputed.
 func (s *Service) DeleteTicket(ctx context.Context, id string) error {
 	ctx, agent, err := s.requireSession(ctx)
 	if err != nil {
@@ -815,24 +819,38 @@ func (s *Service) DeleteTicket(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: ticket %s is done; completed tickets are frozen and cannot be deleted (SPEC: no reopen, no delete after complete)", domain.ErrFailedPrecondition, id)
 	}
 
-	// Refuse if any other ticket still depends on this one — deleting would
-	// leave dangling DependsOn refs. Surface dependent titles so the caller
-	// knows what to fix without grepping.
-	var dependents []string
+	// Build the cascade list: every other ticket whose DependsOn or
+	// ParallelizableWith carries the doomed id. We re-read each yaml from
+	// disk rather than serialising the cache so we preserve fields the
+	// cache doesn't model (CompletedByAgentID, etc.) — same pattern as
+	// UpdateTicket.
+	type cascadeUpdate struct {
+		ticketID string
+		relDir   string
+		rec      *store.TicketRecord
+	}
+	var cascade []cascadeUpdate
 	for _, other := range lp.Tickets {
 		if other.ID == id {
 			continue
 		}
-		for _, dep := range other.DependsOn {
-			if dep == id {
-				dependents = append(dependents, fmt.Sprintf("%q", other.Title))
-				break
-			}
+		hasDep := containsID(other.DependsOn, id)
+		hasPar := containsID(other.ParallelizableWith, id)
+		if !hasDep && !hasPar {
+			continue
 		}
-	}
-	if len(dependents) > 0 {
-		sort.Strings(dependents)
-		return fmt.Errorf("%w: ticket %s is a dependency of %d other ticket(s): %s; clear or rewire DependsOn first", domain.ErrFailedPrecondition, id, len(dependents), strings.Join(dependents, ", "))
+		relDir, absDir, err := s.findTicketDir(st, hostSlug, other.ID)
+		if err != nil {
+			return fmt.Errorf("locate dependent ticket %s: %w", other.ID, err)
+		}
+		rec := &store.TicketRecord{}
+		if err := store.ReadYAML(filepath.Join(absDir, "ticket.yaml"), rec); err != nil {
+			return fmt.Errorf("read dependent ticket %s: %w", other.ID, err)
+		}
+		rec.DependsOn = removeID(rec.DependsOn, id)
+		rec.ParallelizableWith = removeID(rec.ParallelizableWith, id)
+		rec.UpdatedAt = time.Now()
+		cascade = append(cascade, cascadeUpdate{ticketID: other.ID, relDir: relDir, rec: rec})
 	}
 
 	ticketDirRel, _, err := s.findTicketDir(st, hostSlug, id)
@@ -852,12 +870,36 @@ func (s *Service) DeleteTicket(ctx context.Context, id string) error {
 		return err
 	}
 	defer op.Abort()
+	for _, cu := range cascade {
+		yamlBytes, err := store.MarshalYAML(cu.rec)
+		if err != nil {
+			return fmt.Errorf("marshal dependent %s: %w", cu.ticketID, err)
+		}
+		if err := op.Write(filepath.Join(cu.relDir, "ticket.yaml"), yamlBytes); err != nil {
+			return err
+		}
+	}
 	if err := op.RemovePath(ticketDirRel); err != nil {
 		return err
 	}
 	caption := fmt.Sprintf("delete ticket %s/%s", hostSlug, id)
+	if len(cascade) > 0 {
+		caption = fmt.Sprintf("%s (cleared %d dependent ref(s))", caption, len(cascade))
+	}
 	if err := op.Commit(ctx, store.LockProject(hostSlug), agent, caption); err != nil {
 		return fmt.Errorf("commit delete ticket: %w", err)
+	}
+
+	// Apply the cascade to the in-memory cache so subsequent reads see
+	// consistent state without waiting for fsnotify.
+	for _, cu := range cascade {
+		other, ok := lp.Tickets[cu.ticketID]
+		if !ok {
+			continue
+		}
+		other.DependsOn = removeID(other.DependsOn, id)
+		other.ParallelizableWith = removeID(other.ParallelizableWith, id)
+		other.UpdatedAt = cu.rec.UpdatedAt
 	}
 
 	// Prune cache + resident indexes. Comments slice may be nil for tickets
@@ -935,6 +977,36 @@ func (s *Service) uniqueTicketDirName(st *store.Store, slug string, number int, 
 		}
 	}
 	return "", fmt.Errorf("could not pick a unique ticket dir name under %q", base)
+}
+
+// containsID reports whether ids contains target.
+func containsID(ids []string, target string) bool {
+	for _, x := range ids {
+		if x == target {
+			return true
+		}
+	}
+	return false
+}
+
+// removeID returns a copy of ids with every occurrence of target dropped. A
+// nil input yields a nil output; an absent target yields the same slice
+// (modulo nilness) so callers can detect "nothing changed" via len comparison.
+func removeID(ids []string, target string) []string {
+	if len(ids) == 0 {
+		return ids
+	}
+	out := make([]string, 0, len(ids))
+	for _, x := range ids {
+		if x == target {
+			continue
+		}
+		out = append(out, x)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // computeBlockedBy returns the subset of depIDs whose tickets are not yet

@@ -597,7 +597,7 @@ func TestDeleteTicket_RefusesDoneTickets(t *testing.T) {
 	}
 }
 
-func TestDeleteTicket_RefusesDependents(t *testing.T) {
+func TestDeleteTicket_CascadesDependentRefs(t *testing.T) {
 	s, ctx, _, slug := freshServiceWithProject(t)
 	a, err := s.CreateTicket(ctx, domain.CreateTicketInput{
 		ProjectIDOrSlug: slug, Title: "Foundation",
@@ -611,29 +611,61 @@ func TestDeleteTicket_RefusesDependents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	err = s.DeleteTicket(ctx, a.ID)
-	if !errors.Is(err, domain.ErrFailedPrecondition) {
-		t.Fatalf("expected ErrFailedPrecondition, got %v", err)
-	}
-	if !strings.Contains(err.Error(), b.Title) {
-		t.Fatalf("error should name dependent title %q, got %q", b.Title, err)
-	}
-	// Both tickets still resolve.
-	if _, err := s.GetTicket(ctx, a.ID); err != nil {
-		t.Fatalf("a still readable: %v", err)
+	c, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+		ProjectIDOrSlug: slug, Title: "Sibling work", ParallelizableWith: []string{a.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// Clearing the dep lets a be deleted.
-	if _, err := s.UpdateTicket(ctx, b.ID, domain.UpdateTicketInput{}); err != nil {
-		// no DependsOn editing today; instead delete b first to free a.
-		_ = err
-	}
-	if err := s.DeleteTicket(ctx, b.ID); err != nil {
-		t.Fatalf("DeleteTicket(b): %v", err)
-	}
 	if err := s.DeleteTicket(ctx, a.ID); err != nil {
-		t.Fatalf("DeleteTicket(a) after b removed: %v", err)
+		t.Fatalf("DeleteTicket(a): %v", err)
+	}
+
+	// Doomed ticket gone.
+	if _, err := s.GetTicket(ctx, a.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("a should be gone, got %v", err)
+	}
+
+	// b's DependsOn no longer includes a.
+	gotB, err := s.GetTicket(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("GetTicket(b): %v", err)
+	}
+	for _, dep := range gotB.DependsOn {
+		if dep == a.ID {
+			t.Fatalf("b.DependsOn still contains a (%s) after cascade: %v", a.ID, gotB.DependsOn)
+		}
+	}
+	if len(gotB.BlockedBy) != 0 {
+		t.Fatalf("b.BlockedBy should be empty after a was removed: %v", gotB.BlockedBy)
+	}
+
+	// c's ParallelizableWith no longer includes a.
+	gotC, err := s.GetTicket(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("GetTicket(c): %v", err)
+	}
+	for _, par := range gotC.ParallelizableWith {
+		if par == a.ID {
+			t.Fatalf("c.ParallelizableWith still contains a (%s) after cascade: %v", a.ID, gotC.ParallelizableWith)
+		}
+	}
+
+	// On-disk yaml for b matches the in-memory result (cascade was persisted,
+	// not just cached).
+	bDirRel, _, err := s.findTicketDir(s.Store, slug, b.ID)
+	if err != nil {
+		t.Fatalf("findTicketDir(b): %v", err)
+	}
+	rec := &store.TicketRecord{}
+	if err := store.ReadYAML(filepath.Join(s.Store.Root, bDirRel, "ticket.yaml"), rec); err != nil {
+		t.Fatalf("read b yaml: %v", err)
+	}
+	for _, dep := range rec.DependsOn {
+		if dep == a.ID {
+			t.Fatalf("on-disk b.DependsOn still contains a: %v", rec.DependsOn)
+		}
 	}
 }
 

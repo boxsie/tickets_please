@@ -222,7 +222,7 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 	), t.handleAssignTicketToPhase)
 
 	s.AddTool(mcp.NewTool("delete_ticket",
-		mcp.WithDescription("**Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once a ticket is finished it stays finished, per SPEC's no-reopen/no-delete rule) and refuses if any other ticket lists this one in `depends_on` (would leave dangling refs). Use this for tickets created in error or scoped down to nothing; for finished work that you regret, file a new ticket instead."),
+		mcp.WithDescription("**Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once a ticket is finished it stays finished, per SPEC's no-reopen/no-delete rule). Any other tickets in the same project that reference this one in `depends_on` or `parallelizable_with` are auto-updated to drop the reference, atomically with the delete — no dangling refs, no manual cleanup. For finished work that you regret, file a new ticket instead."),
 		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
 	), t.handleDeleteTicket)
 
