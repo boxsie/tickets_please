@@ -20,95 +20,98 @@
       {{if $b.IsDone}}
         {{template "frozen_actions.tmpl" $b}}
       {{else}}
+        <button type="button" class="btn-primary" data-dialog="dlg-complete">Complete</button>
+        <button type="button" class="btn" data-dialog="dlg-move">Move</button>
+        {{if $b.Phases}}<button type="button" class="btn" data-dialog="dlg-assign-phase">Reassign phase</button>{{end}}
         <a class="btn" href="/tickets/{{$tkt.ID}}/edit?slug={{$proj.Slug}}">Edit ticket</a>
       {{end}}
     </div>
   </header>
 
-  {{if $b.IsDone}}
-  <div class="ticket-grid">
-    <div class="ticket-main">
-      <section class="card">
-        <h2>Body</h2>
-        {{if $tkt.Body}}<div class="markdown">{{markdown $tkt.Body}}</div>{{else}}<p class="hint">No body.</p>{{end}}
-      </section>
+  <div class="ticket-main">
+    <section class="card">
+      <h2>Body</h2>
+      {{if $tkt.Body}}<div class="markdown">{{markdown $tkt.Body}}</div>{{else}}<p class="hint">No body.</p>{{end}}
+    </section>
 
-      {{if or $tkt.DependsOn $b.Blocks}}
-      <section class="card">
-        <h2>Dependencies</h2>
-        {{if $b.Depends}}
-        <p><strong>Depends on</strong></p>
-        <ul class="bare-list">
-          {{range $b.Depends}}<li><a href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a> <span class="badge badge-{{.Column}}">{{.Column}}</span></li>{{end}}
-        </ul>
-        {{end}}
-        {{if $b.Blocks}}
-        <p><strong>Blocks</strong></p>
-        <ul class="bare-list">
-          {{range $b.Blocks}}<li><a href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a> <span class="badge badge-{{.Column}}">{{.Column}}</span></li>{{end}}
-        </ul>
-        {{end}}
-      </section>
+    {{if or $tkt.DependsOn $b.Blocks}}
+    <section class="card">
+      <h2>Dependencies</h2>
+      {{if $b.Depends}}
+      <p><strong>Depends on</strong></p>
+      <ul class="bare-list">
+        {{range $b.Depends}}<li><a href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a> <span class="badge badge-{{.Column}}">{{.Column}}</span></li>{{end}}
+      </ul>
       {{end}}
+      {{if $b.Blocks}}
+      <p><strong>Blocks</strong></p>
+      <ul class="bare-list">
+        {{range $b.Blocks}}<li><a href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a> <span class="badge badge-{{.Column}}">{{.Column}}</span></li>{{end}}
+      </ul>
+      {{end}}
+    </section>
+    {{end}}
 
-      <section class="card frozen-card">
-        <h2>Completion</h2>
-        {{if $tkt.TestingEvidence}}<details open><summary>Testing evidence</summary><div class="markdown">{{markdown (deref $tkt.TestingEvidence)}}</div></details>{{end}}
-        {{if $tkt.WorkSummary}}<details><summary>Work summary</summary><div class="markdown">{{markdown (deref $tkt.WorkSummary)}}</div></details>{{end}}
-        {{if $tkt.Learnings}}<details><summary>Learnings</summary><div class="markdown">{{markdown (deref $tkt.Learnings)}}</div></details>{{end}}
-      </section>
+    {{if $b.IsDone}}
+    <section class="card frozen-card">
+      <h2>Completion</h2>
+      {{if $tkt.TestingEvidence}}<details open><summary>Testing evidence</summary><div class="markdown">{{markdown (deref $tkt.TestingEvidence)}}</div></details>{{end}}
+      {{if $tkt.WorkSummary}}<details><summary>Work summary</summary><div class="markdown">{{markdown (deref $tkt.WorkSummary)}}</div></details>{{end}}
+      {{if $tkt.Learnings}}<details><summary>Learnings</summary><div class="markdown">{{markdown (deref $tkt.Learnings)}}</div></details>{{end}}
+    </section>
+    {{end}}
 
-      {{template "comments_thread.tmpl" $b.Comments}}
-    </div>
+    {{template "comments_thread.tmpl" $b.Comments}}
   </div>
-  {{else}}
-  <div class="ticket-grid">
-    <div class="ticket-main">
-      <section class="card">
-        <h2>Body</h2>
-        {{if $tkt.Body}}<div class="markdown">{{markdown $tkt.Body}}</div>{{else}}<p class="hint">No body.</p>{{end}}
-      </section>
 
-      {{if or $tkt.DependsOn $b.Blocks}}
-      <section class="card">
-        <h2>Dependencies</h2>
-        {{if $b.Depends}}
-        <p><strong>Depends on</strong></p>
-        <ul class="bare-list">
-          {{range $b.Depends}}<li><a href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a> <span class="badge badge-{{.Column}}">{{.Column}}</span></li>{{end}}
-        </ul>
-        {{end}}
-        {{if $b.Blocks}}
-        <p><strong>Blocks</strong></p>
-        <ul class="bare-list">
-          {{range $b.Blocks}}<li><a href="/tickets/{{.ID}}?slug={{$proj.Slug}}">{{.Title}}</a> <span class="badge badge-{{.Column}}">{{.Column}}</span></li>{{end}}
-        </ul>
-        {{end}}
-      </section>
-      {{end}}
-
-      {{template "comments_thread.tmpl" $b.Comments}}
+  {{if not $b.IsDone}}
+  <dialog id="dlg-move" class="modal">
+    <div class="modal-header">
+      <h2>Move ticket</h2>
+      <form method="dialog"><button type="submit" class="btn modal-close" aria-label="Close">×</button></form>
     </div>
+    <div class="modal-body">
+      {{template "move_form.tmpl" $b}}
+    </div>
+  </dialog>
 
-    <aside class="ticket-side">
-      <section class="card">
-        <h2>Move</h2>
-        {{template "move_form.tmpl" $b}}
-      </section>
+  <dialog id="dlg-complete" class="modal modal-wide">
+    <div class="modal-header">
+      <h2>Complete ticket</h2>
+      <form method="dialog"><button type="submit" class="btn modal-close" aria-label="Close">×</button></form>
+    </div>
+    <div class="modal-body">
+      {{template "complete_form.tmpl" $b}}
+    </div>
+  </dialog>
 
-      <section class="card">
-        <h2>Complete</h2>
-        {{template "complete_form.tmpl" $b}}
-      </section>
+  {{if $b.Phases}}
+  <dialog id="dlg-assign-phase" class="modal">
+    <div class="modal-header">
+      <h2>Reassign phase</h2>
+      <form method="dialog"><button type="submit" class="btn modal-close" aria-label="Close">×</button></form>
+    </div>
+    <div class="modal-body">
+      {{template "assign_phase_form.tmpl" (mkAssignPhase $tkt.ID $proj.Slug (phaseSlug $tkt $b.Phases) $b.Phases $b.CSRF)}}
+    </div>
+  </dialog>
+  {{end}}
 
-      {{if $b.Phases}}
-      <section class="card">
-        <h2>Reassign phase</h2>
-        {{template "assign_phase_form.tmpl" (mkAssignPhase $tkt.ID $proj.Slug (phaseSlug $tkt $b.Phases) $b.Phases $b.CSRF)}}
-      </section>
-      {{end}}
-    </aside>
-  </div>
+  <script>
+    (function () {
+      document.querySelectorAll('[data-dialog]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var dlg = document.getElementById(btn.getAttribute('data-dialog'));
+          if (dlg && typeof dlg.showModal === 'function') dlg.showModal();
+        });
+      });
+      document.querySelectorAll('dialog.modal').forEach(function (dlg) {
+        dlg.addEventListener('click', function (e) {
+          if (e.target === dlg) dlg.close();
+        });
+      });
+    })();
+  </script>
   {{end}}
 </section>
 {{end}}
