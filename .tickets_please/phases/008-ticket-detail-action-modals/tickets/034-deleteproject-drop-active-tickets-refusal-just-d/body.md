@@ -1,0 +1,1 @@
+Drop the non-done-tickets refusal in `Service.DeleteProject`. Just delete unconditionally — keep the cache+worker+StageOp+registry sequencing for atomicity. Update tool description, web confirm hint, SPEC, and flip the existing TestDeleteProject_RefusesActiveTickets to assert the unconditional delete works. Per-ticket `done` immutability stays intact (that's a different rule).
