@@ -46,10 +46,10 @@ Subcommand dispatch on `cmd/tickets_please/main.go`:
 
 ### Centralised mode
 
-`tickets_please serve` runs the same `svc.Service` + tool surface as `mcp`, but exposes it over HTTP via mcp-go's `StreamableHTTPServer`. One process can serve multiple Claude Code clients without each one spawning its own stdio binary.
+`tickets_please serve` runs the same `svc.Service` + tool surface as `mcp`, but exposes it over HTTP via mcp-go's `StreamableHTTPServer`. One process can serve multiple repos without each one spawning its own stdio binary.
 
 ```
-tickets_please serve --addr :8765
+tickets_please serve [--addr :8765] [--data-root <path>] [--dev]
 ```
 
 Mounts:
@@ -59,11 +59,15 @@ Mounts:
 
 The web UI shares the same `svc.Service` instance as `/mcp`, so a human action in the browser and an LLM tool call from MCP write through the same concurrency-safe path. Cookie-scoped synthetic agents (`Web UI · <suffix>`) carry the audit trail. `--dev` swaps the embedded template/static FS for `os.DirFS` so edits show up on refresh without rebuilding.
 
+A single `serve` process can host many repos. Each repo is registered as a *mount* — the server reads `<repo>/.tickets_please/project.yaml` and inserts a slug-keyed entry in its in-memory mount registry (`Service.projectMounts`). The list of mounted absolute paths is persisted to `<data_root>/registry.yaml` so the sidebar survives a restart. Mounts are added two ways: an HTTP client calls `register_agent` with `project_path`, or the web UI's `/p/load` form points at a repo on disk.
+
 Wire it up in Claude Code:
 
 ```
 claude mcp add --transport http tickets_please http://localhost:8765/mcp
 ```
+
+HTTP clients **must** call `register_agent` once on connection to bind their session to a repo (its `project_path`); subsequent tool calls then accept `project_id_or_slug` as optional and fall back to the bound slug. Stdio clients pre-register at startup against `cfg.DataDir` and can skip the call.
 
 Localhost only; no TLS, no auth — out of scope for v1.
 
@@ -241,7 +245,8 @@ The directory `~/.tickets_please/` is created on first run if missing. A sample 
 
 | Key | Env var | Default | Notes |
 |---|---|---|---|
-| `data_dir` | `DATA_DIR` | `./.tickets_please` | Root of the on-disk data tree. Defaults to a directory in the cwd. |
+| `data_dir` | `DATA_DIR` | `./.tickets_please` | Per-repo project data dir (one project's `project.yaml`, `phases/`, `tickets/` live here). Defaults to a directory in the cwd. |
+| `data_root` | `DATA_ROOT` | `~/.tickets_please` | Central data root shared across all repos this server hosts. Holds the agent registry (`agents/<uuid>.yaml`) and the mount registry (`registry.yaml`). Tilde-expanded at load time. |
 | `auto_commit` | `AUTO_COMMIT` | `true` | If true and `data_dir` is inside a git repo, every mutation produces a commit authored as the calling agent. |
 | `embed_provider` | `EMBED_PROVIDER` | `ollama` | `ollama` or `openai`. |
 | `ollama_url` | `OLLAMA_URL` | `http://localhost:11434` | Used when `embed_provider=ollama`. |
@@ -265,8 +270,13 @@ tickets_please/
 ├── Makefile                       # build, run, test, init-config, init-data, check
 ├── SPEC.md                        # this file
 ├── examples/config.yaml           # sample config users copy to ~/.tickets_please/
-├── .tickets_please/               # default data dir (committed; this is the data!)
-│   └── README.md                  # explains the layout to anyone clicking around
+├── .tickets_please/               # this repo's own data dir (committed)
+│   ├── README.md                  # explains the layout to anyone clicking around
+│   ├── project.yaml               # the project record
+│   ├── summary.md                 # required ≥200-char context doc
+│   ├── phases/                    # optional sub-projects
+│   ├── tickets/                   # phase-less tickets
+│   └── .staging/                  # transient atomicity scratch (gitignored)
 ├── internal/
 │   ├── config/                    # koanf-based loader
 │   ├── domain/                    # plain Go types: Project, Phase, Ticket, Comment, Agent, Column...
@@ -280,7 +290,7 @@ tickets_please/
 │   │   ├── phases.go
 │   │   ├── tickets.go
 │   │   ├── comments.go
-│   │   ├── agents.go
+│   │   ├── agents.go              # central AgentStore (lives at <data_root>/agents/)
 │   │   └── integrity.go           # startup integrity check
 │   ├── cache/                     # project cache with sliding TTL eviction
 │   ├── vecindex/                  # in-memory vector index (cosine, brute-force)
@@ -290,24 +300,34 @@ tickets_please/
 │   │   └── openai.go
 │   ├── worker/                    # async embedding worker
 │   ├── svc/                       # business logic — methods on Service{}
-│   │   ├── service.go             # Service struct, New()
+│   │   ├── service.go             # Service struct, New(), per-mount registry
+│   │   ├── registry.go            # persistent mount registry (registry.yaml)
 │   │   ├── middleware.go          # session-validating in-process middleware
-│   │   ├── projects.go
+│   │   ├── projects.go            # CreateProject + CreateProjectAt
 │   │   ├── phases.go
 │   │   ├── tickets.go
 │   │   ├── comments.go
 │   │   ├── search.go
 │   │   ├── agents.go
 │   │   └── validation.go
-│   └── mcptools/                  # mark3labs/mcp-go tool wrappers around svc
-│       ├── tools.go
-│       ├── format.go              # domain → LLM-friendly JSON
-│       └── identity.go            # MCP self-registration
+│   ├── mcptools/                  # mark3labs/mcp-go tool wrappers around svc
+│   │   ├── tools.go               # all 29 tool registrations + handlers
+│   │   ├── format.go              # domain → LLM-friendly JSON
+│   │   ├── instructions.go        # the cross-tool workflow reflexes string
+│   │   └── identity.go            # stdio self-registration helpers
+│   └── web/                       # html/template + htmx web UI mounted by `serve`
 └── cmd/
     └── tickets_please/main.go     # one binary; CLI dispatches subcommands (mcp default)
 ```
 
 Go module name: `tickets_please`. **One binary**, subcommand-dispatched. No `proto/`, no `gen/`, no `buf*` configs, no separate gRPC server.
+
+There are two on-disk roots:
+
+- **Per-repo `data_dir` (`<repo>/.tickets_please/`)** — a single project lives at the data-dir root (post-flatten). Committed to git so the project's history travels with the repo.
+- **Central `data_root` (default `~/.tickets_please/`)** — agent sessions (`agents/<uuid>.yaml`) and the persistent mount registry (`registry.yaml`). Shared across every repo this server instance hosts.
+
+A repo's data dir starts out with just `.staging/` and the `README.md`; the project record is written by `create_project` (or its web equivalent), not by `init`.
 
 ## Phases (optional sub-projects)
 
@@ -356,10 +376,13 @@ Use cases:
 ### File layout
 
 Post-flatten (v0.2): one project per `.tickets_please/` data dir; project content
-sits at the data-dir root rather than nested under `projects/<slug>/`.
+sits at the data-dir root rather than nested under `projects/<slug>/`. Agent
+sessions moved out of the per-repo dir into the central `data_root` in v0.3 so a
+single server can host multiple repos without each one duplicating the agent
+registry.
 
 ```
-.tickets_please/
+<repo>/.tickets_please/          # per-repo (committed to git)
 ├── project.yaml
 ├── summary.md
 ├── summary.embedding.json
@@ -372,13 +395,20 @@ sits at the data-dir root rather than nested under `projects/<slug>/`.
 │       ├── summary.embedding.json
 │       └── tickets/
 │           └── <NNN>-<ticket-slug>/
-├── agents/<session-uuid>.yaml   # agent registry (moves to a central path in a later ticket)
-├── .lock                        # per-data-dir flock
-└── .staging/                    # transient atomicity scratch dir; gitignored
+├── .lock                        # per-data-dir flock (gitignored)
+└── .staging/                    # transient atomicity scratch dir (gitignored)
+
+~/.tickets_please/                # central data_root (NOT in a repo)
+├── agents/<session-uuid>.yaml   # one file per agent session, active or expired
+├── registry.yaml                # persisted absolute paths the server has mounted
+├── config.yaml                  # optional user-level config
+└── .staging/                    # transient atomicity scratch for agents/ writes
 ```
 
 Repos still on the v0.1 `projects/<slug>/` shape can be flattened with
-`tickets_please migrate <repo-path> [--dry-run]`.
+`tickets_please migrate <repo-path> [--dry-run] [--data-root <path>]`. The
+migrate command also hoists any per-repo `agents/*.yaml` from the legacy
+location into `<data_root>/agents/`.
 
 Ticket `number` is **project-level** — i.e. one global sequence across phased + phase-less tickets — so a ticket reference is stable as it shuffles between phases. The path locates a ticket by phase membership; the number identifies it across the project.
 
@@ -414,29 +444,39 @@ A project is more than a name. Every project carries a **summary**: a required m
 
 ## Data layout
 
-All data lives under `data_dir` (default `./.tickets_please/`). The tree is the source of truth; in-memory state is reconstructable from the files on disk.
+Data is split between two roots: a per-repo `data_dir` (default `./.tickets_please/`, committed to git) holding one project's content, and a central `data_root` (default `~/.tickets_please/`, **not** in any repo) holding the agent registry and the persistent mount registry. Both trees are the source of truth; in-memory state is reconstructable from the files on disk.
 
 ```
-.tickets_please/
+<repo>/.tickets_please/                      # per-repo, one project per data dir
 ├── README.md                                # short orientation for anyone browsing the repo
-├── agents/
-│   └── <session-uuid>.yaml                  # one file per session (active or expired)
-├── projects/
-│   └── <slug>/
-│       ├── project.yaml                     # id, slug, name, description, created_by, created_at, updated_at
-│       ├── summary.md                       # the required markdown summary (≥ 200 chars)
-│       ├── summary.embedding.json           # 768-float JSON array
-│       └── tickets/
-│           └── <NNN>-<slugified-title>/
-│               ├── ticket.yaml              # id, title, column, body_path, created_by, completed_by, completed_at, created_at, updated_at
-│               ├── body.md
-│               ├── body.embedding.json
-│               ├── completion.md            # only when column == done
-│               ├── learnings.embedding.json # only when column == done
-│               └── comments/
-│                   ├── <ts>-<short-id>-<kind>.md           # one file per comment
-│                   └── <ts>-<short-id>-<kind>.embedding.json
+├── project.yaml                             # id, slug, name, description, created_by, created_at, updated_at
+├── summary.md                               # the required markdown summary (≥ 200 chars)
+├── summary.embedding.json                   # 768-float JSON array
+├── tickets/                                 # phase-less tickets sit here
+│   └── <NNN>-<slugified-title>/
+│       ├── ticket.yaml                      # id, title, column, body_path, created_by, completed_by, completed_at, created_at, updated_at
+│       ├── body.md
+│       ├── body.embedding.json
+│       ├── completion.md                    # only when column == done
+│       ├── learnings.embedding.json         # only when column == done
+│       └── comments/
+│           ├── <ts>-<short-id>-<kind>.md           # one file per comment
+│           └── <ts>-<short-id>-<kind>.embedding.json
+├── phases/                                  # only present when the project uses phases
+│   └── <NNN>-<phase-slug>/
+│       ├── phase.yaml
+│       ├── summary.md
+│       ├── summary.embedding.json
+│       └── tickets/                         # phase-scoped tickets
+│           └── <NNN>-<slugified-title>/...
 └── .staging/                                # transient atomicity dir; emptied on graceful shutdown
+
+~/.tickets_please/                            # central data_root
+├── agents/
+│   └── <session-uuid>.yaml                  # one file per agent session (active or expired)
+├── registry.yaml                            # absolute paths the server has mounted (sidebar persistence)
+├── config.yaml                              # optional user-level config
+└── .staging/                                # transient atomicity scratch for agents/ writes
 ```
 
 ### File formats
@@ -732,12 +772,15 @@ func New(cfg config.Config) (*Service, error)
 - `GetAgent(ctx, id) (*domain.Agent, error)`
 
 ### Projects
-- `CreateProject(ctx, slug, name, description, summary string) (*domain.Project, error)` — summary required, ≥200 chars after trim
+- `CreateProject(ctx, slug, name, description, summary string) (*domain.Project, error)` — legacy path-implicit constructor that writes through `s.Store` (whichever `cfg.DataDir` resolved at startup). Used by the web handler and tests where the data dir is fixed at process start. Summary required, ≥200 chars after trim.
+- `CreateProjectAt(ctx, repoPath, slug, name, description, summary string) (*domain.Project, error)` — explicit-path constructor used by the MCP `create_project` tool. The HTTP server has no cwd so the LLM declares the destination; `<repoPath>/.tickets_please/` is created if missing. **Auth-soft** (the bootstrap escape valve): no session required, `created_by` is left empty for the bootstrap call. After landing, the project is registered as a mount.
 - `GetProject(ctx, idOrSlug string) (*domain.Project, error)`
-- `ListProjects(ctx) ([]*domain.Project, error)`
+- `ListProjects(ctx) ([]*domain.Project, error)` — across every mounted project.
 - `UpdateProject(ctx, idOrSlug string, p UpdateProjectInput) (*domain.Project, error)`
 - `DeleteProject(ctx, idOrSlug string) error`
 - `LoadProject(ctx, idOrSlug string) (*cache.LoadedProject, error)` — explicit cache pre-warm
+- `RegisterProjectMount(ctx, repoPath string) (slug string, err error)` — read `<repoPath>/.tickets_please/project.yaml` and add a slug-keyed entry to the in-memory mount registry. Idempotent for the same `(repoPath, project UUID)` pair; LRU-evicts past `cfg.MaxLoadedProjects`. Persists the new path to `<data_root>/registry.yaml` so it survives a restart.
+- `ResolveProjectStore(ctx, slug string) (*store.Store, error)` — return the live `*store.Store` for `slug`, lazy-re-mounting from the registry if the entry was LRU-evicted.
 
 ### Phases
 - `CreatePhase(ctx, projectIDOrSlug, name, description, summary string) (*domain.Phase, error)`
@@ -888,7 +931,9 @@ Cosine similarity assumes vectors are L2-normalized. Both Ollama (`nomic-embed-t
 
 ## MCP server
 
-When the LLM client spawns `tickets_please mcp` (the default subcommand of the single binary), the process: builds an in-process `svc.Service`, registers itself as an agent against that service, registers MCP tools that wrap the service methods, then serves stdio. Session lifecycle is handled internally — if the session expires mid-conversation the binary auto-re-registers; the LLM never sees session plumbing.
+When the LLM client spawns `tickets_please mcp` (the default subcommand of the single binary), the process: builds an in-process `svc.Service`, registers itself as an agent against that service, registers MCP tools that wrap the service methods, then serves stdio. Session lifecycle is handled internally — if the session expires mid-conversation the binary auto-re-registers via the cached identity; the LLM never sees session plumbing.
+
+HTTP clients (centralised mode) connect via `/mcp` and **must** call `register_agent` once per connection to declare their identity and bind a `project_path`. After that, every `project_id_or_slug` parameter on subsequent tools becomes optional and falls back to the bound project. The one exception is `create_project`, which is auth-soft: an HTTP client with no project yet calls `create_project` first (passing `project_path`), then `register_agent` against the freshly-created project. Stdio clients pre-register at startup; they can still call `register_agent` to override the defaults.
 
 Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **29 tools** across projects, phases, tickets, comments, search, and introspection.
 
@@ -897,7 +942,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | Tool | Description |
 |---|---|
 | `list_projects` | List all ticket projects. Use this first to find the project you want to work in. |
-| `create_project` | Create a new project. Slug must be unique and URL-safe. **Requires a `summary` field — a markdown document (≥200 chars) describing the project's goals, key components, and constraints.** This summary becomes the load-bearing context any future agent reads before working in this project. Be thorough. |
+| `create_project` | Create a new project. Slug must be unique and URL-safe. **Requires a `summary` field — a markdown document (≥200 chars) describing the project's goals, key components, and constraints.** Also requires `project_path` — the absolute filesystem path of the repo where the project should live; `<project_path>/.tickets_please/` will be created if it doesn't exist. This is the bootstrap mutation: no session required, so HTTP clients can call it before `register_agent`. |
 | `get_project` | Fetch a project's full record (counts, attribution, timestamps, summary). |
 | `get_project_summary` | Fetch just the project's summary markdown. **Read this before doing any non-trivial work in a project — it's the project's design context.** |
 | `load_project` | Pre-warm a project into the server's in-memory cache. Useful before doing many operations against the same project. Optional — calls auto-load if needed. |
@@ -944,10 +989,11 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `search_learnings` | Semantic search over completion learnings from past finished tickets. **Run this before starting non-trivial work — past you may have left notes.** |
 | `search_comments` | Semantic search across comments. |
 
-### Introspection (1)
+### Introspection (2)
 
 | Tool | Description |
 |---|---|
-| `who_am_i` | Returns the current agent identity the MCP server has registered for this session. Useful for the LLM to confirm its own attribution before doing work. |
+| `who_am_i` | Returns the current agent identity the MCP server has registered for this session, including the bound project (if any) and the session's expiry. Useful for the LLM to confirm its own attribution before doing work. |
+| `register_agent` | Self-register this MCP session: declare the model, client, and bound project. **HTTP clients must call this once on connection** before any other mutating tool. Stdio clients pre-register at startup and only need it to override the defaults. The `project_path` must be the absolute path to a repo containing `.tickets_please/project.yaml`; the server validates it, mounts the project (idempotent), and binds the slug to this session. Subsequent `project_id_or_slug` parameters then become optional. |
 
 The "run `search_learnings` first" and "read `get_project_summary` before working" instructions are the unlocks that make the system feed itself.

@@ -1,6 +1,8 @@
 # planning/ — tickets for `tickets_please`
 
-This directory is the work queue. Each `T0X-*.md` file is a self-contained ticket an agent can claim and execute. The full design spec lives at [`../SPEC.md`](../SPEC.md) — every ticket points back to specific sections of it.
+> **Historical.** v1 is shipped — every T01–T16 ticket has landed and the work has moved into the live tickets_please MCP (see `../.tickets_please/`). The status column below is frozen at the v1 plan and is **not** kept in sync with the code. Treat this directory as the original spec breakdown that bootstrapped the project; the canonical work queue is now the MCP itself.
+
+Each `T0X-*.md` file is a self-contained ticket from the original v1 plan. The full design spec lives at [`../SPEC.md`](../SPEC.md) — every ticket points back to specific sections of it.
 
 ## Subagent-friendly
 

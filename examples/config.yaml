@@ -5,9 +5,15 @@
 # (uppercase the key, replace dots with underscores — e.g. data_dir -> DATA_DIR).
 # All keys are optional; missing keys fall back to the built-in defaults.
 
-# Root of the on-disk data tree. Defaults to a directory in the current working dir
-# so the repo's own data lives inside the repo.
+# Root of the per-repo project data tree (one project's project.yaml, phases/,
+# tickets/, etc.). Defaults to a directory in the current working dir so the
+# repo's own data lives inside the repo.
 data_dir: ./.tickets_please
+
+# Central data root shared across every repo this server instance hosts.
+# Holds the agent registry (<data_root>/agents/<uuid>.yaml) and the persistent
+# mount registry (<data_root>/registry.yaml). Tilde-expanded at load time.
+data_root: ~/.tickets_please
 
 # When true and `data_dir` is inside a git repo, every mutating call produces a commit
 # authored as the calling agent. Set to false to skip the audit-trail commits.

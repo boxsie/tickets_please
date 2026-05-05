@@ -16,7 +16,8 @@ init-config:
 	cp -n examples/config.yaml ~/.tickets_please/config.yaml || true
 
 init-data:
-	mkdir -p .tickets_please/agents .tickets_please/projects .tickets_please/.staging
+	mkdir -p .tickets_please/.staging
+	mkdir -p ~/.tickets_please/agents ~/.tickets_please/.staging
 
 check:
 	go run ./cmd/tickets_please check

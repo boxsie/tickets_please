@@ -15,14 +15,15 @@ The system feeds itself: each completed ticket leaves machine-readable wisdom fo
 
 ## Architecture in one breath
 
-A single Go binary that runs as an MCP stdio server. Data lives as a plain directory tree (`.tickets_please/`) you can `cat`, `grep`, and `git diff`. Embeddings are JSON sidecar files. Every mutation can produce a git commit attributed to the calling agent. No database, no docker, no service to keep alive — when the LLM client stops, the binary stops.
+A single Go binary that runs as an MCP server (stdio by default, optional HTTP `serve` for a long-running multi-repo host). Data lives as a plain directory tree (`<repo>/.tickets_please/` per project, `~/.tickets_please/` for the central agent + mount registry) you can `cat`, `grep`, and `git diff`. Embeddings are JSON sidecar files. Every mutation can produce a git commit attributed to the calling agent. No database, no docker, no service to keep alive when running stdio — when the LLM client stops, the binary stops.
 
 ## Quickstart (5 steps, ~5 minutes)
 
 From a fresh clone:
 
 ```sh
-# 1. Scaffold the local data dir (.tickets_please/{agents,projects,.staging}).
+# 1. Scaffold the per-repo data dir (.tickets_please/.staging) and the central
+#    agent registry (~/.tickets_please/{agents,.staging}).
 make init-data
 
 # 2. Drop a sample config at ~/.tickets_please/config.yaml (idempotent).
@@ -40,7 +41,7 @@ make build
 #    (Claude Desktop / Claude Code / Cursor / etc.) — see snippets below.
 ```
 
-That's it. The `.tickets_please/` directory IS the data — it's committed to git, so cloning a repo brings its full ticket history with you. Only `.tickets_please/.staging/` is gitignored (transient half-applied writes).
+That's it. The per-repo `.tickets_please/` directory IS the project's data — it's committed to git, so cloning a repo brings its full ticket history with you. Only `.tickets_please/.staging/` is gitignored (transient half-applied writes). The central `~/.tickets_please/` directory holds your agent sessions and the mount registry; it's user-scoped, not committed anywhere.
 
 ## Wiring up MCP
 
@@ -52,12 +53,14 @@ claude mcp add tickets_please /abs/path/to/tickets_please mcp
 
 ### Claude Code (centralised HTTP)
 
-Run a single long-lived server and point any number of clients at it:
+Run a single long-lived server and point any number of clients at it. One process can host many repos — each session binds to a `project_path` via `register_agent`:
 
 ```bash
 ./tickets_please serve --addr :8765
 claude mcp add --transport http tickets_please http://localhost:8765/mcp
 ```
+
+After connecting, the client must call `register_agent` (an MCP tool) with the absolute `project_path` of the repo it wants to work in; subsequent tool calls then accept `project_id_or_slug` as optional and fall back to that bound project. If the repo has no project yet, call `create_project` first (it's the bootstrap escape valve — no session required) with `project_path` set to the repo root, then `register_agent`.
 
 `/healthz` returns `ok` for liveness probes.
 
@@ -97,9 +100,9 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 
 Once the MCP is wired up, ask Claude:
 
-> Use the tickets_please MCP to create a project called `demo` with a thoughtful 200+ char summary describing what it's for. Then create a ticket "Wire up the initial board". Move it to `in_progress` with a comment, then complete it with substantive testing evidence, work summary, and learnings.
+> Use the tickets_please MCP to create a project called `demo` (set `project_path` to the absolute path of this repo) with a thoughtful 200+ char summary describing what it's for. Then call `register_agent` against the same `project_path`. Then create a ticket "Wire up the initial board". Move it to `in_progress` with a comment, then complete it with substantive testing evidence, work summary, and learnings.
 
-That single conversation exercises `create_project` (≥200-char summary enforcement), `create_ticket`, `move_ticket` (comment required, no `done` target), and `complete_ticket` (three structured fields, each ≥10 chars), and populates `search_learnings` for the next agent. Watch `.tickets_please/` fill up with yaml + markdown you can `cat`, `grep`, and `git diff`.
+That single conversation exercises `create_project` (≥200-char summary enforcement, `project_path` bootstrap), `register_agent` (binds the session to the new project so subsequent tool calls don't need `project_id_or_slug`), `create_ticket`, `move_ticket` (comment required, no `done` target), and `complete_ticket` (three structured fields, each ≥10 chars), and populates `search_learnings` for the next agent. Watch `.tickets_please/` fill up with yaml + markdown you can `cat`, `grep`, and `git diff`.
 
 ## Tools
 
@@ -112,12 +115,13 @@ The MCP server exposes **29 tools** across six categories. The full table with p
 | Tickets | 7 | `list_tickets`, `create_ticket`, `get_ticket`, `update_ticket`, `move_ticket`, `complete_ticket`, `assign_ticket_to_phase` |
 | Comments | 2 | `add_comment`, `list_comments` |
 | Search | 4 | `search_projects`, `search_tickets`, **`search_learnings`**, `search_comments` |
-| Introspection | 1 | `who_am_i` |
+| Introspection | 2 | `who_am_i`, **`register_agent`** |
 
-Two tools are load-bearing for LLM ergonomics:
+Three tools are load-bearing for LLM ergonomics:
 
 - **`get_project_summary`** — read this before doing any non-trivial work in a project.
 - **`search_learnings`** — run this before starting non-trivial work; past you may have left notes.
+- **`register_agent`** — HTTP clients must call this once on connect to bind their session to a repo (`project_path`). Stdio clients pre-register at startup.
 
 ## Highlights
 
