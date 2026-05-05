@@ -291,16 +291,15 @@ func TestUpdateProject_ChangesNameAndSummary(t *testing.T) {
 	}
 }
 
-func TestDeleteProject_RefusesActiveTickets(t *testing.T) {
+func TestDeleteProject_DeletesEvenWithActiveTickets(t *testing.T) {
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx, _ := authedCtx(t, s)
 	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
 		t.Fatal(err)
 	}
 
-	// Drop a ticket directly on disk in the `todo` column. We don't have
-	// a CreateTicket method yet (T05 lands later), so we hand-wire the
-	// minimum the cache needs to count it as active.
+	// Drop a ticket directly on disk in the `todo` column to prove that
+	// project-level delete no longer cares about active tickets.
 	tdir := filepath.Join(s.Store.Root, "tickets", "001-stub")
 	if err := os.MkdirAll(tdir, 0o755); err != nil {
 		t.Fatal(err)
@@ -321,9 +320,18 @@ func TestDeleteProject_RefusesActiveTickets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := s.DeleteProject(ctx, "alpha")
-	if !errors.Is(err, domain.ErrFailedPrecondition) {
-		t.Fatalf("expected ErrFailedPrecondition, got %v", err)
+	if err := s.DeleteProject(ctx, "alpha"); err != nil {
+		t.Fatalf("DeleteProject with active ticket: %v", err)
+	}
+
+	// Project siblings AND the active ticket dir are all gone.
+	for _, rel := range []string{"project.yaml", "summary.md", "tickets"} {
+		if _, err := os.Stat(filepath.Join(s.Store.Root, rel)); !os.IsNotExist(err) {
+			t.Fatalf("expected %s gone, got err=%v", rel, err)
+		}
+	}
+	if s.Cache.Len() != 0 {
+		t.Fatalf("cache should be empty after delete, got %d", s.Cache.Len())
 	}
 }
 

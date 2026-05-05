@@ -138,8 +138,8 @@
     <summary>Delete project</summary>
     <p class="hint">
       Removes <code>{{$p.Slug}}</code> and all its phases, tickets, comments,
-      and embeddings. Refuses if any ticket is still active (not <code>done</code>).
-      Cannot be undone — the on-disk data is gone.
+      and embeddings — including any active tickets. Cannot be undone — the
+      on-disk data is gone.
     </p>
     <form method="post" action="/p/{{$p.Slug}}/delete" onsubmit="return confirm('Delete project {{$p.Slug}} and ALL its phases/tickets/comments? This cannot be undone.');">
       <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">

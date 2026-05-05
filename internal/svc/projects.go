@@ -357,7 +357,11 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	return &cp, nil
 }
 
-// DeleteProject removes a project — refuses if any ticket is non-done.
+// DeleteProject removes a project unconditionally — including any active
+// (non-done) tickets, phases, comments, and embeddings. Per-ticket
+// "completion is sacred" only constrains individual ticket lifecycle; at
+// the project level the user owns the whole tree and can nuke it.
+//
 // Goes through StageOp.RemovePath so the deletion shares the audit trail
 // and atomicity model with the rest of the writes (no raw os.RemoveAll).
 func (s *Service) DeleteProject(ctx context.Context, idOrSlug string) error {
@@ -375,21 +379,11 @@ func (s *Service) DeleteProject(ctx context.Context, idOrSlug string) error {
 		return err
 	}
 
-	// Read snapshot of the slug + active counts under the lock, then drop
-	// the lock before staging — Cache.Evict re-acquires c.mu.
+	// Take a snapshot of the slug under the lock, then drop the lock before
+	// staging — Cache.Evict re-acquires c.mu.
 	lp.Lock.RLock()
 	slug := lp.Project.Slug
-	active := 0
-	for _, t := range lp.Tickets {
-		if t.Column != domain.ColumnDone {
-			active++
-		}
-	}
 	lp.Lock.RUnlock()
-
-	if active > 0 {
-		return fmt.Errorf("%w: project %s has %d active (non-done) ticket(s); resolve them first", domain.ErrFailedPrecondition, slug, active)
-	}
 
 	// Drop from cache (closes the watcher) before the StageOp so the
 	// fsnotify event from the upcoming RemovePath doesn't try to flip

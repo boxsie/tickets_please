@@ -777,7 +777,7 @@ func New(cfg config.Config) (*Service, error)
 - `GetProject(ctx, idOrSlug string) (*domain.Project, error)`
 - `ListProjects(ctx) ([]*domain.Project, error)` — across every mounted project.
 - `UpdateProject(ctx, idOrSlug string, p UpdateProjectInput) (*domain.Project, error)`
-- `DeleteProject(ctx, idOrSlug string) error`
+- `DeleteProject(ctx, idOrSlug string) error` — unconditional. Removes every phase, ticket (active or done), comment, and embedding sidecar; unmounts the project; drops it from `<data_root>/registry.yaml`. Per-ticket "completion is sacred" is a per-ticket rule; project-level delete bypasses it.
 - `LoadProject(ctx, idOrSlug string) (*cache.LoadedProject, error)` — explicit cache pre-warm
 - `RegisterProjectMount(ctx, repoPath string) (slug string, err error)` — read `<repoPath>/.tickets_please/project.yaml` and add a slug-keyed entry to the in-memory mount registry. Idempotent for the same `(repoPath, project UUID)` pair; LRU-evicts past `cfg.MaxLoadedProjects`. Persists the new path to `<data_root>/registry.yaml` so it survives a restart.
 - `ResolveProjectStore(ctx, slug string) (*store.Store, error)` — return the live `*store.Store` for `slug`, lazy-re-mounting from the registry if the entry was LRU-evicted.
@@ -948,7 +948,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `get_project_summary` | Fetch just the project's summary markdown. **Read this before doing any non-trivial work in a project — it's the project's design context.** |
 | `load_project` | Pre-warm a project into the server's in-memory cache. Useful before doing many operations against the same project. Optional — calls auto-load if needed. |
 | `update_project` | Edit a project's name, description, or summary. Summary edits trigger re-embedding. |
-| `delete_project` | Delete a project. Refuses if any tickets are still active. |
+| `delete_project` | **Irreversibly delete** a project and everything in it — every phase, every ticket (active or done), every comment, every embedding. The data dir survives but its project content is wiped, the project is unmounted, and it's removed from the persistent registry. Per-ticket completion immutability is a per-ticket rule; the project-level delete bypasses it. |
 
 ### Phases (7)
 

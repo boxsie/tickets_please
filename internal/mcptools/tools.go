@@ -112,7 +112,7 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 	), t.handleUpdateProject)
 
 	s.AddTool(mcp.NewTool("delete_project",
-		mcp.WithDescription("Delete a project. Refuses if any tickets are still active."),
+		mcp.WithDescription("**Irreversibly delete** a project and everything in it: every phase, every ticket (including in-progress / testing / done ones), every comment, every embedding sidecar. The on-disk data dir survives but its project content is wiped, the project is unmounted, and it is removed from the persistent registry. Per-ticket completion immutability is a per-ticket rule; the project-level delete bypasses it."),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 	), t.handleDeleteProject)
 
