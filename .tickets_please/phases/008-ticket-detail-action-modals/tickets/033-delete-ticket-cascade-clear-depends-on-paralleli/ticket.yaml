@@ -2,8 +2,8 @@ id: 346a3f21-f6f8-438d-a09c-5fc7012e3607
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 33
 title: 'delete_ticket: cascade-clear depends_on / parallelizable_with refs instead of refusing'
-column: todo
+column: in_progress
 phase_id: 5915b10d-53c3-4243-b2a9-3549ea8a5c01
 created_by: 8177f524-1a3d-49f8-a7c2-246c95ba9867
 created_at: 2026-05-05T16:10:22.144302372+01:00
-updated_at: 2026-05-05T16:10:22.144302372+01:00
+updated_at: 2026-05-05T16:10:29.102672847+01:00
