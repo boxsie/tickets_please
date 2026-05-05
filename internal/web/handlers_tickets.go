@@ -456,3 +456,22 @@ func (a *app) handleTicketComplete(w http.ResponseWriter, r *http.Request) {
 	SetFlash(w, r, "success", "Ticket completed.")
 	http.Redirect(w, r, loc, http.StatusSeeOther)
 }
+
+// handleTicketDelete hard-deletes a non-`done` ticket via svc.DeleteTicket.
+// On success redirects to the project board (the ticket detail page is gone)
+// with a flash; on a service-level refusal (done ticket, dependents) the
+// classifyServiceError mapper turns it into a 422 with the message visible.
+func (a *app) handleTicketDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	slug := strings.TrimSpace(r.URL.Query().Get("slug"))
+	if err := a.deps.Service.DeleteTicket(r.Context(), id); err != nil {
+		a.renderer.Error(w, r, classifyServiceError(err), err)
+		return
+	}
+	loc := "/"
+	if slug != "" {
+		loc = "/p/" + slug + "/board"
+	}
+	SetFlash(w, r, "success", "Ticket deleted.")
+	http.Redirect(w, r, loc, http.StatusSeeOther)
+}

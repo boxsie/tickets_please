@@ -798,6 +798,7 @@ func New(cfg config.Config) (*Service, error)
 - `MoveTicket(ctx, id string, target domain.Column, comment string) (*domain.Ticket, error)` — both required; rejects `done`.
 - `CompleteTicket(ctx, id string, testingEvidence, workSummary, learnings string) (*domain.Ticket, error)` — all three required, ≥10 chars each.
 - `AssignTicketToPhase(ctx, id string, phaseIDOrSlug *string, comment string) (*domain.Ticket, error)` — `nil` = phase-less.
+- `DeleteTicket(ctx, id string) error` — irreversibly removes a non-`done` ticket and its directory (body, comments, embedding sidecars). Refuses on `done` (preserves the no-reopen rule) and on tickets that other tickets still list in `DependsOn` (no dangling refs). Auto-commit captures the removal; no tombstone written.
 
 ### Comments
 - `CreateComment(ctx, ticketID, body string) (*domain.Comment, error)` — always `kind=user`
@@ -935,7 +936,7 @@ When the LLM client spawns `tickets_please mcp` (the default subcommand of the s
 
 HTTP clients (centralised mode) connect via `/mcp` and **must** call `register_agent` once per connection to declare their identity and bind a `project_path`. After that, every `project_id_or_slug` parameter on subsequent tools becomes optional and falls back to the bound project. The one exception is `create_project`, which is auth-soft: an HTTP client with no project yet calls `create_project` first (passing `project_path`), then `register_agent` against the freshly-created project. Stdio clients pre-register at startup; they can still call `register_agent` to override the defaults.
 
-Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **29 tools** across projects, phases, tickets, comments, search, and introspection.
+Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **30 tools** across projects, phases, tickets, comments, search, and introspection.
 
 ### Projects (7)
 
@@ -961,7 +962,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `delete_phase` | Delete a phase. Refuses if any tickets are still assigned to it. |
 | `list_waves` | List the waves in a phase (or in the phase-less area of a project) with per-wave ticket counts. A wave is a soft integer grouping on tickets — no enforcement, just organization. Use this to see how a body of work decomposes. |
 
-### Tickets (7)
+### Tickets (8)
 
 | Tool | Description |
 |---|---|
@@ -972,6 +973,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `move_ticket` | Move a ticket between columns. Requires a comment explaining *why* you're moving it. Cannot be used to move to `done` — use `complete_ticket` for that. |
 | `complete_ticket` | Mark a ticket done. Requires `testing_evidence` (what you tested and how), `work_summary` (what you actually changed), `learnings` (gotchas, surprises, insights for future work). Be thorough — `learnings` are searchable by future tickets. |
 | `assign_ticket_to_phase` | Move a ticket between phases (or to no phase). Requires a comment explaining why — same audit-trail rule as `move_ticket`. |
+| `delete_ticket` | **Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once finished, a ticket stays finished) and refuses if any other ticket lists this one in `depends_on` (would leave dangling refs). For finished work that you regret, file a new ticket instead. |
 
 ### Comments (2)
 

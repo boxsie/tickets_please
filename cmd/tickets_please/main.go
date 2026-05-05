@@ -37,7 +37,7 @@ const version = "0.3.0"
 
 // totalTools is the canonical tool count exposed by the MCP server. Mirrored
 // in the SPEC.md "MCP server" section table; if you change this, update both.
-const totalTools = 29
+const totalTools = 30
 
 func main() {
 	sub := "mcp"

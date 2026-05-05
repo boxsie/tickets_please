@@ -772,6 +772,114 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 	return cp, nil
 }
 
+// DeleteTicket hard-removes a non-`done` ticket and everything under its
+// directory (body, comments, embedding sidecars). Refuses on `done` so the
+// SPEC's "completion is sacred" rule survives, and refuses if any other
+// ticket lists this one in DependsOn so we don't leave dangling refs.
+//
+// The on-disk delete goes through StageOp.RemovePath under the per-project
+// flock, so the auto-commit captures it; no separate tombstone is written.
+// In-memory cache + the resident vec indexes (TicketsIdx, LearningsIdx,
+// CommentsIdx) are pruned post-commit so the now-deleted ticket and its
+// comments stop appearing in search.
+func (s *Service) DeleteTicket(ctx context.Context, id string) error {
+	ctx, agent, err := s.requireSession(ctx)
+	if err != nil {
+		return err
+	}
+	if err := requireNonEmptyTrimmed("ticket id", id); err != nil {
+		return err
+	}
+
+	_, hostSlug, err := s.hostStoreForTicket(id)
+	if err != nil {
+		return err
+	}
+	st, err := s.ResolveProjectStore(ctx, hostSlug)
+	if err != nil {
+		return err
+	}
+	lp, _, err := s.Cache.Get(ctx, hostSlug)
+	if err != nil {
+		return err
+	}
+
+	lp.Lock.Lock()
+	defer lp.Lock.Unlock()
+
+	t, ok := lp.Tickets[id]
+	if !ok {
+		return fmt.Errorf("%w: ticket %s", domain.ErrNotFound, id)
+	}
+	if t.Column == domain.ColumnDone {
+		return fmt.Errorf("%w: ticket %s is done; completed tickets are frozen and cannot be deleted (SPEC: no reopen, no delete after complete)", domain.ErrFailedPrecondition, id)
+	}
+
+	// Refuse if any other ticket still depends on this one — deleting would
+	// leave dangling DependsOn refs. Surface dependent titles so the caller
+	// knows what to fix without grepping.
+	var dependents []string
+	for _, other := range lp.Tickets {
+		if other.ID == id {
+			continue
+		}
+		for _, dep := range other.DependsOn {
+			if dep == id {
+				dependents = append(dependents, fmt.Sprintf("%q", other.Title))
+				break
+			}
+		}
+	}
+	if len(dependents) > 0 {
+		sort.Strings(dependents)
+		return fmt.Errorf("%w: ticket %s is a dependency of %d other ticket(s): %s; clear or rewire DependsOn first", domain.ErrFailedPrecondition, id, len(dependents), strings.Join(dependents, ", "))
+	}
+
+	ticketDirRel, _, err := s.findTicketDir(st, hostSlug, id)
+	if err != nil {
+		return err
+	}
+
+	// Drain pending embed jobs so the worker doesn't write a sidecar into
+	// the ticket dir we're about to RemovePath. Mirrors DeleteProject /
+	// DeletePhase.
+	if s.Worker != nil {
+		s.Worker.Flush(ctx)
+	}
+
+	op, err := st.BeginOp()
+	if err != nil {
+		return err
+	}
+	defer op.Abort()
+	if err := op.RemovePath(ticketDirRel); err != nil {
+		return err
+	}
+	caption := fmt.Sprintf("delete ticket %s/%s", hostSlug, id)
+	if err := op.Commit(ctx, store.LockProject(hostSlug), agent, caption); err != nil {
+		return fmt.Errorf("commit delete ticket: %w", err)
+	}
+
+	// Prune cache + resident indexes. Comments slice may be nil for tickets
+	// that never received any; range over nil is fine.
+	for _, c := range lp.Comments[id] {
+		if s.CommentsIdx != nil {
+			s.CommentsIdx.Delete(c.ID)
+		}
+	}
+	delete(lp.Tickets, id)
+	delete(lp.Comments, id)
+	if s.TicketsIdx != nil {
+		s.TicketsIdx.Delete(id)
+	}
+	if s.LearningsIdx != nil {
+		// Defensive: a non-done ticket has no learnings entry, but a future
+		// edit might land here under a state we didn't anticipate.
+		s.LearningsIdx.Delete(id)
+	}
+	return nil
+}
+
 // strPtr returns a pointer to s. Used for setting *string fields on
 // domain.Ticket without an extra named local.
 func strPtr(s string) *string { return &s }

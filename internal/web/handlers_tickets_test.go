@@ -340,6 +340,49 @@ func TestTicket_EditDoneRefused(t *testing.T) {
 	}
 }
 
+// TestTicket_Delete_Happy: POST /tickets/{id}/delete on a non-done ticket
+// removes it and 303s to the project board.
+func TestTicket_Delete_Happy(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "del", "Doomed Ticket")
+	csrf := primeCSRF(t, client, srv.URL)
+	form := url.Values{"_csrf": {csrf}}
+	resp, err := client.PostForm(srv.URL+"/tickets/"+tid+"/delete?slug=del", form)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Location"); got != "/p/del/board" {
+		t.Errorf("Location = %q, want /p/del/board", got)
+	}
+	if _, err := deps.Service.GetTicket(context.Background(), tid); err == nil {
+		t.Error("ticket still resolves after delete; want ErrNotFound")
+	}
+}
+
+// TestTicket_Detail_ShowsDeleteButton: a non-done ticket detail page renders
+// the Delete trigger + dialog.
+func TestTicket_Detail_ShowsDeleteButton(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "ddl", "Has Delete")
+	resp, err := client.Get(srv.URL + "/tickets/" + tid + "?slug=ddl")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	for _, want := range []string{`data-dialog="dlg-delete"`, `id="dlg-delete"`, "Delete forever", `action="/tickets/` + tid + `/delete?slug=ddl"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("detail missing %q", want)
+		}
+	}
+}
+
 // TestTicket_Update: edit form POST changes title.
 func TestTicket_Update(t *testing.T) {
 	srv, client, deps := freshServerWithDeps(t)

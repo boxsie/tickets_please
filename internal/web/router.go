@@ -85,6 +85,7 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /tickets/{id}", wrap(a.handleTicketUpdate))
 	mux.Handle("POST /tickets/{id}/move", wrap(a.handleTicketMove))
 	mux.Handle("POST /tickets/{id}/complete", wrap(a.handleTicketComplete))
+	mux.Handle("POST /tickets/{id}/delete", wrap(a.handleTicketDelete))
 
 	// Comments thread: list (htmx refresh) + create (htmx append).
 	mux.Handle("GET /tickets/{id}/comments", wrap(a.handleCommentsList))

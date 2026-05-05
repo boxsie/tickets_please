@@ -20,7 +20,7 @@ import (
 )
 
 // Tools wraps the in-process svc.Service plus the per-session Registry into a
-// single struct that registers all 29 tools against an *mcpserver.MCPServer.
+// single struct that registers all 30 tools against an *mcpserver.MCPServer.
 //
 // One Tools per process — the MCP binary builds it once, calls RegisterAll,
 // and hands the server off to ServeStdio.
@@ -220,6 +220,11 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("phase_id_or_slug", mcp.Description("Target phase id or slug; omit to make the ticket phase-less")),
 		mcp.WithString("comment", mcp.Required(), mcp.Description("Reason for the reassignment; becomes a system_move comment")),
 	), t.handleAssignTicketToPhase)
+
+	s.AddTool(mcp.NewTool("delete_ticket",
+		mcp.WithDescription("**Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once a ticket is finished it stays finished, per SPEC's no-reopen/no-delete rule) and refuses if any other ticket lists this one in `depends_on` (would leave dangling refs). Use this for tickets created in error or scoped down to nothing; for finished work that you regret, file a new ticket instead."),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+	), t.handleDeleteTicket)
 
 	// Comments (2)
 	s.AddTool(mcp.NewTool("add_comment",
@@ -970,6 +975,20 @@ func (t *Tools) handleAssignTicketToPhase(ctx context.Context, req mcp.CallToolR
 		return errorResult(cerr), nil
 	}
 	return jsonResult(formatTicket(tk))
+}
+
+func (t *Tools) handleDeleteTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := req.RequireString("ticket_id")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		return t.svc.DeleteTicket(ctx, id)
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	return jsonResult(map[string]any{"deleted_ticket": id})
 }
 
 // ---- Comments ----

@@ -26,9 +26,9 @@ var expectedTools = []string{
 	// Phases (7)
 	"list_phases", "create_phase", "get_phase", "get_phase_summary",
 	"update_phase", "delete_phase", "list_waves",
-	// Tickets (7)
+	// Tickets (8)
 	"list_tickets", "create_ticket", "get_ticket", "update_ticket",
-	"move_ticket", "complete_ticket", "assign_ticket_to_phase",
+	"move_ticket", "complete_ticket", "assign_ticket_to_phase", "delete_ticket",
 	// Comments (2)
 	"add_comment", "list_comments",
 	// Search (4)
@@ -50,7 +50,7 @@ func newTestRegistry() *Registry {
 }
 
 // TestRegisterAllTools spins up an MCP server, registers every tool, and
-// verifies all 28 names are present with non-empty descriptions. The svc
+// verifies all 30 names are present with non-empty descriptions. The svc
 // pointer is nil because no handler is invoked here — registration alone
 // covers the schema-builder code paths.
 func TestRegisterAllTools(t *testing.T) {

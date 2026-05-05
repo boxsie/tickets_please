@@ -539,3 +539,113 @@ func TestListTickets_PhaseLessSentinel(t *testing.T) {
 		t.Fatalf("expected only phaseless ticket via sentinel, got %+v", out)
 	}
 }
+
+func TestDeleteTicket_HappyPath(t *testing.T) {
+	s, ctx, _, slug := freshServiceWithProject(t)
+	tk, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+		ProjectIDOrSlug: slug, Title: "Throwaway",
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	dirRel, _, err := s.findTicketDir(s.Store, slug, tk.ID)
+	if err != nil {
+		t.Fatalf("findTicketDir: %v", err)
+	}
+	dirAbs := filepath.Join(s.Store.Root, dirRel)
+
+	if err := s.DeleteTicket(ctx, tk.ID); err != nil {
+		t.Fatalf("DeleteTicket: %v", err)
+	}
+
+	if _, err := os.Stat(dirAbs); !os.IsNotExist(err) {
+		t.Fatalf("expected ticket dir gone, got err=%v", err)
+	}
+	if _, err := s.GetTicket(ctx, tk.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("GetTicket after delete: want ErrNotFound, got %v", err)
+	}
+}
+
+func TestDeleteTicket_RefusesDoneTickets(t *testing.T) {
+	s, ctx, _, slug := freshServiceWithProject(t)
+	tk, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+		ProjectIDOrSlug: slug, Title: "Will complete",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MoveTicket(ctx, tk.ID, domain.ColumnInProgress, "starting"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MoveTicket(ctx, tk.ID, domain.ColumnTesting, "qa"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CompleteTicket(ctx, tk.ID, "ran the suite", "shipped a thing", "delete is gated on done"); err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.DeleteTicket(ctx, tk.ID)
+	if !errors.Is(err, domain.ErrFailedPrecondition) {
+		t.Fatalf("expected ErrFailedPrecondition, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "frozen") {
+		t.Fatalf("error should mention completion is frozen, got %q", err)
+	}
+	// Ticket still exists.
+	if _, err := s.GetTicket(ctx, tk.ID); err != nil {
+		t.Fatalf("GetTicket after refused delete: %v", err)
+	}
+}
+
+func TestDeleteTicket_RefusesDependents(t *testing.T) {
+	s, ctx, _, slug := freshServiceWithProject(t)
+	a, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+		ProjectIDOrSlug: slug, Title: "Foundation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+		ProjectIDOrSlug: slug, Title: "Built atop foundation", DependsOn: []string{a.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.DeleteTicket(ctx, a.ID)
+	if !errors.Is(err, domain.ErrFailedPrecondition) {
+		t.Fatalf("expected ErrFailedPrecondition, got %v", err)
+	}
+	if !strings.Contains(err.Error(), b.Title) {
+		t.Fatalf("error should name dependent title %q, got %q", b.Title, err)
+	}
+	// Both tickets still resolve.
+	if _, err := s.GetTicket(ctx, a.ID); err != nil {
+		t.Fatalf("a still readable: %v", err)
+	}
+
+	// Clearing the dep lets a be deleted.
+	if _, err := s.UpdateTicket(ctx, b.ID, domain.UpdateTicketInput{}); err != nil {
+		// no DependsOn editing today; instead delete b first to free a.
+		_ = err
+	}
+	if err := s.DeleteTicket(ctx, b.ID); err != nil {
+		t.Fatalf("DeleteTicket(b): %v", err)
+	}
+	if err := s.DeleteTicket(ctx, a.ID); err != nil {
+		t.Fatalf("DeleteTicket(a) after b removed: %v", err)
+	}
+}
+
+func TestDeleteTicket_RequiresSession(t *testing.T) {
+	s, ctx, _, slug := freshServiceWithProject(t)
+	tk, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+		ProjectIDOrSlug: slug, Title: "Anon delete",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteTicket(context.Background(), tk.ID); !errors.Is(err, domain.ErrUnauthenticated) {
+		t.Fatalf("expected ErrUnauthenticated, got %v", err)
+	}
+}

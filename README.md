@@ -106,13 +106,13 @@ That single conversation exercises `create_project` (≥200-char summary enforce
 
 ## Tools
 
-The MCP server exposes **29 tools** across six categories. The full table with per-tool descriptions lives in [`SPEC.md` § MCP server](SPEC.md#mcp-server). At a glance:
+The MCP server exposes **30 tools** across six categories. The full table with per-tool descriptions lives in [`SPEC.md` § MCP server](SPEC.md#mcp-server). At a glance:
 
 | Category | Count | Highlights |
 |---|---|---|
 | Projects | 7 | `list_projects`, `create_project`, `get_project`, **`get_project_summary`**, `load_project`, `update_project`, `delete_project` |
 | Phases | 7 | `list_phases`, `create_phase`, `get_phase`, `get_phase_summary`, `update_phase`, `delete_phase`, `list_waves` |
-| Tickets | 7 | `list_tickets`, `create_ticket`, `get_ticket`, `update_ticket`, `move_ticket`, `complete_ticket`, `assign_ticket_to_phase` |
+| Tickets | 8 | `list_tickets`, `create_ticket`, `get_ticket`, `update_ticket`, `move_ticket`, `complete_ticket`, `assign_ticket_to_phase`, `delete_ticket` |
 | Comments | 2 | `add_comment`, `list_comments` |
 | Search | 4 | `search_projects`, `search_tickets`, **`search_learnings`**, `search_comments` |
 | Introspection | 2 | `who_am_i`, **`register_agent`** |

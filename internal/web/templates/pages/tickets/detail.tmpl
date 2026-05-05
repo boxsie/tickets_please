@@ -24,6 +24,7 @@
         <button type="button" class="btn" data-dialog="dlg-move">Move</button>
         {{if $b.Phases}}<button type="button" class="btn" data-dialog="dlg-assign-phase">Reassign phase</button>{{end}}
         <a class="btn" href="/tickets/{{$tkt.ID}}/edit?slug={{$proj.Slug}}">Edit ticket</a>
+        <button type="button" class="btn btn-danger" data-dialog="dlg-delete">Delete</button>
       {{end}}
     </div>
   </header>
@@ -97,12 +98,36 @@
   </dialog>
   {{end}}
 
+  <dialog id="dlg-delete" class="modal">
+    <div class="modal-header">
+      <h2>Delete ticket</h2>
+      <form method="dialog"><button type="submit" class="btn modal-close" aria-label="Close">×</button></form>
+    </div>
+    <div class="modal-body">
+      <p>This will <strong>permanently remove</strong> &ldquo;{{$tkt.Title}}&rdquo;, including its body, comments, and embeddings. This cannot be undone.</p>
+      <p class="hint">Tickets in <code>done</code> can never be deleted (completion is sacred). Tickets that other tickets depend on will refuse — clear the dependency first.</p>
+      <form method="post" action="/tickets/{{$tkt.ID}}/delete?slug={{$proj.Slug}}" class="stack">
+        <input type="hidden" name="_csrf" value="{{$b.CSRF}}">
+        <div class="form-actions">
+          <button type="submit" class="btn-danger">Delete forever</button>
+          <button type="button" class="btn" data-dialog-close="dlg-delete">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
   <script>
     (function () {
       document.querySelectorAll('[data-dialog]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           var dlg = document.getElementById(btn.getAttribute('data-dialog'));
           if (dlg && typeof dlg.showModal === 'function') dlg.showModal();
+        });
+      });
+      document.querySelectorAll('[data-dialog-close]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var dlg = document.getElementById(btn.getAttribute('data-dialog-close'));
+          if (dlg) dlg.close();
         });
       });
       document.querySelectorAll('dialog.modal').forEach(function (dlg) {
