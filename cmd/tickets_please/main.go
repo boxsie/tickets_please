@@ -285,6 +285,16 @@ func runInit(logger *slog.Logger, cfg config.Config) error {
 		return fmt.Errorf("stat %s: %w", readme, err)
 	}
 
+	gitignore := filepath.Join(dataDir, ".gitignore")
+	if _, err := os.Stat(gitignore); errors.Is(err, os.ErrNotExist) {
+		if err := os.WriteFile(gitignore, []byte(dataDirGitignore), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", gitignore, err)
+		}
+		logger.Info("wrote data dir gitignore", "path", gitignore)
+	} else if err != nil {
+		return fmt.Errorf("stat %s: %w", gitignore, err)
+	}
+
 	logger.Info("data dir ready", "data_dir", dataDir)
 
 	// Central agent registry scaffold under DataRoot.
@@ -584,3 +594,5 @@ const dataDirReadme = "# .tickets_please/ — the per-repo data directory\n\n" +
 	"   to the new project. Every subsequent mutation gets attributed.\n\n" +
 	"See `../SPEC.md` (Data layout) for the canonical schema. Repos still on the\n" +
 	"v0.1 `projects/<slug>/` shape can be flattened with `tickets_please migrate`.\n"
+
+const dataDirGitignore = "*.embedding.json\n.staging/\n"
