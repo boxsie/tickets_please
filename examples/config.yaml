@@ -19,12 +19,19 @@ data_root: ~/.tickets_please
 # authored as the calling agent. Set to false to skip the audit-trail commits.
 auto_commit: true
 
+# Embedding settings below are *defaults for newly created projects*. Per-project
+# overrides live in each project's `.tickets_please/project.yaml` under
+# `embed_provider` / `embed_model`. Change those + click Re-embed in Settings to
+# migrate an existing project to a new model. Existing projects keep whatever
+# their `project.yaml` says until they're re-embedded.
+
 # Embedding provider: "ollama" (default, local) or "openai".
 embed_provider: ollama
 
 # Ollama settings (used when embed_provider == "ollama").
+# bge-m3: 8192-token context, 1024-dim vectors — the current sweet spot for ticket-shaped text.
 ollama_url: http://localhost:11434
-ollama_model: nomic-embed-text
+ollama_model: bge-m3
 
 # OpenAI settings (used when embed_provider == "openai"). API key is required in that case.
 # Note: switching providers with a different vector dim requires deleting all *.embedding.json
