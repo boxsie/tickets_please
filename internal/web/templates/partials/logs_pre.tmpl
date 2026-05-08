@@ -1,10 +1,8 @@
 {{define "logs_pre.tmpl"}}
-<div id="logs-wrap" hx-get="/logs" hx-trigger="every 2s" hx-swap="outerHTML">
-  <p class="muted" style="margin:0 0 .5rem 0;">{{.Count}} record{{if ne .Count 1}}s{{end}} buffered.</p>
-  {{if .Empty}}
-  <p class="muted">No log records captured yet.</p>
-  {{else}}
-  <pre id="logs-body" class="logs-pre" style="background:#111;color:#eee;padding:1em;max-height:70vh;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.4;white-space:pre-wrap;word-break:break-all;" hx-on::load="this.scrollTop=this.scrollHeight">{{.Lines}}</pre>
-  {{end}}
-</div>
+<p class="muted" style="margin:0 0 .5rem 0;">{{.Count}} record{{if ne .Count 1}}s{{end}} buffered.</p>
+{{if .Empty}}
+<p class="muted">No log records captured yet.</p>
+{{else}}
+<pre id="logs-body" class="logs-pre" style="background:#111;color:#eee;padding:1em;max-height:70vh;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.4;white-space:pre-wrap;word-break:break-all;">{{.Lines}}</pre>
+{{end}}
 {{end}}

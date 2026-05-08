@@ -89,8 +89,8 @@ func TestLogs_HXFragment(t *testing.T) {
 	if strings.Contains(body, "<html") || strings.Contains(body, "Server logs</h1>") {
 		t.Errorf("HX fragment leaked chrome:\n%s", body)
 	}
-	if !strings.Contains(body, `id="logs-wrap"`) {
-		t.Errorf("HX fragment missing wrapper id:\n%s", body)
+	if !strings.Contains(body, `id="logs-body"`) {
+		t.Errorf("HX fragment missing pre id:\n%s", body)
 	}
 }
 

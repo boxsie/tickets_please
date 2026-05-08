@@ -6,8 +6,19 @@
     <p class="subtitle">
       Structured log records, JSON-encoded, oldest first. Mirrors what the operator sees on stderr.
     </p>
-    <p class="muted">Auto-tailing every 2 seconds (in-page htmx swap; no full reload).</p>
+    <p class="muted">Auto-tailing every 2 seconds (htmx in-place swap; auto-scrolls only when you're at the bottom).</p>
   </header>
-  {{template "logs_pre.tmpl" $f}}
+  <div id="logs-tail"
+       hx-get="/logs"
+       hx-trigger="every 2s"
+       hx-swap="innerHTML"
+       hx-on::before-request="(function(el){var p=el.querySelector('pre');el.dataset.atBottom=(p&&Math.abs(p.scrollHeight-p.clientHeight-p.scrollTop)<8)?'1':'0';})(this)"
+       hx-on::after-swap="(function(el){if(el.dataset.atBottom!=='0'){var p=el.querySelector('pre');if(p)p.scrollTop=p.scrollHeight;}})(this)">
+    {{template "logs_pre.tmpl" $f}}
+  </div>
+  <script>
+    // Initial scroll-to-bottom on first page load.
+    (function(){var p=document.querySelector('#logs-tail pre');if(p)p.scrollTop=p.scrollHeight;})();
+  </script>
 </section>
 {{end}}
