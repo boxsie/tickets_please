@@ -20,9 +20,9 @@ import (
 // expectedTools is the canonical list — keep in sync with SPEC.md and
 // RegisterAll. The test fails loud if any name drifts.
 var expectedTools = []string{
-	// Projects (7)
+	// Projects (8)
 	"list_projects", "create_project", "get_project", "get_project_summary",
-	"load_project", "update_project", "delete_project",
+	"load_project", "update_project", "delete_project", "reembed_project",
 	// Phases (7)
 	"list_phases", "create_phase", "get_phase", "get_phase_summary",
 	"update_phase", "delete_phase", "list_waves",
@@ -50,7 +50,7 @@ func newTestRegistry() *Registry {
 }
 
 // TestRegisterAllTools spins up an MCP server, registers every tool, and
-// verifies all 29 names are present with non-empty descriptions. The svc
+// verifies all 30 names are present with non-empty descriptions. The svc
 // pointer is nil because no handler is invoked here — registration alone
 // covers the schema-builder code paths.
 func TestRegisterAllTools(t *testing.T) {
