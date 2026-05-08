@@ -153,6 +153,10 @@ func (w *Worker) Stop(ctx context.Context) {
 
 // Enqueue submits a job non-blockingly. On a full buffer the worker warn-logs
 // and drops; backfill on next startup will recover the missing sidecar.
+//
+// Use this from live-request paths (handlers that have an HTTP caller to
+// back-pressure to via 5xx). For boot-time backfill / hydrate where dropping
+// means data loss until the next restart, use EnqueueBlocking.
 func (w *Worker) Enqueue(j Job) {
 	if w == nil {
 		return
@@ -162,6 +166,22 @@ func (w *Worker) Enqueue(j Job) {
 	default:
 		w.log.Warn("embed worker queue full; dropping job",
 			"kind", j.Kind, "source", j.SourcePath, "entry_id", j.EntryID)
+	}
+}
+
+// EnqueueBlocking submits a job, blocking until the worker accepts it or ctx
+// cancels. Returns ctx.Err() on cancellation, nil on accept. No drop-on-full
+// warning — the boot-time backfill / hydrate caller has nobody to
+// back-pressure to and dropping = data loss until next restart.
+func (w *Worker) EnqueueBlocking(ctx context.Context, j Job) error {
+	if w == nil {
+		return nil
+	}
+	select {
+	case w.queue <- j:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
