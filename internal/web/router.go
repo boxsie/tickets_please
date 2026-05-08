@@ -96,6 +96,14 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// API clients, HTML partial for the htmx-driven /p/load picker.
 	mux.Handle("GET /api/fs", wrap(a.handleFSBrowse))
 
+	// Top-level server settings (W5-T2 of the per-project-embedders phase).
+	// Edits server defaults that gate *new* projects + shared transport
+	// (ollama_url, openai_api_key); also exposes the bulk Re-embed-all
+	// button. Per-project /p/{slug}/settings (W5-T1) is a sibling region.
+	mux.Handle("GET /settings", wrap(a.handleGlobalSettings))
+	mux.Handle("POST /settings", wrap(a.handleGlobalSettingsUpdate))
+	mux.Handle("POST /settings/reembed-all", wrap(a.handleReembedAll))
+
 	// Root: home handler. http.ServeMux's "/" pattern catches every path not
 	// matched by a more specific handler, so the more-specific /p/* patterns
 	// above preempt it.
