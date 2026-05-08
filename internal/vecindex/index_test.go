@@ -357,19 +357,34 @@ func TestSidecarRoundTrip(t *testing.T) {
 	r := rand.New(rand.NewSource(99))
 	want := randVec(r, 768)
 
-	if err := WriteSidecar(path, want); err != nil {
+	in := Sidecar{
+		Provider: "ollama",
+		Model:    "bge-m3",
+		Dim:      len(want),
+		Vec:      want,
+	}
+	if err := WriteSidecar(path, in); err != nil {
 		t.Fatalf("WriteSidecar: %v", err)
 	}
 	got, err := ReadSidecar(path)
 	if err != nil {
 		t.Fatalf("ReadSidecar: %v", err)
 	}
-	if len(got) != len(want) {
-		t.Fatalf("dim = %d, want %d", len(got), len(want))
+	if got.Provider != in.Provider {
+		t.Errorf("Provider = %q, want %q", got.Provider, in.Provider)
+	}
+	if got.Model != in.Model {
+		t.Errorf("Model = %q, want %q", got.Model, in.Model)
+	}
+	if got.Dim != in.Dim {
+		t.Errorf("Dim = %d, want %d", got.Dim, in.Dim)
+	}
+	if len(got.Vec) != len(want) {
+		t.Fatalf("dim = %d, want %d", len(got.Vec), len(want))
 	}
 	for i := range want {
-		if math.Abs(float64(got[i]-want[i])) > 1e-6 {
-			t.Fatalf("idx %d: got %v, want %v", i, got[i], want[i])
+		if math.Abs(float64(got.Vec[i]-want[i])) > 1e-6 {
+			t.Fatalf("idx %d: got %v, want %v", i, got.Vec[i], want[i])
 		}
 	}
 }
@@ -394,17 +409,17 @@ func TestSidecarReadGarbage(t *testing.T) {
 func TestSidecarOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "vec.embedding.json")
-	if err := WriteSidecar(path, []float32{1, 2, 3}); err != nil {
+	if err := WriteSidecar(path, Sidecar{Provider: "p", Model: "m", Dim: 3, Vec: []float32{1, 2, 3}}); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
-	if err := WriteSidecar(path, []float32{4, 5, 6, 7}); err != nil {
+	if err := WriteSidecar(path, Sidecar{Provider: "p", Model: "m", Dim: 4, Vec: []float32{4, 5, 6, 7}}); err != nil {
 		t.Fatalf("overwrite: %v", err)
 	}
 	got, err := ReadSidecar(path)
 	if err != nil {
 		t.Fatalf("ReadSidecar: %v", err)
 	}
-	if len(got) != 4 || got[0] != 4 || got[3] != 7 {
-		t.Errorf("overwrite: got %v, want [4 5 6 7]", got)
+	if len(got.Vec) != 4 || got.Vec[0] != 4 || got.Vec[3] != 7 {
+		t.Errorf("overwrite: got %v, want [4 5 6 7]", got.Vec)
 	}
 }
