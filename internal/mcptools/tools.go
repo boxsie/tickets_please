@@ -20,7 +20,7 @@ import (
 )
 
 // Tools wraps the in-process svc.Service plus the per-session Registry into a
-// single struct that registers all 29 tools against an *mcpserver.MCPServer.
+// single struct that registers all 30 tools against an *mcpserver.MCPServer.
 //
 // One Tools per process — the MCP binary builds it once, calls RegisterAll,
 // and hands the server off to ServeStdio.
@@ -115,6 +115,11 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithDescription("**Irreversibly delete** a project and everything in it: every phase, every ticket (including in-progress / testing / done ones), every comment, every embedding sidecar. The on-disk data dir survives but its project content is wiped, the project is unmounted, and it is removed from the persistent registry. Per-ticket completion immutability is a per-ticket rule; the project-level delete bypasses it."),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 	), t.handleDeleteProject)
+
+	s.AddTool(mcp.NewTool("reembed_project",
+		mcp.WithDescription("Delete all *.embedding.json sidecars in a project and enqueue async re-embed using the project's currently configured embedder. Use after switching embed_provider/embed_model in project.yaml, or to recover from corrupted sidecars."),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if a session is bound")),
+	), t.handleReembedProject)
 
 	// Phases (7)
 	s.AddTool(mcp.NewTool("list_phases",
@@ -535,6 +540,20 @@ func (t *Tools) handleDeleteProject(ctx context.Context, req mcp.CallToolRequest
 		return errorResult(cerr), nil
 	}
 	return jsonResult(map[string]any{"deleted": idOrSlug})
+}
+
+func (t *Tools) handleReembedProject(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	idOrSlug, err := t.resolveProjectSlug(ctx, req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		return t.svc.ReembedProject(ctx, idOrSlug)
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	return jsonResult(map[string]any{"reembed_project": idOrSlug, "status": "re-embedding enqueued"})
 }
 
 // ---- Phases ----
