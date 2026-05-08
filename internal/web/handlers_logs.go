@@ -14,9 +14,10 @@ type logsPageData struct {
 	Empty bool
 }
 
-// handleLogs renders the in-process log ring as a plain <pre> block. Auto-
-// refreshes via meta-refresh (set in the template). When the ring isn't
-// wired (e.g. in tests that don't care), the page renders an empty buffer.
+// handleLogs renders the in-process log ring as a plain <pre> block. The
+// page auto-tails via htmx polling against the same handler with HX-Request
+// set, returning just the <pre> fragment. When the ring isn't wired (e.g.
+// in tests that don't care), the page renders an empty buffer.
 func (a *app) handleLogs(w http.ResponseWriter, r *http.Request) {
 	var lines []string
 	if a.deps.Logs != nil {
@@ -30,6 +31,10 @@ func (a *app) handleLogs(w http.ResponseWriter, r *http.Request) {
 		Lines: strings.Join(lines, "\n"),
 		Count: len(lines),
 		Empty: len(lines) == 0,
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		a.renderer.Partial(w, r, "logs_pre", data)
+		return
 	}
 	a.renderer.Page(w, r, "logs", PageOpts{
 		Title: "Logs · tickets_please",

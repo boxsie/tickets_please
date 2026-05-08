@@ -211,7 +211,7 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 	if err != nil {
 		return nil, fmt.Errorf("svc: build store: %w", err)
 	}
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	logger := slog.Default()
 
 	indexes := worker.Indexes{
 		Summaries: vecindex.New(),
@@ -242,8 +242,8 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 	// can serve multiple project mounts. In single-store stdio mode the
 	// closures fall back to s.Store regardless of slug.
 	pc := cache.New(cache.Resolvers{
-		ResolveStore:   s.cacheResolveStore,
-		WalkAllStores:  s.cacheWalkAllStores,
+		ResolveStore:    s.cacheResolveStore,
+		WalkAllStores:   s.cacheWalkAllStores,
 		FsnotifyEnabled: cfg.FsnotifyEnabled,
 	}, as, cfg)
 	pc.Logger = logger

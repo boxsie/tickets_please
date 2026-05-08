@@ -55,6 +55,10 @@ func main() {
 		slog.NewJSONHandler(os.Stderr, nil),
 		tplog.NewRingHandler(logRing, nil),
 	))
+	// Make slog.Default() route through the same multi-handler so any code
+	// that didn't get the explicit logger threaded through (or uses the
+	// package-default for convenience) still lands in the ring buffer.
+	slog.SetDefault(logger)
 
 	// `migrate` is a tooling subcommand that runs entirely off-config (it
 	// operates on a path the user passes), so handle it before config.Load.

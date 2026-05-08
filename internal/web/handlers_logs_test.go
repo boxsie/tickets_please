@@ -61,9 +61,36 @@ func TestLogs_Page_RendersRecentRecord(t *testing.T) {
 	if !strings.Contains(body, "Server logs") {
 		t.Errorf("/logs missing page heading\n%s", body)
 	}
-	// meta-refresh present so the page tails new records.
-	if !strings.Contains(body, `http-equiv="refresh"`) {
-		t.Errorf("/logs missing meta-refresh:\n%s", body)
+	// htmx polling on the wrapper so the page tails new records in-place.
+	if !strings.Contains(body, `hx-get="/logs"`) || !strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Errorf("/logs missing htmx polling attrs:\n%s", body)
+	}
+}
+
+// TestLogs_HXFragment: an HX-Request to /logs returns just the wrapper
+// partial (no full chrome) so the htmx swap doesn't double-render the page.
+func TestLogs_HXFragment(t *testing.T) {
+	srv, client, log := freshServerWithLogs(t)
+	log.Info("hx-fragment-needle", "kind", "test")
+
+	req, _ := http.NewRequest("GET", srv.URL+"/logs", nil)
+	req.Header.Set("HX-Request", "true")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET /logs (HX): %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "hx-fragment-needle") {
+		t.Errorf("HX fragment missing needle:\n%s", body)
+	}
+	if strings.Contains(body, "<html") || strings.Contains(body, "Server logs</h1>") {
+		t.Errorf("HX fragment leaked chrome:\n%s", body)
+	}
+	if !strings.Contains(body, `id="logs-wrap"`) {
+		t.Errorf("HX fragment missing wrapper id:\n%s", body)
 	}
 }
 

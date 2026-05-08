@@ -467,6 +467,11 @@ func (s *Service) ReembedProject(ctx context.Context, idOrSlug string) error {
 		return fmt.Errorf("svc: project %q not mounted", slug)
 	}
 
+	if s.Logger != nil {
+		s.Logger.Info("reembed: starting", "slug", slug,
+			"embed_provider", rec.EmbedProvider, "embed_model", rec.EmbedModel)
+	}
+
 	// If the yaml's (provider, model) drifted from the mount's cached pair,
 	// rebuild Embed/indexes/Worker at the new dim. Hold mountsMu for the
 	// swap so concurrent search/index reads can't observe a half-swapped
@@ -506,6 +511,9 @@ func (s *Service) ReembedProject(ctx context.Context, idOrSlug string) error {
 	// upsertOrEnqueue branch handles the missing-sidecar case by reading
 	// source text and submitting a Job — which is exactly what we want.
 	s.hydrateMount(slug, mount)
+	if s.Logger != nil {
+		s.Logger.Info("reembed: enqueued; worker draining async", "slug", slug)
+	}
 	return nil
 }
 

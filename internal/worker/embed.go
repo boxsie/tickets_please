@@ -259,6 +259,8 @@ func (w *Worker) process(ctx context.Context, j Job) {
 		Owner: j.Owner,
 		Vec:   vec,
 	})
+	w.log.Info("embedded",
+		"kind", j.Kind, "owner", j.Owner, "entry_id", j.EntryID, "dim", len(vec))
 }
 
 // indexFor maps a JobKind to its target resident index. Returns nil for
