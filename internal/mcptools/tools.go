@@ -20,7 +20,7 @@ import (
 )
 
 // Tools wraps the in-process svc.Service plus the per-session Registry into a
-// single struct that registers all 30 tools against an *mcpserver.MCPServer.
+// single struct that registers all 29 tools against an *mcpserver.MCPServer.
 //
 // One Tools per process — the MCP binary builds it once, calls RegisterAll,
 // and hands the server off to ServeStdio.
@@ -238,13 +238,7 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
 	), t.handleListComments)
 
-	// Search (4)
-	s.AddTool(mcp.NewTool("search_projects",
-		mcp.WithDescription("Semantic search over project summaries. Use when picking a project to work in or finding related projects."),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
-		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
-	), t.handleSearchProjects)
-
+	// Search (3)
 	s.AddTool(mcp.NewTool("search_tickets",
 		mcp.WithDescription("Semantic search over ticket titles and bodies in a project. Use when looking for related work."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
@@ -1042,31 +1036,6 @@ func (t *Tools) handleListComments(ctx context.Context, req mcp.CallToolRequest)
 }
 
 // ---- Search ----
-
-func (t *Tools) handleSearchProjects(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	q, err := req.RequireString("query")
-	if err != nil {
-		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
-	}
-	limit := req.GetInt("limit", 0)
-	var hits []svc.ProjectHit
-	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
-		out, err := t.svc.SearchProjects(ctx, q, limit)
-		if err != nil {
-			return err
-		}
-		hits = out
-		return nil
-	})
-	if cerr != nil {
-		return errorResult(cerr), nil
-	}
-	resp := make([]map[string]any, 0, len(hits))
-	for _, h := range hits {
-		resp = append(resp, formatProjectHit(h))
-	}
-	return jsonResult(map[string]any{"hits": resp})
-}
 
 func (t *Tools) handleSearchTickets(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	q, err := req.RequireString("query")

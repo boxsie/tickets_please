@@ -91,11 +91,6 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /tickets/{id}/comments", wrap(a.handleCommentsList))
 	mux.Handle("POST /tickets/{id}/comments", wrap(a.handleCommentCreate))
 
-	// Cross-project search dispatcher. Single GET route fans out into one of
-	// four Service.Search* methods. HX-Request returns just the results
-	// fragment so the live-search box doesn't redraw chrome on every keystroke.
-	mux.Handle("GET /search", wrap(a.handleSearch))
-
 	// Filesystem picker for /p/load. Read-only directory listing. JSON for
 	// API clients, HTML partial for the htmx-driven /p/load picker.
 	mux.Handle("GET /api/fs", wrap(a.handleFSBrowse))

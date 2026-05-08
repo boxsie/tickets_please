@@ -220,69 +220,6 @@ func TestSearchLearnings_AggregatesAcrossMounts(t *testing.T) {
 	}
 }
 
-// TestSearchProjects_AggregatesAcrossMounts is the project-summary twin of
-// the learnings test above.
-func TestSearchProjects_AggregatesAcrossMounts(t *testing.T) {
-	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 4})
-	tmp := t.TempDir()
-
-	sumA := distinctSummary("alpha-keyword-banana")
-	sumB := distinctSummary("beta-keyword-zucchini")
-
-	repoA, projA, _ := seedRepoWithCompletedTicket(t,
-		tmp, "repoAlpha", "alpha", "alpha-ticket",
-		sumA, "alpha learnings",
-	)
-	repoB, projB, _ := seedRepoWithCompletedTicket(t,
-		tmp, "repoBeta", "beta", "beta-ticket",
-		sumB, "beta learnings",
-	)
-
-	if _, err := s.RegisterProjectMount(context.Background(), repoA); err != nil {
-		t.Fatalf("mount alpha: %v", err)
-	}
-	if _, err := s.RegisterProjectMount(context.Background(), repoB); err != nil {
-		t.Fatalf("mount beta: %v", err)
-	}
-
-	if got := s.testSummaryLen(); got != 2 {
-		t.Fatalf("SummaryIdx after mount = %d; want 2 (project summaries only)", got)
-	}
-
-	ctx, _ := authedCtx(t, s)
-	hits, err := s.SearchProjects(ctx, sumA, 5)
-	if err != nil {
-		t.Fatalf("SearchProjects: %v", err)
-	}
-	if len(hits) == 0 {
-		t.Fatalf("expected at least one project hit")
-	}
-	if hits[0].Project.ID != projA {
-		t.Errorf("top hit project id = %s; want %s (alpha)", hits[0].Project.ID, projA)
-	}
-	if hits[0].ProjectSlug != "alpha" {
-		t.Errorf("top hit ProjectSlug = %q; want alpha", hits[0].ProjectSlug)
-	}
-
-	// Both projects must be reachable from a single index, regardless of
-	// whether the query text matched alpha or beta first.
-	gotSlugs := map[string]bool{}
-	for _, h := range hits {
-		gotSlugs[h.Project.Slug] = true
-	}
-	if !gotSlugs["alpha"] {
-		t.Errorf("alpha missing from cross-mount project hits: %v", gotSlugs)
-	}
-	// Run a second query for beta to also exercise the other side.
-	hitsB, err := s.SearchProjects(ctx, sumB, 5)
-	if err != nil {
-		t.Fatalf("SearchProjects(beta): %v", err)
-	}
-	if len(hitsB) == 0 || hitsB[0].Project.ID != projB {
-		t.Errorf("beta query top hit = %+v; want project %s", hitsB, projB)
-	}
-}
-
 // TestSearchLearnings_DropOnEvictThenRemount races a register loop against a
 // concurrent SearchLearnings caller — under -race this catches data races on
 // the resident-index + mounts mutations the new hydrate / drop paths added.
@@ -346,29 +283,3 @@ func TestSearchLearnings_ConcurrentMountAndSearch(t *testing.T) {
 	}
 }
 
-// TestSearchProjects_StdioFallback covers the path where the registry is
-// empty (a test built Service without an eager mount + never registered) but
-// the default Store still hosts a project — SearchProjects must fall back to
-// it so single-project tests/CLI usage doesn't regress.
-func TestSearchProjects_StdioFallback(t *testing.T) {
-	s := freshServiceWithCfg(t, config.Config{})
-	ctx, _ := authedCtx(t, s)
-
-	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
-		t.Fatalf("CreateProject: %v", err)
-	}
-	// Wait for the embed worker to populate the SummaryIdx via its normal
-	// async write path.
-	waitForIdxLen(t, s.testSummaryLen, 1, 5*time.Second)
-
-	hits, err := s.SearchProjects(ctx, validSummary(), 5)
-	if err != nil {
-		t.Fatalf("SearchProjects: %v", err)
-	}
-	if len(hits) == 0 || hits[0].Project.Slug != "alpha" {
-		t.Fatalf("stdio fallback search missed alpha: %+v", hits)
-	}
-	if hits[0].ProjectSlug != "alpha" {
-		t.Errorf("ProjectSlug = %q; want alpha", hits[0].ProjectSlug)
-	}
-}

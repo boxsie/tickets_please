@@ -366,7 +366,7 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	lp.Project.UpdatedAt = rec.UpdatedAt
 	if newSummary != nil {
 		lp.Project.Summary = *newSummary
-		// Re-embed the summary so SearchProjects reflects the edit.
+		// Re-embed the summary so the SummaryIdx reflects the edit.
 		if s.Worker != nil {
 			s.Worker.Enqueue(worker.Job{
 				Kind:        worker.JobProjectSummary,

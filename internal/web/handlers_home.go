@@ -13,8 +13,8 @@ import (
 //     /p/load and /p/new (those routes ship in ticket 3; until then the
 //     links 404, which is fine for the foundation).
 //
-// Future tickets will register more specific patterns (/p/, /tickets/,
-// /search) on the mux; those preempt this catch-all for their prefixes.
+// Future tickets will register more specific patterns (/p/, /tickets/) on
+// the mux; those preempt this catch-all for their prefixes.
 func (a *app) handleHome(w http.ResponseWriter, r *http.Request) {
 	// http.ServeMux's "/" pattern is a catch-all. Reject paths we don't own
 	// so requests for, say, /favicon.ico or /robots.txt don't render the

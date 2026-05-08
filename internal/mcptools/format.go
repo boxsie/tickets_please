@@ -126,17 +126,6 @@ func formatAgent(a *domain.Agent) map[string]any {
 	}
 }
 
-// formatProjectHit wraps a search.ProjectHit with score + project shape.
-// project_slug is duplicated at the top level for cross-project searches so
-// the LLM doesn't have to descend into the project shape to read provenance.
-func formatProjectHit(h svc.ProjectHit) map[string]any {
-	return map[string]any{
-		"project":      formatProject(h.Project),
-		"project_slug": h.ProjectSlug,
-		"score":        h.Score,
-	}
-}
-
 // formatTicketHit wraps a search.TicketHit.
 func formatTicketHit(h svc.TicketHit) map[string]any {
 	return map[string]any{

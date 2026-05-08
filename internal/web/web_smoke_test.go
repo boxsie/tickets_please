@@ -151,17 +151,16 @@ func TestSmoke_EndToEnd(t *testing.T) {
 		t.Fatalf("edit-on-done status = %d, want 422", resp.StatusCode)
 	}
 
-	// 10. Search wires up. With a mounted project plus a completed ticket,
-	// the learnings index is non-empty; we just assert the response shape
-	// is a 200 — the embedder is fakeEmbedder so similarity scores are
-	// uninteresting but the dispatcher walks the right service path.
+	// 10. Cross-project /search has been removed (W4-T1); the per-project
+	// replacement lands in W4-T2. Assert the route 404s so the smoke test
+	// pins the regression cleanly.
 	resp, err = client.Get(srv.URL + "/search?q=smoke&kind=learnings")
 	if err != nil {
 		t.Fatalf("GET /search: %v", err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("search status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("search status = %d, want 404", resp.StatusCode)
 	}
 }
 

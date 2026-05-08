@@ -313,7 +313,6 @@ func TestRenderer_Page(t *testing.T) {
 	for _, want := range []string{
 		"<title>test-title</title>",
 		"tickets_please",            // brand link in nav
-		"action=\"/search\"",        // search form target
 		"id=\"sidebar\"",            // sidebar present
 		"No projects mounted",       // sidebar empty state
 		"Welcome to tickets_please", // home empty state copy
