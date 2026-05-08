@@ -2,9 +2,11 @@ id: 69c057de-475e-4d7f-b32c-1c818538688f
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 36
 title: 'Sidecar metadata: {provider, model, dim, vec}'
-column: testing
+column: done
 phase_id: 69d6390c-3565-4e70-b82e-022b69c68f82
 wave: 1
 created_by: 3868e790-8a50-4ed1-9964-3d778ce7c3fb
+completed_by: a68b1eec-129d-4467-bbba-8a7eda003151
+completed_at: 2026-05-08T12:39:21.068578076+01:00
 created_at: 2026-05-08T11:29:03.420884056+01:00
-updated_at: 2026-05-08T12:37:16.742083064+01:00
+updated_at: 2026-05-08T12:39:21.068578076+01:00
