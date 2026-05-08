@@ -113,8 +113,8 @@ func TestSearchProjects_TopHitMatchesAndFiltersPhases(t *testing.T) {
 	}
 
 	// Wait for at least 4 entries (3 projects + 1 phase).
-	waitForIdxLen(t, s.SummaryIdx.Len, 4, 5*time.Second)
-	if got := s.SummaryIdx.Len(); got < 4 {
+	waitForIdxLen(t, s.testSummaryLen, 4, 5*time.Second)
+	if got := s.testSummaryLen(); got < 4 {
 		t.Fatalf("SummaryIdx didn't fill (got %d, want >=4)", got)
 	}
 
@@ -185,8 +185,8 @@ func TestSearchTickets_ScopedToProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitForIdxLen(t, s.TicketsIdx.Len, 2, 5*time.Second)
-	if got := s.TicketsIdx.Len(); got < 2 {
+	waitForIdxLen(t, s.testTicketLen, 2, 5*time.Second)
+	if got := s.testTicketLen(); got < 2 {
 		t.Fatalf("TicketsIdx didn't fill (got %d, want >=2)", got)
 	}
 
@@ -245,7 +245,7 @@ func TestSearchTickets_ColumnFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitForIdxLen(t, s.TicketsIdx.Len, 2, 5*time.Second)
+	waitForIdxLen(t, s.testTicketLen, 2, 5*time.Second)
 
 	// Search with column=todo only; tk1 (now in_progress) must NOT appear.
 	hits, err := s.SearchTickets(ctx, domain.SearchTicketsInput{
@@ -294,7 +294,7 @@ func TestSearchComments_TicketIDFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitForIdxLen(t, s.CommentsIdx.Len, 2, 5*time.Second)
+	waitForIdxLen(t, s.testCommentLen, 2, 5*time.Second)
 
 	// Filter to tk1 only — c2 must not appear.
 	hits, err := s.SearchComments(ctx, domain.SearchCommentsInput{
@@ -373,7 +373,7 @@ func TestSearchLearnings_TopHitIsCompletedTicket(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitForIdxLen(t, s.LearningsIdx.Len, 2, 5*time.Second)
+	waitForIdxLen(t, s.testLearningLen, 2, 5*time.Second)
 
 	// Exact text match → fakeEmbed produces an identical vector → top hit.
 	hits, err := s.SearchLearnings(ctx, domain.SearchLearningsInput{Query: learningsText})

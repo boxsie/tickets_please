@@ -63,12 +63,20 @@ type Indexes struct {
 	Comments  *vecindex.Index // user + system comments
 }
 
+// IndexResolver maps a Job's (kind, owner-slug) to the *vecindex.Index its
+// resulting Entry should be Upserted into. The Service uses this to route
+// worker writes into per-project indexes (W2-T1: indexes live on
+// ProjectMount, not on Service). Returning nil falls back to the worker's
+// own static Indexes — that's the registry-empty stdio path.
+type IndexResolver func(kind JobKind, owner string) *vecindex.Index
+
 // Worker is the goroutine that drains a buffered channel of Jobs.
 type Worker struct {
 	queue    chan Job
 	provider embed.Provider
 	model    string // model identifier stamped into sidecars (e.g. "nomic-embed-text")
 	indexes  Indexes
+	resolve  IndexResolver
 	log      *slog.Logger
 
 	// wg tracks the Run goroutine so callers can Wait for graceful drain.
@@ -116,6 +124,18 @@ func (w *Worker) SetModel(model string) {
 		return
 	}
 	w.model = model
+}
+
+// SetIndexResolver installs a slug-aware index lookup so Worker.Upsert can
+// land in per-mount indexes (the W2-T1 model). When the resolver returns
+// nil, the worker falls back to its own static Indexes (the registry-empty
+// stdio path). Safe to call before Run starts; not safe to race with
+// concurrent process calls.
+func (w *Worker) SetIndexResolver(r IndexResolver) {
+	if w == nil {
+		return
+	}
+	w.resolve = r
 }
 
 // Wait blocks until Run has returned. Used by Service.Close so the test
@@ -247,7 +267,13 @@ func (w *Worker) process(ctx context.Context, j Job) {
 			return
 		}
 	}
-	idx := w.indexFor(j.Kind)
+	var idx *vecindex.Index
+	if w.resolve != nil {
+		idx = w.resolve(j.Kind, j.Owner)
+	}
+	if idx == nil {
+		idx = w.indexFor(j.Kind)
+	}
 	if idx == nil {
 		w.log.Warn("no target index for job kind",
 			"kind", j.Kind, "source", j.SourcePath, "entry_id", j.EntryID)

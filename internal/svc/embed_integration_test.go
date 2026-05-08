@@ -41,12 +41,12 @@ func TestEmbed_CreateProject_WritesSummarySidecarAndIndex(t *testing.T) {
 	// Resident summary index contains the project.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if s.SummaryIdx.Len() >= 1 {
+		if s.testSummaryLen() >= 1 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	snap := s.SummaryIdx.Snapshot()
+	snap := s.testSummaryEntries()
 	found := false
 	for _, e := range snap {
 		if e.ID == p.ID {
@@ -55,7 +55,7 @@ func TestEmbed_CreateProject_WritesSummarySidecarAndIndex(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("SummaryIdx missing project entry; len=%d", s.SummaryIdx.Len())
+		t.Errorf("SummaryIdx missing project entry; len=%d", s.testSummaryLen())
 	}
 }
 
@@ -86,12 +86,12 @@ func TestEmbed_CreateTicket_WritesBodySidecar(t *testing.T) {
 	// TicketsIdx receives the entry.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if s.TicketsIdx.Len() >= 1 {
+		if s.testTicketLen() >= 1 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if s.TicketsIdx.Len() == 0 {
+	if s.testTicketLen() == 0 {
 		t.Errorf("TicketsIdx empty after CreateTicket; expected entry for %s", tk.ID)
 	}
 }
@@ -160,12 +160,12 @@ func TestEmbed_CompleteTicket_WritesLearningsSidecar(t *testing.T) {
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if s.LearningsIdx.Len() >= 1 {
+		if s.testLearningLen() >= 1 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if s.LearningsIdx.Len() == 0 {
+	if s.testLearningLen() == 0 {
 		t.Error("LearningsIdx empty after CompleteTicket")
 	}
 }
@@ -209,7 +209,7 @@ func TestEmbed_CreateComment_WritesSidecar(t *testing.T) {
 	if found == "" {
 		t.Fatalf("comment sidecar never appeared next to %s", commentsDir)
 	}
-	if s.CommentsIdx.Len() == 0 {
+	if s.testCommentLen() == 0 {
 		t.Errorf("CommentsIdx empty after CreateComment(%s)", c.ID)
 	}
 }

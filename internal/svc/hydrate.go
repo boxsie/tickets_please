@@ -28,46 +28,58 @@ import (
 	"tickets_please/internal/worker"
 )
 
-// hydrateMount populates the four resident indexes from a freshly-mounted
-// project's on-disk sidecars and enqueues missing ones onto the embed worker.
-// All entries are tagged with the project slug as Owner.
+// hydrateMount populates the per-mount resident indexes from a freshly-
+// mounted project's on-disk sidecars and enqueues missing ones onto the
+// embed worker. All entries are tagged with the project slug as Owner.
 //
 // Errors from any one source file are warn-logged and skipped — a partial
 // hydrate is strictly better than aborting the whole mount.
-func (s *Service) hydrateMount(slug string, st *store.Store) {
-	if st == nil {
+func (s *Service) hydrateMount(slug string, mount *ProjectMount) {
+	if mount == nil || mount.Store == nil {
 		return
 	}
+	st := mount.Store
 	log := s.Logger
 	if log == nil {
 		log = slog.Default()
 	}
 
 	// Make sure the worker stamps the right embedder model into every
-	// sidecar it writes from this point on. The Service has the Cfg; the
-	// worker package doesn't. Idempotent — fine to set on every hydrate.
+	// sidecar it writes from this point on. Per-mount workers (W2-T2) will
+	// move this to per-worker; for now the global worker switches model
+	// per hydrate so the most-recently-mounted project's sidecars land
+	// with the right identity. Idempotent — fine to set on every hydrate.
 	if s.Worker != nil {
-		s.Worker.SetModel(s.Cfg.OllamaModel)
+		model := s.Cfg.OllamaModel
+		if mount.Embed != nil {
+			// Re-use the mount's view: probed provider name + the configured
+			// model from project.yaml. Ollama uses Model verbatim; OpenAI
+			// hardcodes its model in the SDK so we still write the cfg-style
+			// label for sidecar identity.
+			view := embedViewFromCfg(s.Cfg, mount.Embed.Name(), "")
+			model = view.Model
+		}
+		s.Worker.SetModel(model)
 	}
 
 	if err := st.WalkProjects(func(_ string, rec *store.ProjectRecord) error {
-		s.hydrateProjectSummary(slug, st, rec, log)
+		s.hydrateProjectSummary(slug, mount, rec, log)
 		return nil
 	}); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Warn("hydrate: walk projects failed", "slug", slug, "err", err)
 	}
 
 	if err := st.WalkPhases(slug, func(rec *store.PhaseRecord) error {
-		s.hydratePhaseSummary(slug, st, rec, log)
+		s.hydratePhaseSummary(slug, mount, rec, log)
 		return nil
 	}); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Warn("hydrate: walk phases failed", "slug", slug, "err", err)
 	}
 
 	if err := st.WalkTickets(slug, func(ticketDir, _ string, rec *store.TicketRecord) error {
-		s.hydrateTicketBody(slug, ticketDir, rec, log)
-		s.hydrateTicketLearnings(slug, ticketDir, rec, log)
-		s.hydrateTicketComments(slug, st, ticketDir, rec, log)
+		s.hydrateTicketBody(slug, mount, ticketDir, rec, log)
+		s.hydrateTicketLearnings(slug, mount, ticketDir, rec, log)
+		s.hydrateTicketComments(slug, mount, ticketDir, rec, log)
 		return nil
 	}); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Warn("hydrate: walk tickets failed", "slug", slug, "err", err)
@@ -75,11 +87,11 @@ func (s *Service) hydrateMount(slug string, st *store.Store) {
 }
 
 // hydrateProjectSummary loads the project summary sidecar (or enqueues it).
-func (s *Service) hydrateProjectSummary(slug string, st *store.Store, rec *store.ProjectRecord, log *slog.Logger) {
-	dir := st.ProjectDir(slug)
+func (s *Service) hydrateProjectSummary(slug string, mount *ProjectMount, rec *store.ProjectRecord, log *slog.Logger) {
+	dir := mount.Store.ProjectDir(slug)
 	src := filepath.Join(dir, "summary.md")
 	side := filepath.Join(dir, "summary.embedding.json")
-	s.upsertOrEnqueue(slug, worker.JobProjectSummary, s.SummaryIdx, vecindex.KindProjectSummary,
+	s.upsertOrEnqueue(slug, mount, worker.JobProjectSummary, mount.SummaryIdx, vecindex.KindProjectSummary,
 		rec.ID, src, side, func() (string, error) {
 			data, err := os.ReadFile(src)
 			if err != nil {
@@ -90,14 +102,14 @@ func (s *Service) hydrateProjectSummary(slug string, st *store.Store, rec *store
 }
 
 // hydratePhaseSummary loads a phase summary sidecar (or enqueues it). Phase
-// summaries share the resident SummaryIdx with project summaries — search
-// methods filter by id-shape (only project ids count as project hits).
-func (s *Service) hydratePhaseSummary(slug string, st *store.Store, rec *store.PhaseRecord, log *slog.Logger) {
+// summaries share SummaryIdx with project summaries — search methods filter
+// by id-shape (only project ids count as project hits).
+func (s *Service) hydratePhaseSummary(slug string, mount *ProjectMount, rec *store.PhaseRecord, log *slog.Logger) {
 	dirName := fmt.Sprintf("%03d-%s", rec.Number, rec.Slug)
-	dir := st.PhaseDir(slug, dirName)
+	dir := mount.Store.PhaseDir(slug, dirName)
 	src := filepath.Join(dir, "summary.md")
 	side := filepath.Join(dir, "summary.embedding.json")
-	s.upsertOrEnqueue(slug, worker.JobProjectSummary, s.SummaryIdx, vecindex.KindProjectSummary,
+	s.upsertOrEnqueue(slug, mount, worker.JobProjectSummary, mount.SummaryIdx, vecindex.KindProjectSummary,
 		rec.ID, src, side, func() (string, error) {
 			data, err := os.ReadFile(src)
 			if err != nil {
@@ -108,10 +120,10 @@ func (s *Service) hydratePhaseSummary(slug string, st *store.Store, rec *store.P
 }
 
 // hydrateTicketBody loads the ticket body sidecar (or enqueues it).
-func (s *Service) hydrateTicketBody(slug, ticketDir string, rec *store.TicketRecord, log *slog.Logger) {
+func (s *Service) hydrateTicketBody(slug string, mount *ProjectMount, ticketDir string, rec *store.TicketRecord, log *slog.Logger) {
 	src := filepath.Join(ticketDir, "body.md")
 	side := filepath.Join(ticketDir, "body.embedding.json")
-	s.upsertOrEnqueue(slug, worker.JobTicketBody, s.TicketsIdx, vecindex.KindTicketBody,
+	s.upsertOrEnqueue(slug, mount, worker.JobTicketBody, mount.TicketsIdx, vecindex.KindTicketBody,
 		rec.ID, src, side, func() (string, error) {
 			body, err := os.ReadFile(src)
 			if err != nil {
@@ -123,10 +135,10 @@ func (s *Service) hydrateTicketBody(slug, ticketDir string, rec *store.TicketRec
 
 // hydrateTicketLearnings loads the learnings sidecar (or enqueues it). Only
 // completed tickets have a completion.md; missing-source soft-skips.
-func (s *Service) hydrateTicketLearnings(slug, ticketDir string, rec *store.TicketRecord, log *slog.Logger) {
+func (s *Service) hydrateTicketLearnings(slug string, mount *ProjectMount, ticketDir string, rec *store.TicketRecord, log *slog.Logger) {
 	src := filepath.Join(ticketDir, "completion.md")
 	side := filepath.Join(ticketDir, "learnings.embedding.json")
-	s.upsertOrEnqueue(slug, worker.JobTicketLearnings, s.LearningsIdx, vecindex.KindTicketLearnings,
+	s.upsertOrEnqueue(slug, mount, worker.JobTicketLearnings, mount.LearningsIdx, vecindex.KindTicketLearnings,
 		rec.ID, src, side, func() (string, error) {
 			data, err := os.ReadFile(src)
 			if err != nil {
@@ -142,9 +154,9 @@ func (s *Service) hydrateTicketLearnings(slug, ticketDir string, rec *store.Tick
 
 // hydrateTicketComments walks the ticket's comments dir and loads/enqueues
 // each comment's sidecar.
-func (s *Service) hydrateTicketComments(slug string, st *store.Store, ticketDir string, _ *store.TicketRecord, log *slog.Logger) {
+func (s *Service) hydrateTicketComments(slug string, mount *ProjectMount, ticketDir string, _ *store.TicketRecord, log *slog.Logger) {
 	commentsDir := filepath.Join(ticketDir, "comments")
-	if err := st.WalkComments(ticketDir, func(rec *store.CommentRecord, body string) error {
+	if err := mount.Store.WalkComments(ticketDir, func(rec *store.CommentRecord, body string) error {
 		filename, ok := findCommentFilenameByID(commentsDir, rec.ID)
 		if !ok {
 			return nil
@@ -152,7 +164,7 @@ func (s *Service) hydrateTicketComments(slug string, st *store.Store, ticketDir 
 		src := filepath.Join(commentsDir, filename)
 		stem := strings.TrimSuffix(filename, ".md")
 		side := filepath.Join(commentsDir, stem+".embedding.json")
-		s.upsertOrEnqueue(slug, worker.JobComment, s.CommentsIdx, vecindex.KindComment,
+		s.upsertOrEnqueue(slug, mount, worker.JobComment, mount.CommentsIdx, vecindex.KindComment,
 			rec.ID, src, side, func() (string, error) {
 				return body, nil
 			}, log)
@@ -168,6 +180,7 @@ func (s *Service) hydrateTicketComments(slug string, st *store.Store, ticketDir 
 // text / missing source files are silently skipped.
 func (s *Service) upsertOrEnqueue(
 	slug string,
+	mount *ProjectMount,
 	jobKind worker.JobKind,
 	idx *vecindex.Index,
 	vKind vecindex.Kind,
@@ -175,21 +188,27 @@ func (s *Service) upsertOrEnqueue(
 	getText func() (string, error),
 	log *slog.Logger,
 ) {
+	wantDim := s.EmbedDim
+	if mount != nil && mount.EmbedDim > 0 {
+		wantDim = mount.EmbedDim
+	}
 	if sc, err := vecindex.ReadSidecar(sidePath); err == nil {
 		// Don't add zero-length or wrong-dim vectors; index.Search would skip
 		// them anyway, but keeping the entries map clean makes Snapshot
 		// smaller and eviction by-owner cheaper.
-		if len(sc.Vec) == s.EmbedDim {
-			idx.Upsert(vecindex.Entry{
-				ID:    entryID,
-				Kind:  vKind,
-				Owner: slug,
-				Vec:   sc.Vec,
-			})
+		if len(sc.Vec) == wantDim {
+			if idx != nil {
+				idx.Upsert(vecindex.Entry{
+					ID:    entryID,
+					Kind:  vKind,
+					Owner: slug,
+					Vec:   sc.Vec,
+				})
+			}
 			return
 		}
 		log.Debug("hydrate: sidecar dim mismatch, dropping",
-			"slug", slug, "path", sidePath, "got", len(sc.Vec), "want", s.EmbedDim)
+			"slug", slug, "path", sidePath, "got", len(sc.Vec), "want", wantDim)
 		return
 	} else if !errors.Is(err, fs.ErrNotExist) && !os.IsNotExist(err) {
 		log.Warn("hydrate: read sidecar failed", "slug", slug, "path", sidePath, "err", err)
@@ -282,23 +301,33 @@ func findCommentFilenameByID(dir, id string) (string, bool) {
 }
 
 // dropMountFromIndexes evicts every resident-index entry tagged with the
-// given slug. Called from the registry's eviction + (future) explicit
-// unmount paths so search results stop including a project we can no longer
-// load on disk.
+// given slug. Nils the per-mount indexes (the same shape LRU eviction uses)
+// and walks the worker's defaultIndexes by-owner so the registry-empty
+// stdio fallback path drops its entries too.
+//
+// Caller must hold mountsMu — every existing caller already does (the LRU
+// eviction path inside maybeEvictLocked, and the dedicated test that
+// manually mirrors it).
 func (s *Service) dropMountFromIndexes(slug string) {
 	if slug == "" {
 		return
 	}
-	if s.SummaryIdx != nil {
-		s.SummaryIdx.RemoveByOwner(slug)
+	if mount, ok := s.projectMounts[slug]; ok && mount != nil {
+		mount.SummaryIdx = nil
+		mount.TicketsIdx = nil
+		mount.LearningsIdx = nil
+		mount.CommentsIdx = nil
 	}
-	if s.TicketsIdx != nil {
-		s.TicketsIdx.RemoveByOwner(slug)
+	if s.defaultIndexes.Summaries != nil {
+		s.defaultIndexes.Summaries.RemoveByOwner(slug)
 	}
-	if s.LearningsIdx != nil {
-		s.LearningsIdx.RemoveByOwner(slug)
+	if s.defaultIndexes.Tickets != nil {
+		s.defaultIndexes.Tickets.RemoveByOwner(slug)
 	}
-	if s.CommentsIdx != nil {
-		s.CommentsIdx.RemoveByOwner(slug)
+	if s.defaultIndexes.Learnings != nil {
+		s.defaultIndexes.Learnings.RemoveByOwner(slug)
+	}
+	if s.defaultIndexes.Comments != nil {
+		s.defaultIndexes.Comments.RemoveByOwner(slug)
 	}
 }

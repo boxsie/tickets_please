@@ -141,7 +141,7 @@ func TestSearchLearnings_AggregatesAcrossMounts(t *testing.T) {
 
 	// Hydration is synchronous for entries with on-disk sidecars, so both
 	// learnings should be in the index immediately.
-	if got := s.LearningsIdx.Len(); got != 2 {
+	if got := s.testLearningLen(); got != 2 {
 		t.Fatalf("LearningsIdx after mount = %d; want 2", got)
 	}
 
@@ -208,7 +208,7 @@ func TestSearchLearnings_AggregatesAcrossMounts(t *testing.T) {
 	if _, err := s.ResolveProjectStore(context.Background(), "beta"); err != nil {
 		t.Fatalf("resolve beta after evict: %v", err)
 	}
-	if got := s.LearningsIdx.Len(); got != 2 {
+	if got := s.testLearningLen(); got != 2 {
 		t.Fatalf("LearningsIdx after re-mount = %d; want 2", got)
 	}
 	hitsRehyd, err := s.SearchLearnings(ctx, domain.SearchLearningsInput{Query: betaLearnings})
@@ -245,7 +245,7 @@ func TestSearchProjects_AggregatesAcrossMounts(t *testing.T) {
 		t.Fatalf("mount beta: %v", err)
 	}
 
-	if got := s.SummaryIdx.Len(); got != 2 {
+	if got := s.testSummaryLen(); got != 2 {
 		t.Fatalf("SummaryIdx after mount = %d; want 2 (project summaries only)", got)
 	}
 
@@ -341,7 +341,7 @@ func TestSearchLearnings_ConcurrentMountAndSearch(t *testing.T) {
 	close(stop)
 	wg.Wait()
 
-	if got := s.LearningsIdx.Len(); got != n {
+	if got := s.testLearningLen(); got != n {
 		t.Fatalf("LearningsIdx after race = %d; want %d", got, n)
 	}
 }
@@ -359,7 +359,7 @@ func TestSearchProjects_StdioFallback(t *testing.T) {
 	}
 	// Wait for the embed worker to populate the SummaryIdx via its normal
 	// async write path.
-	waitForIdxLen(t, s.SummaryIdx.Len, 1, 5*time.Second)
+	waitForIdxLen(t, s.testSummaryLen, 1, 5*time.Second)
 
 	hits, err := s.SearchProjects(ctx, validSummary(), 5)
 	if err != nil {

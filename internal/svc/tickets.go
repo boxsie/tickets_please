@@ -904,20 +904,32 @@ func (s *Service) DeleteTicket(ctx context.Context, id string) error {
 
 	// Prune cache + resident indexes. Comments slice may be nil for tickets
 	// that never received any; range over nil is fine.
+	s.mountsMu.Lock()
+	mount := s.projectMounts[hostSlug]
+	s.mountsMu.Unlock()
 	for _, c := range lp.Comments[id] {
-		if s.CommentsIdx != nil {
-			s.CommentsIdx.Delete(c.ID)
+		if mount != nil && mount.CommentsIdx != nil {
+			mount.CommentsIdx.Delete(c.ID)
+		}
+		if s.defaultIndexes.Comments != nil {
+			s.defaultIndexes.Comments.Delete(c.ID)
 		}
 	}
 	delete(lp.Tickets, id)
 	delete(lp.Comments, id)
-	if s.TicketsIdx != nil {
-		s.TicketsIdx.Delete(id)
+	if mount != nil && mount.TicketsIdx != nil {
+		mount.TicketsIdx.Delete(id)
 	}
-	if s.LearningsIdx != nil {
+	if s.defaultIndexes.Tickets != nil {
+		s.defaultIndexes.Tickets.Delete(id)
+	}
+	if mount != nil && mount.LearningsIdx != nil {
 		// Defensive: a non-done ticket has no learnings entry, but a future
 		// edit might land here under a state we didn't anticipate.
-		s.LearningsIdx.Delete(id)
+		mount.LearningsIdx.Delete(id)
+	}
+	if s.defaultIndexes.Learnings != nil {
+		s.defaultIndexes.Learnings.Delete(id)
 	}
 	return nil
 }

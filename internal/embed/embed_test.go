@@ -12,17 +12,15 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"tickets_please/internal/config"
 )
 
 // --- Factory ----------------------------------------------------------------
 
 func TestNewFactoryOllama(t *testing.T) {
-	cfg := config.Config{
-		EmbedProvider: "ollama",
-		OllamaURL:     "http://localhost:11434",
-		OllamaModel:   "nomic-embed-text",
+	cfg := EmbedConfig{
+		Provider:  "ollama",
+		Model:     "nomic-embed-text",
+		OllamaURL: "http://localhost:11434",
 	}
 	p, err := New(cfg)
 	if err != nil {
@@ -37,9 +35,9 @@ func TestNewFactoryOllama(t *testing.T) {
 }
 
 func TestNewFactoryOpenAI(t *testing.T) {
-	cfg := config.Config{
-		EmbedProvider: "openai",
-		OpenAIKey:     "sk-test-key",
+	cfg := EmbedConfig{
+		Provider:  "openai",
+		OpenAIKey: "sk-test-key",
 	}
 	p, err := New(cfg)
 	if err != nil {
@@ -54,7 +52,7 @@ func TestNewFactoryOpenAI(t *testing.T) {
 }
 
 func TestNewFactoryOpenAIEmptyKey(t *testing.T) {
-	cfg := config.Config{EmbedProvider: "openai", OpenAIKey: ""}
+	cfg := EmbedConfig{Provider: "openai", OpenAIKey: ""}
 	_, err := New(cfg)
 	if err == nil {
 		t.Fatalf("New(openai, empty key) returned nil error; want clear error")
@@ -66,7 +64,7 @@ func TestNewFactoryOpenAIEmptyKey(t *testing.T) {
 
 func TestNewFactoryUnknown(t *testing.T) {
 	for _, v := range []string{"cohere", "bogus", "OPENAI", " "} {
-		cfg := config.Config{EmbedProvider: v}
+		cfg := EmbedConfig{Provider: v}
 		_, err := New(cfg)
 		if err == nil {
 			t.Errorf("New(%q) returned nil error; want unknown-provider error", v)
@@ -75,7 +73,7 @@ func TestNewFactoryUnknown(t *testing.T) {
 }
 
 func TestNewFactoryEmpty(t *testing.T) {
-	_, err := New(config.Config{EmbedProvider: ""})
+	_, err := New(EmbedConfig{Provider: ""})
 	if err == nil {
 		t.Fatalf("New(empty) returned nil error; want error")
 	}
@@ -108,7 +106,7 @@ func TestOllamaEmbedRequestShape(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	o := NewOllama(config.Config{OllamaURL: srv.URL, OllamaModel: "nomic-embed-text"})
+	o := NewOllama(EmbedConfig{Provider: "ollama", OllamaURL: srv.URL, Model: "nomic-embed-text"})
 	got, err := o.Embed(context.Background(), "hello world")
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
@@ -148,7 +146,7 @@ func TestOllamaProbeRecordsDim(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"embedding": want})
 		}))
 
-		o := NewOllama(config.Config{OllamaURL: srv.URL, OllamaModel: "any-model"})
+		o := NewOllama(EmbedConfig{Provider: "ollama", OllamaURL: srv.URL, Model: "any-model"})
 		if err := o.Probe(context.Background()); err != nil {
 			t.Fatalf("Probe(dim=%d): %v", dim, err)
 		}
@@ -165,7 +163,7 @@ func TestOllamaDimPanicsBeforeProbe(t *testing.T) {
 			t.Fatal("Dim() before Probe() did not panic")
 		}
 	}()
-	o := NewOllama(config.Config{OllamaURL: "http://unused", OllamaModel: "x"})
+	o := NewOllama(EmbedConfig{Provider: "ollama", OllamaURL: "http://unused", Model: "x"})
 	_ = o.Dim()
 }
 
@@ -181,7 +179,7 @@ func TestOllamaEmbedTrimsTrailingSlash(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	o := NewOllama(config.Config{OllamaURL: srv.URL + "/", OllamaModel: "nomic-embed-text"})
+	o := NewOllama(EmbedConfig{Provider: "ollama", OllamaURL: srv.URL + "/", Model: "nomic-embed-text"})
 	if _, err := o.Embed(context.Background(), "hi"); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -196,7 +194,7 @@ func TestOllamaEmbedNon2xxError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	o := NewOllama(config.Config{OllamaURL: srv.URL, OllamaModel: "nomic-embed-text"})
+	o := NewOllama(EmbedConfig{Provider: "ollama", OllamaURL: srv.URL, Model: "nomic-embed-text"})
 	_, err := o.Embed(context.Background(), "hi")
 	if err == nil {
 		t.Fatalf("Embed: nil error, want non-2xx error")
@@ -214,18 +212,18 @@ func TestOllamaEmbedNon2xxError(t *testing.T) {
 //
 //	go test ./internal/embed -run TestOllamaSmoke -v
 func TestOllamaSmoke(t *testing.T) {
-	cfg := config.Config{
-		EmbedProvider: "ollama",
-		OllamaURL:     "http://localhost:11434",
-		OllamaModel:   "nomic-embed-text",
+	cfg := EmbedConfig{
+		Provider:  "ollama",
+		Model:     "nomic-embed-text",
+		OllamaURL: "http://localhost:11434",
 	}
 
 	if !ollamaReachable(cfg.OllamaURL, 500*time.Millisecond) {
 		t.Skipf("ollama not reachable at %s; skipping smoke test", cfg.OllamaURL)
 	}
-	if ok, why := ollamaHasModel(cfg.OllamaURL, cfg.OllamaModel, 2*time.Second); !ok {
+	if ok, why := ollamaHasModel(cfg.OllamaURL, cfg.Model, 2*time.Second); !ok {
 		t.Skipf("ollama at %s does not have model %q (%s); skipping. Run: ollama pull %s",
-			cfg.OllamaURL, cfg.OllamaModel, why, cfg.OllamaModel)
+			cfg.OllamaURL, cfg.Model, why, cfg.Model)
 	}
 
 	o := NewOllama(cfg)

@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	openai "github.com/sashabaranov/go-openai"
-
-	"tickets_please/internal/config"
 )
 
 // openAIModel is the embedding model used. Hardcoded by spec.
@@ -18,10 +16,10 @@ type OpenAI struct {
 	dim    int
 }
 
-// NewOpenAI constructs an OpenAI provider from cfg. The factory (New) checks
+// NewOpenAI constructs an OpenAI provider from view. The factory (New) checks
 // for an empty API key; this constructor does not.
-func NewOpenAI(cfg config.Config) *OpenAI {
-	return &OpenAI{client: openai.NewClient(cfg.OpenAIKey)}
+func NewOpenAI(view EmbedConfig) *OpenAI {
+	return &OpenAI{client: openai.NewClient(view.OpenAIKey)}
 }
 
 // newOpenAIWithBaseURL is a test helper that points the client at an alternate
