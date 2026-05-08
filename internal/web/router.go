@@ -51,12 +51,14 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /p/load", wrap(a.handleLoadProjectForm))
 	mux.Handle("POST /p/load", wrap(a.handleLoadProjectMount))
 	mux.Handle("GET /p/{slug}", wrap(a.handleProjectDetail))
-	mux.Handle("GET /p/{slug}/edit", wrap(a.handleProjectEditForm))
 	mux.Handle("POST /p/{slug}", wrap(a.handleProjectUpdate))
 	mux.Handle("POST /p/{slug}/delete", wrap(a.handleProjectDelete))
 	mux.Handle("GET /p/{slug}/summary", wrap(a.handleProjectSummaryView))
 	mux.Handle("POST /p/{slug}/summary", wrap(a.handleProjectSummaryUpdate))
 	mux.Handle("GET /p/{slug}/search", wrap(a.handleProjectSearch))
+	mux.Handle("GET /p/{slug}/settings", wrap(a.handleProjectSettings))
+	mux.Handle("POST /p/{slug}/settings", wrap(a.handleProjectSettingsUpdate))
+	mux.Handle("POST /p/{slug}/reembed", wrap(a.handleProjectReembed))
 
 	// Phase routes. Same wrap (session + CSRF on POST). Literal segments
 	// (/phases, /new) take precedence over the {phase} wildcard.
