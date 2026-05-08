@@ -38,9 +38,6 @@ func TestSearch_EmptyQuery_ReturnsInvalidArgument(t *testing.T) {
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx, _ := authedCtx(t, s)
 
-	if _, err := s.SearchProjects(ctx, "   ", 0); !errors.Is(err, domain.ErrInvalidArgument) {
-		t.Errorf("SearchProjects empty query: got %v, want ErrInvalidArgument", err)
-	}
 	if _, err := s.SearchTickets(ctx, domain.SearchTicketsInput{Query: "", ProjectIDOrSlug: "alpha"}); !errors.Is(err, domain.ErrInvalidArgument) {
 		t.Errorf("SearchTickets empty query: got %v, want ErrInvalidArgument", err)
 	}
@@ -67,98 +64,12 @@ func TestSearch_EmptyIndex_ReturnsEmpty(t *testing.T) {
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx, _ := authedCtx(t, s)
 
-	hits, err := s.SearchProjects(ctx, "anything plausible", 0)
-	if err != nil {
-		t.Fatalf("SearchProjects: %v", err)
-	}
-	if len(hits) != 0 {
-		t.Errorf("want empty hits; got %d", len(hits))
-	}
-
 	lhits, err := s.SearchLearnings(ctx, domain.SearchLearningsInput{Query: "x"})
 	if err != nil {
 		t.Fatalf("SearchLearnings: %v", err)
 	}
 	if len(lhits) != 0 {
 		t.Errorf("want empty learning hits; got %d", len(lhits))
-	}
-}
-
-// TestSearchProjects_TopHitMatchesAndFiltersPhases creates three projects
-// (each with a distinctive summary) plus a phase under one of them. Searches
-// using one project's exact summary text should return that project as the
-// top hit, and never a phase entry — even though phases share the SummaryIdx.
-func TestSearchProjects_TopHitMatchesAndFiltersPhases(t *testing.T) {
-	t.Skip("multi-project scenario; re-enable once the multi-Store registry ticket lands")
-	s := freshServiceWithCfg(t, config.Config{})
-	ctx, _ := authedCtx(t, s)
-
-	// Three projects with distinctive summaries.
-	pAlpha, err := s.CreateProject(ctx, "alpha", "Alpha", "", distinctSummary("alpha-keyword-banana"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.CreateProject(ctx, "beta", "Beta", "", distinctSummary("beta-keyword-zucchini")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.CreateProject(ctx, "gamma", "Gamma", "", distinctSummary("gamma-keyword-platypus")); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create a phase under alpha; it lands in the SAME SummaryIdx with a
-	// distinctive summary. SearchProjects must filter it out.
-	phaseSummary := distinctSummary("phase-keyword-titanium")
-	if _, err := s.CreatePhase(ctx, "alpha", "Phase One", "", phaseSummary); err != nil {
-		t.Fatal(err)
-	}
-
-	// Wait for at least 4 entries (3 projects + 1 phase).
-	waitForIdxLen(t, s.testSummaryLen, 4, 5*time.Second)
-	if got := s.testSummaryLen(); got < 4 {
-		t.Fatalf("SummaryIdx didn't fill (got %d, want >=4)", got)
-	}
-
-	// Search using alpha's exact text → fakeEmbed produces an identical
-	// vector → cosine ~1.0.
-	hits, err := s.SearchProjects(ctx, distinctSummary("alpha-keyword-banana"), 5)
-	if err != nil {
-		t.Fatalf("SearchProjects: %v", err)
-	}
-	if len(hits) == 0 {
-		t.Fatalf("expected at least one project hit")
-	}
-	if hits[0].Project.ID != pAlpha.ID {
-		t.Errorf("top hit = %q (slug %q); want alpha (%s)",
-			hits[0].Project.Slug, hits[0].Project.Slug, pAlpha.ID)
-	}
-	if hits[0].Score < 0.5 {
-		t.Errorf("top hit score = %v; want > 0.5", hits[0].Score)
-	}
-
-	// None of the hits should be the phase id.
-	for _, h := range hits {
-		if h.Project == nil {
-			t.Errorf("nil project in hit")
-			continue
-		}
-	}
-
-	// Searching by the PHASE summary must NOT return the phase as a hit
-	// (only projects). The search may return zero or some project; the
-	// requirement is just "no phase id leaked through".
-	phaseHits, err := s.SearchProjects(ctx, phaseSummary, 5)
-	if err != nil {
-		t.Fatalf("SearchProjects(phase summary): %v", err)
-	}
-	for _, h := range phaseHits {
-		// Every hit must be a known project — by construction (only 3
-		// projects exist), the slug must be one of the three.
-		switch h.Project.Slug {
-		case "alpha", "beta", "gamma":
-			// ok
-		default:
-			t.Errorf("phase leaked into project hits: %+v", h)
-		}
 	}
 }
 

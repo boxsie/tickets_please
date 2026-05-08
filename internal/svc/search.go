@@ -17,7 +17,6 @@ import (
 
 	"tickets_please/internal/domain"
 	"tickets_please/internal/embed"
-	"tickets_please/internal/store"
 	"tickets_please/internal/vecindex"
 )
 
@@ -82,16 +81,6 @@ const (
 	searchMaxLimit     = 50
 )
 
-// ProjectHit is one result from SearchProjects. ProjectSlug duplicates
-// Project.Slug at the top level so JSON consumers can read provenance without
-// having to descend into the embedded project shape — matches the convention
-// the LearningHit shape uses.
-type ProjectHit struct {
-	Project     *domain.Project
-	ProjectSlug string
-	Score       float32
-}
-
 // TicketHit is one result from SearchTickets.
 type TicketHit struct {
 	Ticket *domain.Ticket
@@ -120,115 +109,6 @@ type LearningHit struct {
 	Learnings   string
 	Score       float32
 	CompletedAt time.Time
-}
-
-// SearchProjects runs semantic search over each mounted project's per-mount
-// SummaryIdx. Per-mount dims may differ (each project carries its own embed
-// model), so the query is embedded once per distinct provider/mount and the
-// resulting hits are merged + re-sorted by score.
-//
-// Phase summaries share each mount's SummaryIdx; they're filtered out by
-// id-shape (only project ids appear in the per-mount id→slug map).
-//
-// Read-only — no requireSession.
-func (s *Service) SearchProjects(ctx context.Context, query string, limit int) ([]ProjectHit, error) {
-	q := strings.TrimSpace(query)
-	if q == "" {
-		return nil, fmt.Errorf("%w: query required", domain.ErrInvalidArgument)
-	}
-	limit = clampSearchLimit(limit)
-	rawLimit := limit * 2
-	if rawLimit > searchMaxLimit*2 {
-		rawLimit = searchMaxLimit * 2
-	}
-
-	// Snapshot mounts (slug + provider + index + store).
-	type sumSrc struct {
-		slug     string
-		provider embed.Provider
-		idx      *vecindex.Index
-		st       *store.Store
-	}
-	var sources []sumSrc
-	_ = s.WalkProjectMounts(func(slug string, mount *ProjectMount) error {
-		if mount == nil || mount.Store == nil || mount.SummaryIdx == nil {
-			return nil
-		}
-		p := mount.Embed
-		if p == nil {
-			p = s.Embed
-		}
-		sources = append(sources, sumSrc{slug: slug, provider: p, idx: mount.SummaryIdx, st: mount.Store})
-		return nil
-	})
-	// Stdio fallback: registry empty + default Store + default index. Built
-	// once at startup so single-project tests/CLI work without registering.
-	if len(sources) == 0 && s.Store != nil && s.defaultIndexes.Summaries != nil {
-		sources = append(sources, sumSrc{
-			slug: "", provider: s.Embed, idx: s.defaultIndexes.Summaries, st: s.Store,
-		})
-	}
-
-	type scored struct {
-		hit  vecindex.Hit
-		slug string
-	}
-	var pool []scored
-	idToSlug := make(map[string]string)
-	for _, src := range sources {
-		// Resolve slug-from-store for the stdio-fallback empty-slug case so
-		// idToSlug below still works.
-		_ = src.st.WalkProjects(func(slug string, rec *store.ProjectRecord) error {
-			projSlug := src.slug
-			if projSlug == "" {
-				projSlug = slug
-			}
-			idToSlug[rec.ID] = projSlug
-			return nil
-		})
-		vec, err := src.provider.Embed(ctx, q)
-		if err != nil {
-			return nil, fmt.Errorf("embed query (slug=%s): %w", src.slug, err)
-		}
-		hits := src.idx.Search(vec, vecindex.KindProjectSummary, "", rawLimit)
-		for _, h := range hits {
-			projSlug := src.slug
-			if projSlug == "" {
-				projSlug = idToSlug[h.ID]
-			}
-			pool = append(pool, scored{hit: h, slug: projSlug})
-		}
-	}
-	if len(pool) == 0 {
-		return []ProjectHit{}, nil
-	}
-	sort.SliceStable(pool, func(i, j int) bool {
-		if pool[i].hit.Score != pool[j].hit.Score {
-			return pool[i].hit.Score > pool[j].hit.Score
-		}
-		return pool[i].hit.ID < pool[j].hit.ID
-	})
-
-	out := make([]ProjectHit, 0, limit)
-	for _, sh := range pool {
-		if len(out) >= limit {
-			break
-		}
-		slug := sh.slug
-		if slug == "" {
-			slug = idToSlug[sh.hit.ID]
-		}
-		if slug == "" {
-			// Phase hit (or project deleted between embed write and search).
-			continue
-		}
-		p, err := s.GetProject(ctx, slug)
-		if err != nil {
-			continue
-		}
-		out = append(out, ProjectHit{Project: p, ProjectSlug: slug, Score: sh.hit.Score})
-	}
-	return out, nil
 }
 
 // SearchTickets runs semantic search over the resident TicketsIdx, scoped to
