@@ -3,7 +3,7 @@
 // It is a leaf-level package: stdlib only, no project imports. The index
 // stores normalized []float32 vectors keyed by id and answers brute-force
 // cosine top-k queries via container/heap. For the project's scale
-// (thousands of 768-dim vectors) brute force is plenty; if we ever need
+// (thousands of 768/1024-dim vectors) brute force is plenty; if we ever need
 // HNSW, the public API here is the seam.
 package vecindex
 
