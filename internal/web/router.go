@@ -106,6 +106,11 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /settings", wrap(a.handleGlobalSettingsUpdate))
 	mux.Handle("POST /settings/reembed-all", wrap(a.handleReembedAll))
 
+	// /logs renders the in-process slog ring buffer as a plain <pre> page.
+	// Useful for poking at server activity from the browser without tailing
+	// stderr — the same JSON records, mirrored via internal/log.RingHandler.
+	mux.Handle("GET /logs", wrap(a.handleLogs))
+
 	// Root: home handler. http.ServeMux's "/" pattern catches every path not
 	// matched by a more specific handler, so the more-specific /p/* patterns
 	// above preempt it.
