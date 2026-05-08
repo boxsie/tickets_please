@@ -2,9 +2,11 @@ id: b69056f8-a0b8-4ff5-bd2e-ecc8659290e1
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 37
 title: 'ProjectRecord: embed_provider + embed_model fields'
-column: testing
+column: done
 phase_id: 69d6390c-3565-4e70-b82e-022b69c68f82
 wave: 1
 created_by: 3868e790-8a50-4ed1-9964-3d778ce7c3fb
+completed_by: a68b1eec-129d-4467-bbba-8a7eda003151
+completed_at: 2026-05-08T12:39:32.501167779+01:00
 created_at: 2026-05-08T11:29:11.758349726+01:00
-updated_at: 2026-05-08T12:37:17.956912539+01:00
+updated_at: 2026-05-08T12:39:32.501167779+01:00
