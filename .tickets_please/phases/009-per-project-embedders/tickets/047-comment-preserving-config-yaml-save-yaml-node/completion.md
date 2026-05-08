@@ -1,0 +1,16 @@
+## Testing evidence
+go test ./internal/config/... and full go test ./... pass green. make build succeeds. Three new tests cover: (1) round-trip of a fixture with banner/section/inline/trailing comments asserts every comment + key order survives a SetScalar mutation; (2) adding a missing key appends at end of mapping after every original key; (3) an erroring modify callback leaves the file byte-identical and leaves no .config-* temp files in the dir.
+
+## Work summary
+Added internal/config/save.go with SaveYAMLNode(path, modify) (read -> unmarshal into *yaml.Node -> modify -> marshal -> tmp+rename atomic write, mirroring vecindex/persist.go:WriteSidecar) and SetScalar(root, key, value) (walks top-level mapping by Content[2i].Value, mutates Content[2i+1].Value in place to keep head/foot/line comments; appends [keyNode, valueNode] for missing keys). Added internal/config/save_test.go and internal/config/testdata/config.yaml fixture. yaml.v3 was already in go.mod; no module changes needed.
+
+## Learnings
+yaml.v3's Marshal/Unmarshal preserves HeadComment/LineComment/FootComment automatically as long as you keep the existing Node tree intact and only mutate Value strings. No need to manually copy comments. Mutating v.Value = "new" and clearing v.Tag = "" + v.Style = 0 lets the marshaller pick a sensible representation for the new value (don't carry over the old !!str-vs-int tag, that would force the wrong quoting).
+
+Walking a MappingNode is Content[2i] = key, Content[2i+1] = value. There's no map; order is the slice order. Appending two new nodes at the end is the idiomatic "add a key" pattern.
+
+Top-level may be a DocumentNode wrapping the actual MappingNode. Always unwrap (n.Kind == DocumentNode -> n = n.Content[0]) before walking.
+
+Round-trips are NOT byte-identical for blank-line whitespace. yaml.v3 attaches blank lines to the next key as part of its HeadComment and may render them differently. The realistic guarantee is "all comments + key order preserved, targeted scalar changed" not literal byte-equality. Tests verify via Contains assertions rather than exact-match diff.
+
+Atomicity: by returning early when modify errors (before os.CreateTemp), no temp file is ever created on the unhappy path. The deferred os.Remove(tmpName) in the happy path is best-effort cleanup if rename fails. Same shape as vecindex/persist.go:WriteSidecar. Tests verify zero .config-* leftovers.
