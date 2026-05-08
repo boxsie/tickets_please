@@ -12,8 +12,8 @@
        hx-get="/logs"
        hx-trigger="every 2s"
        hx-swap="innerHTML"
-       hx-on::before-request="(function(el){var p=el.querySelector('pre');el.dataset.atBottom=(p&&Math.abs(p.scrollHeight-p.clientHeight-p.scrollTop)<8)?'1':'0';})(this)"
-       hx-on::after-swap="(function(el){if(el.dataset.atBottom!=='0'){var p=el.querySelector('pre');if(p)p.scrollTop=p.scrollHeight;}})(this)">
+       hx-on::before-request="(function(el){var p=el.querySelector('pre');if(!p){el.dataset.atBottom='1';el.dataset.scrollTop='0';return;}el.dataset.atBottom=(Math.abs(p.scrollHeight-p.clientHeight-p.scrollTop)<8)?'1':'0';el.dataset.scrollTop=String(p.scrollTop);})(this)"
+       hx-on::after-swap="(function(el){var p=el.querySelector('pre');if(!p)return;if(el.dataset.atBottom==='1'){p.scrollTop=p.scrollHeight;}else{p.scrollTop=parseInt(el.dataset.scrollTop||'0',10);}})(this)">
     {{template "logs_pre.tmpl" $f}}
   </div>
   <script>
