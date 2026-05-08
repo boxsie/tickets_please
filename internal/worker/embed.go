@@ -8,9 +8,9 @@
 // job; an embed call that errors warn-logs and skips. Backfill picks anything
 // up on the next project load (or boot), so dropped jobs are recoverable.
 //
-// Per-project vector index routing is T11's job. T10 writes everything into
-// four resident global indexes; T11 may later refactor to attach per-project
-// slices to LoadedProject.
+// W2-T2 lands per-mount workers: one Worker (one goroutine, one buffered
+// channel) per ProjectMount, owning the four indexes for that mount. The
+// Service tears each one down on eviction.
 package worker
 
 import (
@@ -54,8 +54,9 @@ type Job struct {
 	flushDone chan struct{}
 }
 
-// Indexes carries the four resident global indexes the worker writes into.
-// Phase summaries share Summaries with project summaries.
+// Indexes carries the four target indexes the worker writes into. Phase
+// summaries share Summaries with project summaries. Per-mount workers own
+// one Indexes bundle each.
 type Indexes struct {
 	Summaries *vecindex.Index // project + phase summaries
 	Tickets   *vecindex.Index // ticket bodies
@@ -63,112 +64,87 @@ type Indexes struct {
 	Comments  *vecindex.Index // user + system comments
 }
 
-// IndexResolver maps a Job's (kind, owner-slug) to the *vecindex.Index its
-// resulting Entry should be Upserted into. The Service uses this to route
-// worker writes into per-project indexes (W2-T1: indexes live on
-// ProjectMount, not on Service). Returning nil falls back to the worker's
-// own static Indexes — that's the registry-empty stdio path.
-type IndexResolver func(kind JobKind, owner string) *vecindex.Index
-
 // Worker is the goroutine that drains a buffered channel of Jobs.
 type Worker struct {
 	queue    chan Job
 	provider embed.Provider
 	model    string // model identifier stamped into sidecars (e.g. "nomic-embed-text")
 	indexes  Indexes
-	resolve  IndexResolver
 	log      *slog.Logger
 
-	// wg tracks the Run goroutine so callers can Wait for graceful drain.
-	// Add(1) happens once at Worker construction so Wait is safe to call
-	// even before Run actually starts executing — it blocks until the
-	// (eventual) Run goroutine returns.
-	wg      sync.WaitGroup
-	runOnce sync.Once
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
+	stopOnce sync.Once
 }
 
-// New constructs a Worker with the given provider, target indexes, and queue
-// buffer size. A nil log defaults to slog.Default() so callers don't have to
-// special-case it. Wait blocks until Run returns.
+// New constructs a Worker bound to provider+model+indexes, starts the worker
+// goroutine, and returns. Stop() (or context-cancel via ctx) tears the
+// goroutine down. A nil log defaults to slog.Default().
 //
-// The embedder model identifier (stamped into every sidecar the worker
-// writes) defaults to empty and can be set after construction with
-// SetModel. The provider's Name() is read fresh on each write so it always
-// reflects the current Provider.
-func New(provider embed.Provider, indexes Indexes, bufferSize int, log *slog.Logger) *Worker {
+// The model identifier is stamped into every sidecar this worker writes, so
+// hydrate can detect "wrong embedder" and re-enqueue (W2-T3).
+func New(ctx context.Context, provider embed.Provider, model string, indexes Indexes, bufferSize int, log *slog.Logger) *Worker {
 	if bufferSize <= 0 {
 		bufferSize = 256
 	}
 	if log == nil {
 		log = slog.Default()
 	}
+	runCtx, cancel := context.WithCancel(ctx)
 	w := &Worker{
 		queue:    make(chan Job, bufferSize),
 		provider: provider,
+		model:    model,
 		indexes:  indexes,
 		log:      log,
+		cancel:   cancel,
 	}
 	w.wg.Add(1)
+	go w.run(runCtx)
 	return w
-}
-
-// SetModel records the embedder model identifier (e.g. "nomic-embed-text",
-// "bge-m3") that the Service-supplied provider was configured with. Stamped
-// into every sidecar the worker writes from this point on, so a future
-// hydrate can detect "wrong embedder" and re-enqueue.
-//
-// Safe to call before Run starts; not safe to race with concurrent process
-// calls (set once at Service init, then leave alone).
-func (w *Worker) SetModel(model string) {
-	if w == nil {
-		return
-	}
-	w.model = model
-}
-
-// SetIndexResolver installs a slug-aware index lookup so Worker.Upsert can
-// land in per-mount indexes (the W2-T1 model). When the resolver returns
-// nil, the worker falls back to its own static Indexes (the registry-empty
-// stdio path). Safe to call before Run starts; not safe to race with
-// concurrent process calls.
-func (w *Worker) SetIndexResolver(r IndexResolver) {
-	if w == nil {
-		return
-	}
-	w.resolve = r
-}
-
-// Wait blocks until Run has returned. Used by Service.Close so the test
-// teardown of a tempdir doesn't race a still-flushing worker.
-func (w *Worker) Wait() {
-	if w == nil {
-		return
-	}
-	w.wg.Wait()
 }
 
 // Flush blocks until every job currently in the queue has been processed.
 // Used by mutating handlers that follow up with a destructive store op
-// (DeleteProject, DeletePhase) so the worker doesn't write a sidecar into a
-// directory the same goroutine is about to remove.
+// (DeleteProject, DeletePhase, DeleteTicket) so the worker doesn't write a
+// sidecar into a directory the same goroutine is about to remove.
 //
 // Jobs enqueued AFTER Flush returns are not waited on. Flush is a barrier,
-// not a quiesce. Returns immediately if w is nil or if the worker is shut
-// down (queue closed).
+// not a quiesce. Returns immediately if w is nil or ctx is canceled.
 func (w *Worker) Flush(ctx context.Context) {
 	if w == nil {
 		return
 	}
-	// Sentinel signaled via a per-call channel pushed onto the queue. When
-	// the worker drains it, it closes the channel — at that point every job
-	// previously in the queue has already been processed (channels are
-	// FIFO).
 	done := make(chan struct{})
 	select {
 	case w.queue <- Job{Kind: JobUnspecified, flushDone: done}:
 	case <-ctx.Done():
 		return
 	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
+// Stop drains the queue, terminates the goroutine, and waits for it to
+// return. Safe to call multiple times. Pass a context with a deadline so a
+// stuck provider can't pin the call indefinitely; on ctx-cancel the goroutine
+// is force-stopped (in-flight jobs may be dropped). Returns when the run
+// goroutine has returned or ctx fires.
+func (w *Worker) Stop(ctx context.Context) {
+	if w == nil {
+		return
+	}
+	w.stopOnce.Do(func() {
+		w.cancel()
+	})
+	done := make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(done)
+	}()
 	select {
 	case <-done:
 	case <-ctx.Done():
@@ -189,28 +165,22 @@ func (w *Worker) Enqueue(j Job) {
 	}
 }
 
-// Run drains the queue until ctx is canceled. On cancellation it processes
+// run drains the queue until ctx is canceled. On cancellation it processes
 // any in-flight jobs already in the channel (a best-effort drain) and then
 // returns. Per-job errors are warn-logged and skipped — never fatal.
-//
-// During the post-cancel drain, jobs are processed against context.Background
-// (with a short overall budget) so a real provider — which honors the job
-// ctx — doesn't immediately error out on every drained job.
-//
-// Run must only be called once per Worker.
-func (w *Worker) Run(ctx context.Context) {
-	defer w.runOnce.Do(func() { w.wg.Done() })
+func (w *Worker) run(ctx context.Context) {
+	defer w.wg.Done()
 
 	for {
 		select {
 		case <-ctx.Done():
 			drainCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
 			for {
 				select {
 				case j := <-w.queue:
 					w.process(drainCtx, j)
 				default:
+					cancel()
 					return
 				}
 			}
@@ -222,25 +192,15 @@ func (w *Worker) Run(ctx context.Context) {
 
 // process is the per-job loop body: embed → write sidecar → upsert.
 func (w *Worker) process(ctx context.Context, j Job) {
-	// Flush sentinel: signal and return. Sentinel jobs carry no text and
-	// only exist to give Flush a FIFO barrier point.
 	if j.flushDone != nil {
 		close(j.flushDone)
 		return
 	}
 	if j.Text == "" {
-		// Empty text yields an empty/zero vector which is meaningless for
-		// search — skip silently rather than persist a useless sidecar.
 		w.log.Debug("embed worker: empty text; skipping",
 			"kind", j.Kind, "source", j.SourcePath, "entry_id", j.EntryID)
 		return
 	}
-	// Source-still-present check: the source file may have been deleted (or
-	// its parent project/phase/ticket removed) between Enqueue and now. If
-	// so, writing the sidecar would recreate the parent directory and
-	// resurrect a doomed entry. Skip the write — the entity is gone, the
-	// vec entry will go nowhere useful, and we'd rather lose the embed than
-	// undo the delete.
 	if j.SourcePath != "" {
 		if _, err := os.Stat(j.SourcePath); err != nil {
 			w.log.Debug("embed worker: source file missing; skipping",
@@ -267,13 +227,7 @@ func (w *Worker) process(ctx context.Context, j Job) {
 			return
 		}
 	}
-	var idx *vecindex.Index
-	if w.resolve != nil {
-		idx = w.resolve(j.Kind, j.Owner)
-	}
-	if idx == nil {
-		idx = w.indexFor(j.Kind)
-	}
+	idx := w.indexFor(j.Kind)
 	if idx == nil {
 		w.log.Warn("no target index for job kind",
 			"kind", j.Kind, "source", j.SourcePath, "entry_id", j.EntryID)

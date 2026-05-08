@@ -102,11 +102,11 @@ func (s *Service) CreatePhase(ctx context.Context, projectIDOrSlug, name, descri
 		return nil, fmt.Errorf("commit create phase: %w", err)
 	}
 
-	// Async embed: phase summary → resident SummaryIdx (phase summaries
+	// Async embed: phase summary → mount's SummaryIdx (phase summaries
 	// share the same kind as project summaries — see SPEC §Vector search).
-	if s.Worker != nil {
+	if mount := s.mountForSlug(lp.Project.Slug); mount != nil && mount.Worker != nil {
 		phaseDirAbs := filepath.Join(st.Root, phaseDirRel)
-		s.Worker.Enqueue(worker.Job{
+		mount.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobProjectSummary,
 			SourcePath:  filepath.Join(phaseDirAbs, "summary.md"),
 			SidecarPath: filepath.Join(phaseDirAbs, "summary.embedding.json"),
@@ -263,9 +263,9 @@ func (s *Service) UpdatePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 	ph.UpdatedAt = rec.UpdatedAt
 	if newSummary != nil {
 		ph.Summary = *newSummary
-		if s.Worker != nil {
+		if mount := s.mountForSlug(lp.Project.Slug); mount != nil && mount.Worker != nil {
 			phaseDirAbs := filepath.Join(st.Root, phaseDirRel)
-			s.Worker.Enqueue(worker.Job{
+			mount.Worker.Enqueue(worker.Job{
 				Kind:        worker.JobProjectSummary,
 				SourcePath:  filepath.Join(phaseDirAbs, "summary.md"),
 				SidecarPath: filepath.Join(phaseDirAbs, "summary.embedding.json"),
@@ -324,8 +324,8 @@ func (s *Service) DeletePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlu
 
 	// Drain pending embed jobs so the worker doesn't recreate the phase
 	// dir with a freshly-written sidecar after the upcoming RemovePath.
-	if s.Worker != nil {
-		s.Worker.Flush(ctx)
+	if mount := s.mountForSlug(lp.Project.Slug); mount != nil && mount.Worker != nil {
+		mount.Worker.Flush(ctx)
 	}
 
 	op, err := st.BeginOp()

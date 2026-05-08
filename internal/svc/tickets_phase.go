@@ -136,6 +136,14 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 	commentFilename := fmt.Sprintf("%s-%s-%s.md", commentNow.Format(commentTimestampLayout), shortID, string(commentRec.Kind))
 	commentRel := filepath.Join(newRel, "comments", commentFilename)
 
+	// Drain pending embed jobs on the mount's worker before the rename:
+	// without this an in-flight body/comment sidecar can land at the OLD
+	// path mid-rename and recreate the source directory we just emptied.
+	// Same pattern DeleteX uses around RemovePath.
+	if mount := s.mountForSlug(lp.Project.Slug); mount != nil && mount.Worker != nil {
+		mount.Worker.Flush(ctx)
+	}
+
 	// Single StageOp: rename dir, then write the updated ticket.yaml AND the
 	// new comment file at their post-rename paths. The rename runs first, so
 	// the writes land in the new location.
@@ -179,10 +187,10 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], dc)
 
 	// Async embed: the system_move comment for the phase reassignment.
-	if s.Worker != nil {
+	if mount := s.mountForSlug(lp.Project.Slug); mount != nil && mount.Worker != nil {
 		commentAbs := filepath.Join(st.Root, commentRel)
 		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
-		s.Worker.Enqueue(worker.Job{
+		mount.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobComment,
 			SourcePath:  commentAbs,
 			SidecarPath: filepath.Join(filepath.Dir(commentAbs), stem+".embedding.json"),

@@ -47,10 +47,18 @@ type ProjectMount struct {
 
 	Embed        embed.Provider
 	EmbedDim     int
+	EmbedModel   string // sidecar identity stamp; survives eviction
 	SummaryIdx   *vecindex.Index
 	TicketsIdx   *vecindex.Index
 	LearningsIdx *vecindex.Index
 	CommentsIdx  *vecindex.Index
+
+	// Worker is the per-mount embedding goroutine. Owns its own queue and
+	// writes only into this mount's four indexes. Eviction calls Stop and
+	// nils this pointer; tree-removal paths call Flush before BeginOp so a
+	// pending sidecar write doesn't race a RemovePath. Reads of this field
+	// must hold mountsMu — same contract as the index pointers.
+	Worker *worker.Worker
 }
 
 // Service is the in-process API surface. T15 declared the foundational
@@ -86,27 +94,19 @@ type Service struct {
 	// to inject deterministic fakes without touching real Ollama/OpenAI.
 	EmbedNew func(embed.EmbedConfig) (embed.Provider, error)
 
-	// Worker is the async embedding goroutine. Handlers Enqueue jobs after
-	// their StageOp commits; the worker drains the queue, writes the JSON
-	// sidecar, and Upserts into the right resident index. Per-mount workers
-	// land in W2-T2; for now the single global worker writes into the
-	// fallback resident indexes (defaultIndexes) which the registry-empty
-	// stdio fallback search consults.
-	Worker *worker.Worker
-
-	// defaultIndexes are the resident vec indexes used by the global Worker
-	// and consulted as the registry-empty stdio fallback by search RPCs.
-	// Per-mount indexes on ProjectMount shadow these for any registered
-	// project. Sized at startup to the server-default EmbedDim.
+	// defaultIndexes are the resident vec indexes consulted as the
+	// registry-empty stdio fallback by search RPCs. No worker writes here
+	// in W2-T2 — every mount owns its own four indexes and its own worker.
+	// These exist purely so unscoped search RPCs (registry empty) can
+	// degrade gracefully without crashing on nil indexes.
 	defaultIndexes worker.Indexes
 
 	// cacheCancel stops the background eviction goroutine. Held so tests
 	// (and future graceful-shutdown paths) can tear it down.
 	cacheCancel context.CancelFunc
 
-	// cancelWorker stops the embedding worker (and the boot backfill
-	// goroutine). Held so Close can drain in-flight jobs cleanly.
-	cancelWorker context.CancelFunc
+	// backfillCancel stops the boot backfill goroutine.
+	backfillCancel context.CancelFunc
 
 	// Agent debounce state. touchOnce tracks the last time we rewrote
 	// LastSeenAt for a given agent id; touchMu guards the map.
@@ -219,11 +219,9 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 		Learnings: vecindex.New(),
 		Comments:  vecindex.New(),
 	}
-	w := worker.New(provider, indexes, 256, logger)
-	w.SetModel(cfg.OllamaModel)
 
 	evictCtx, cancelCache := context.WithCancel(context.Background())
-	workerCtx, cancelWorker := context.WithCancel(context.Background())
+	backfillCtx, cancelBackfill := context.WithCancel(context.Background())
 
 	s := &Service{
 		Store:          st,
@@ -233,19 +231,12 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 		Embed:          provider,
 		EmbedDim:       embedDim,
 		EmbedNew:       factory,
-		Worker:         w,
 		defaultIndexes: indexes,
 		cacheCancel:    cancelCache,
-		cancelWorker:   cancelWorker,
+		backfillCancel: cancelBackfill,
 		touchOnce:      make(map[string]time.Time),
 		projectMounts:  make(map[string]*ProjectMount),
 	}
-
-	// Per-mount index routing: when the worker dequeues a job, look up the
-	// owner-slug's mount and write into its per-mount index. Falls back to
-	// defaultIndexes (the worker's own Indexes) when no mount is registered
-	// for the slug — that's the registry-empty stdio bootstrap path.
-	w.SetIndexResolver(s.workerIndexResolver)
 
 	// Cache resolves Stores via service-owned closures so a single ProjectCache
 	// can serve multiple project mounts. In single-store stdio mode the
@@ -292,34 +283,68 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 	}
 
 	go s.Cache.RunEvictor(evictCtx)
-	go s.Worker.Run(workerCtx)
 
-	// Boot backfill: enqueue any source files lacking sidecars. Runs async
-	// so an empty / freshly-cloned data dir doesn't pay the cost on every
-	// startup, and so a slow Ollama doesn't block service readiness.
-	bf := worker.NewBackfiller(st, w, logger)
-	go func() {
-		if err := bf.Run(workerCtx); err != nil && !errors.Is(err, context.Canceled) {
-			logger.Warn("embed backfill failed", "err", err)
-		}
-	}()
+	// Boot backfill: walk every mounted project and enqueue any source files
+	// lacking sidecars onto that mount's worker. Runs async so an empty /
+	// freshly-cloned data dir doesn't pay the cost on every startup, and so
+	// a slow Ollama doesn't block service readiness.
+	go s.runBootBackfill(backfillCtx)
 
 	return s, nil
 }
 
-// Close stops background goroutines (cache evictor + embed worker) and
-// releases all watcher resources. It blocks until the worker has drained
-// any in-flight jobs so a caller can safely tear down the data dir afterward
-// without racing the worker's sidecar writes.
+// runBootBackfill walks every currently-registered mount and runs a
+// Backfiller against it. Each mount's worker drains its own queue.
+func (s *Service) runBootBackfill(ctx context.Context) {
+	type bfMount struct {
+		st *store.Store
+		w  *worker.Worker
+	}
+	var mounts []bfMount
+	s.mountsMu.Lock()
+	for _, m := range s.projectMounts {
+		if m == nil || m.Store == nil || m.Worker == nil {
+			continue
+		}
+		mounts = append(mounts, bfMount{st: m.Store, w: m.Worker})
+	}
+	s.mountsMu.Unlock()
+	for _, bm := range mounts {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		bf := worker.NewBackfiller(bm.st, bm.w, s.Logger)
+		if err := bf.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			s.Logger.Warn("embed backfill failed", "err", err)
+		}
+	}
+}
+
+// Close stops background goroutines (cache evictor + boot backfill + every
+// per-mount embed worker) and releases all watcher resources. It blocks until
+// every worker has drained any in-flight jobs so a caller can safely tear
+// down the data dir afterward without racing sidecar writes.
 //
 // Safe to call multiple times.
 func (s *Service) Close() {
-	if s.cancelWorker != nil {
-		s.cancelWorker()
-		s.cancelWorker = nil
-		if s.Worker != nil {
-			s.Worker.Wait()
+	if s.backfillCancel != nil {
+		s.backfillCancel()
+		s.backfillCancel = nil
+	}
+	// Snapshot + Stop every per-mount worker. Use a generous shutdown budget
+	// so a slow real provider doesn't trip a goroutine leak in tests.
+	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.mountsMu.Lock()
+	workers := make([]*worker.Worker, 0, len(s.projectMounts))
+	for _, m := range s.projectMounts {
+		if m != nil && m.Worker != nil {
+			workers = append(workers, m.Worker)
 		}
+	}
+	s.mountsMu.Unlock()
+	for _, w := range workers {
+		w.Stop(stopCtx)
 	}
 	if s.cacheCancel != nil {
 		s.cacheCancel()
@@ -431,27 +456,25 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 	return rec.Slug, nil
 }
 
-// attachMountEmbedAssets builds (or reuses) the mount's embed.Provider and the
-// four resident vec indexes, sized to that provider's probed dim. Provider
-// build falls back to the server default when the project record's
-// embed_provider is blank or when the factory errors (with a warn log) — a
-// project that mis-configures its embedder shouldn't lock the user out of
-// their data; per-project re-embed (W3-T1) lets them recover.
+// attachMountEmbedAssets builds (or reuses) the mount's embed.Provider, the
+// four resident vec indexes (sized to that provider's probed dim), and the
+// per-mount embed Worker. Provider build falls back to the server default
+// when the project record's embed_provider is blank or when the factory
+// errors (with a warn log) — a project that mis-configures its embedder
+// shouldn't lock the user out of their data; per-project re-embed (W3-T1)
+// lets them recover.
 //
 // Re-mount of a previously-evicted entry skips re-probing the provider when
-// it survived eviction (only indexes get nilled there); we just re-allocate
-// the four indexes at the previously-probed dim.
+// it survived eviction (only indexes + worker get nilled there); we just
+// re-allocate the four indexes and a fresh worker.
 func (s *Service) attachMountEmbedAssets(mount *ProjectMount, rec *store.ProjectRecord) error {
-	if mount.Embed != nil && mount.SummaryIdx != nil {
+	if mount.Embed != nil && mount.SummaryIdx != nil && mount.Worker != nil {
 		// Fully populated; nothing to do.
 		return nil
 	}
 	if mount.Embed == nil {
 		provider, dim, err := s.buildMountProvider(rec.EmbedProvider, rec.EmbedModel)
 		if err != nil {
-			// Soft fallback: log and use the server default. Search/embed
-			// will still work; sidecars will be stamped with the server
-			// provider's identity.
 			if s.Logger != nil {
 				s.Logger.Warn("svc: per-mount embed build failed; falling back to server default",
 					"slug", rec.Slug, "embed_provider", rec.EmbedProvider, "embed_model", rec.EmbedModel, "err", err)
@@ -461,11 +484,19 @@ func (s *Service) attachMountEmbedAssets(mount *ProjectMount, rec *store.Project
 		}
 		mount.Embed = provider
 		mount.EmbedDim = dim
+		view := embedViewFromCfg(s.Cfg, rec.EmbedProvider, rec.EmbedModel)
+		mount.EmbedModel = view.Model
 	}
 	mount.SummaryIdx = vecindex.New()
 	mount.TicketsIdx = vecindex.New()
 	mount.LearningsIdx = vecindex.New()
 	mount.CommentsIdx = vecindex.New()
+	mount.Worker = worker.New(context.Background(), mount.Embed, mount.EmbedModel, worker.Indexes{
+		Summaries: mount.SummaryIdx,
+		Tickets:   mount.TicketsIdx,
+		Learnings: mount.LearningsIdx,
+		Comments:  mount.CommentsIdx,
+	}, 256, s.Logger)
 	return nil
 }
 
@@ -655,13 +686,16 @@ func (s *Service) maybeEvictLocked(keep string) {
 		if m == nil || m.Store == nil {
 			continue
 		}
+		// Stop the per-mount worker before nilling pointers so the goroutine
+		// doesn't leak. Use a short budget; a stuck provider getting cut off
+		// here is preferable to holding mountsMu indefinitely.
+		if m.Worker != nil {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			m.Worker.Stop(stopCtx)
+			cancel()
+			m.Worker = nil
+		}
 		m.Store = nil
-		// Nil the per-mount indexes (same shape Store is nilled in) and
-		// drop any defaultIndexes entries tagged with this slug. The
-		// freed []float32 vectors don't keep memory alive for an evicted
-		// project; ResolveProjectStore rebuilds + rehydrates on next
-		// access. Embed and EmbedDim survive on the mount so the fast
-		// re-mount can reuse the probed dim without another round-trip.
 		s.dropMountFromIndexes(resident[i].slug)
 		over--
 	}
@@ -714,32 +748,19 @@ func (s *Service) cacheWalkAllStores(fn func(*store.Store) error) error {
 	return nil
 }
 
-// workerIndexResolver maps a worker Job's (kind, owner-slug) to the right
-// per-mount *vecindex.Index. Returns nil for an unknown slug so the worker
-// falls back to its own Indexes (the stdio bootstrap path). Read of
-// mount.*Idx happens under mountsMu so it can't race with the eviction
-// path that nils them out.
-func (s *Service) workerIndexResolver(kind worker.JobKind, owner string) *vecindex.Index {
-	if owner == "" {
+// mountForSlug returns the mount registered under slug, or nil. Read happens
+// under mountsMu so the returned pointer can't be racing eviction (Worker /
+// indexes get nil'd while the lock is held). Callers that follow up with
+// mount.Worker.Enqueue / Flush after dropping the lock are still safe — the
+// worker itself is goroutine-safe and Stop drains in-flight calls, so a
+// concurrent Stop simply means the call no-ops.
+func (s *Service) mountForSlug(slug string) *ProjectMount {
+	if slug == "" {
 		return nil
 	}
 	s.mountsMu.Lock()
 	defer s.mountsMu.Unlock()
-	mount, ok := s.projectMounts[owner]
-	if !ok || mount == nil {
-		return nil
-	}
-	switch kind {
-	case worker.JobProjectSummary:
-		return mount.SummaryIdx
-	case worker.JobTicketBody:
-		return mount.TicketsIdx
-	case worker.JobTicketLearnings:
-		return mount.LearningsIdx
-	case worker.JobComment:
-		return mount.CommentsIdx
-	}
-	return nil
+	return s.projectMounts[slug]
 }
 
 // hostStoreForTicket finds the store and project slug that host a ticket id by

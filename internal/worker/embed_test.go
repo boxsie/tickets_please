@@ -31,13 +31,9 @@ func silentLogger() *slog.Logger {
 // for drain. Tests should defer it.
 func runWorker(t *testing.T, p *fakeProvider, idx Indexes) (*Worker, func()) {
 	t.Helper()
-	w := New(p, idx, 16, silentLogger())
-	w.SetModel("fake-model")
-	ctx, cancel := context.WithCancel(context.Background())
-	go w.Run(ctx)
+	w := New(context.Background(), p, "fake-model", idx, 16, silentLogger())
 	return w, func() {
-		cancel()
-		w.Wait()
+		w.Stop(context.Background())
 	}
 }
 
@@ -142,9 +138,12 @@ func TestWorker_AllKindsRouteToCorrectIndex(t *testing.T) {
 }
 
 func TestWorker_FullBufferDropsNonBlocking(t *testing.T) {
-	// Tiny buffer, no consumer. Enqueue more than capacity; never blocks.
-	w := New(newFake(), freshIndexes(), 1, silentLogger())
-	w.SetModel("fake-model")
+	// Tiny buffer, no consumer. Stop immediately so the goroutine is dead and
+	// the queue truly has no consumer; then Enqueue should non-block-drop.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	w := New(ctx, newFake(), "fake-model", freshIndexes(), 1, silentLogger())
+	w.Stop(context.Background())
 	for i := 0; i < 100; i++ {
 		w.Enqueue(Job{Kind: JobProjectSummary, EntryID: "x", Text: "hi"})
 	}
@@ -196,19 +195,16 @@ func TestWorker_MissingSourceSkipsSidecar(t *testing.T) {
 	}
 }
 
-func TestWorker_ContextCancelDrains(t *testing.T) {
+func TestWorker_StopDrains(t *testing.T) {
 	idx := freshIndexes()
 	dir := t.TempDir()
 	src := filepath.Join(dir, "s.md")
 	_ = os.WriteFile(src, []byte("hi"), 0o644)
 	side := filepath.Join(dir, "s.embedding.json")
 
-	w := New(newFake(), idx, 16, silentLogger())
-	w.SetModel("fake-model")
-	ctx, cancel := context.WithCancel(context.Background())
-	go w.Run(ctx)
+	w := New(context.Background(), newFake(), "fake-model", idx, 16, silentLogger())
 
-	// Buffer a job and cancel; Run should drain it before exiting.
+	// Buffer a job and Stop; the worker should drain it before returning.
 	w.Enqueue(Job{
 		Kind:        JobProjectSummary,
 		SourcePath:  src,
@@ -216,8 +212,7 @@ func TestWorker_ContextCancelDrains(t *testing.T) {
 		EntryID:     "p1",
 		Text:        "hi",
 	})
-	cancel()
-	w.Wait()
+	w.Stop(context.Background())
 
 	if _, err := os.Stat(side); err != nil {
 		t.Fatalf("expected sidecar after drain: %v", err)
@@ -226,3 +221,82 @@ func TestWorker_ContextCancelDrains(t *testing.T) {
 
 // fileExists is a Stat-error-or-success helper for the diagnostic message.
 func fileExists(p string) error { _, err := os.Stat(p); return err }
+
+// TestWorker_TwoMounts_NoCrossTalk runs two workers side-by-side with their
+// own indexes and providers and confirms that a job sent to mount A's queue
+// only lands in A's indexes.
+func TestWorker_TwoMounts_NoCrossTalk(t *testing.T) {
+	dir := t.TempDir()
+	srcA := filepath.Join(dir, "a.md")
+	_ = os.WriteFile(srcA, []byte("a"), 0o644)
+	sideA := filepath.Join(dir, "a.embedding.json")
+
+	idxA := freshIndexes()
+	idxB := freshIndexes()
+	pA := newFake()
+	pB := newFake()
+	wA := New(context.Background(), pA, "model-a", idxA, 16, silentLogger())
+	wB := New(context.Background(), pB, "model-b", idxB, 16, silentLogger())
+	defer wA.Stop(context.Background())
+	defer wB.Stop(context.Background())
+
+	wA.Enqueue(Job{
+		Kind: JobTicketBody, SourcePath: srcA, SidecarPath: sideA,
+		EntryID: "tA", Owner: "alpha", Text: "alpha-text",
+	})
+	if !waitFor(2*time.Second, func() bool {
+		return idxA.Tickets.Len() == 1
+	}) {
+		t.Fatalf("mount A index never received entry: A=%d B=%d", idxA.Tickets.Len(), idxB.Tickets.Len())
+	}
+	if idxB.Tickets.Len() != 0 {
+		t.Errorf("mount B leaked entries from A: B.Tickets.Len = %d", idxB.Tickets.Len())
+	}
+	if pB.calls != 0 {
+		t.Errorf("mount B provider called %d times for A's job", pB.calls)
+	}
+}
+
+// TestWorker_TwoMounts_DifferentDims verifies dims are independent.
+func TestWorker_TwoMounts_DifferentDims(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name string) (string, string) {
+		s := filepath.Join(dir, name+".md")
+		_ = os.WriteFile(s, []byte("x"), 0o644)
+		return s, filepath.Join(dir, name+".embedding.json")
+	}
+	srcA, sideA := mk("a")
+	srcB, sideB := mk("b")
+
+	pA := &fakeProvider{dim: 768}
+	pB := &fakeProvider{dim: 1024}
+	idxA := freshIndexes()
+	idxB := freshIndexes()
+	wA := New(context.Background(), pA, "ma", idxA, 16, silentLogger())
+	wB := New(context.Background(), pB, "mb", idxB, 16, silentLogger())
+	defer wA.Stop(context.Background())
+	defer wB.Stop(context.Background())
+
+	wA.Enqueue(Job{Kind: JobTicketBody, SourcePath: srcA, SidecarPath: sideA, EntryID: "tA", Owner: "alpha", Text: "alpha"})
+	wB.Enqueue(Job{Kind: JobTicketBody, SourcePath: srcB, SidecarPath: sideB, EntryID: "tB", Owner: "beta", Text: "beta"})
+
+	if !waitFor(2*time.Second, func() bool {
+		return idxA.Tickets.Len() == 1 && idxB.Tickets.Len() == 1
+	}) {
+		t.Fatalf("indexes not populated: A=%d B=%d", idxA.Tickets.Len(), idxB.Tickets.Len())
+	}
+	scA, err := vecindex.ReadSidecar(sideA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scB, err := vecindex.ReadSidecar(sideB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scA.Dim != 768 {
+		t.Errorf("A dim = %d; want 768", scA.Dim)
+	}
+	if scB.Dim != 1024 {
+		t.Errorf("B dim = %d; want 1024", scB.Dim)
+	}
+}

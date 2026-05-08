@@ -16,7 +16,20 @@ import (
 	"tickets_please/internal/embed"
 	"tickets_please/internal/store"
 	"tickets_please/internal/vecindex"
+	"tickets_please/internal/worker"
 )
+
+// workerJobForTest builds a JobProjectSummary for the per-mount test.
+func workerJobForTest(slug, entryID, text, src, side string) worker.Job {
+	return worker.Job{
+		Kind:        worker.JobProjectSummary,
+		SourcePath:  src,
+		SidecarPath: side,
+		EntryID:     entryID,
+		Owner:       slug,
+		Text:        text,
+	}
+}
 
 // fakeProvider is a deterministic embed.Provider whose dim is parameterised
 // at construction. Used by the per-project test below to mount two projects
@@ -203,6 +216,47 @@ func TestPerProjectEmbedAndIndexes(t *testing.T) {
 	hitsB := idxB.Search(queryBeta, vecindex.KindTicketBody, "beta", 5)
 	if len(hitsB) != 1 || hitsB[0].ID != betaTicketID {
 		t.Errorf("beta search hits = %+v; want one hit %s", hitsB, betaTicketID)
+	}
+}
+
+// TestPerProjectMount_WorkerNoCrossTalk verifies that enqueueing on mount
+// A's worker only writes to A's indexes — B's stay empty. This is the
+// W2-T2 invariant: per-mount workers, no shared state.
+func TestPerProjectMount_WorkerNoCrossTalk(t *testing.T) {
+	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 4})
+	tmp := t.TempDir()
+
+	repoA := seedRepoWithProvider(t, tmp, "repoAlpha", "alpha", "ollama", "nomic-embed-text")
+	repoB := seedRepoWithProvider(t, tmp, "repoBeta", "beta", "ollama", "nomic-embed-text")
+	if _, err := s.RegisterProjectMount(context.Background(), repoA); err != nil {
+		t.Fatalf("mount alpha: %v", err)
+	}
+	if _, err := s.RegisterProjectMount(context.Background(), repoB); err != nil {
+		t.Fatalf("mount beta: %v", err)
+	}
+	mountA := s.projectMounts["alpha"]
+	mountB := s.projectMounts["beta"]
+	if mountA.Worker == nil || mountB.Worker == nil {
+		t.Fatal("per-mount worker not constructed")
+	}
+	if mountA.Worker == mountB.Worker {
+		t.Fatal("alpha and beta share Worker; want distinct goroutines")
+	}
+
+	// Write a fake source file then enqueue onto mountA.Worker only.
+	src := filepath.Join(repoA, ".tickets_please", "summary.md")
+	if err := os.WriteFile(src, []byte("alpha summary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	side := filepath.Join(repoA, ".tickets_please", "summary.embedding.json")
+	mountA.Worker.Enqueue(workerJobForTest("alpha", "p-alpha-id", "alpha summary", src, side))
+	mountA.Worker.Flush(context.Background())
+
+	if mountA.SummaryIdx.Len() == 0 {
+		t.Fatalf("alpha SummaryIdx should have 1 entry after enqueue+flush")
+	}
+	if mountB.SummaryIdx.Len() != 0 {
+		t.Errorf("beta SummaryIdx leaked entries from alpha: len=%d", mountB.SummaryIdx.Len())
 	}
 }
 

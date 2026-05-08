@@ -44,24 +44,6 @@ func (s *Service) hydrateMount(slug string, mount *ProjectMount) {
 		log = slog.Default()
 	}
 
-	// Make sure the worker stamps the right embedder model into every
-	// sidecar it writes from this point on. Per-mount workers (W2-T2) will
-	// move this to per-worker; for now the global worker switches model
-	// per hydrate so the most-recently-mounted project's sidecars land
-	// with the right identity. Idempotent — fine to set on every hydrate.
-	if s.Worker != nil {
-		model := s.Cfg.OllamaModel
-		if mount.Embed != nil {
-			// Re-use the mount's view: probed provider name + the configured
-			// model from project.yaml. Ollama uses Model verbatim; OpenAI
-			// hardcodes its model in the SDK so we still write the cfg-style
-			// label for sidecar identity.
-			view := embedViewFromCfg(s.Cfg, mount.Embed.Name(), "")
-			model = view.Model
-		}
-		s.Worker.SetModel(model)
-	}
-
 	if err := st.WalkProjects(func(_ string, rec *store.ProjectRecord) error {
 		s.hydrateProjectSummary(slug, mount, rec, log)
 		return nil
@@ -228,10 +210,10 @@ func (s *Service) upsertOrEnqueue(
 	if strings.TrimSpace(text) == "" {
 		return
 	}
-	if s.Worker == nil {
+	if mount == nil || mount.Worker == nil {
 		return
 	}
-	s.Worker.Enqueue(worker.Job{
+	mount.Worker.Enqueue(worker.Job{
 		Kind:        jobKind,
 		SourcePath:  srcPath,
 		SidecarPath: sidePath,
