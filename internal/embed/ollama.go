@@ -13,9 +13,6 @@ import (
 	"tickets_please/internal/config"
 )
 
-// ollamaDim is the embedding dimensionality of nomic-embed-text.
-const ollamaDim = 768
-
 // ollamaTimeout caps a single Embed call. The first request after a model load
 // can take 10+ seconds while Ollama warms up, so we leave generous headroom.
 const ollamaTimeout = 60 * time.Second
@@ -26,6 +23,7 @@ type Ollama struct {
 	url    string
 	model  string
 	client *http.Client
+	dim    int
 }
 
 // NewOllama constructs an Ollama provider from cfg. It does not contact the
@@ -38,8 +36,26 @@ func NewOllama(cfg config.Config) *Ollama {
 	}
 }
 
-// Dim returns 768 (nomic-embed-text).
-func (o *Ollama) Dim() int { return ollamaDim }
+// Probe runs a single Embed call against the configured Ollama server and
+// records the resulting vector length. The Service guarantees Probe runs once
+// before any caller asks for Dim().
+func (o *Ollama) Probe(ctx context.Context) error {
+	vec, err := o.Embed(ctx, "ping")
+	if err != nil {
+		return fmt.Errorf("ollama: probe: %w", err)
+	}
+	o.dim = len(vec)
+	return nil
+}
+
+// Dim returns the probed embedding dimensionality. Panics if Probe hasn't run
+// yet — the Service contract guarantees probe-before-use.
+func (o *Ollama) Dim() int {
+	if o.dim == 0 {
+		panic("embed.Ollama: Dim() called before Probe(); Service.New is supposed to probe first")
+	}
+	return o.dim
+}
 
 // Name returns "ollama".
 func (o *Ollama) Name() string { return "ollama" }

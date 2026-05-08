@@ -24,12 +24,6 @@ import (
 	"tickets_please/internal/worker"
 )
 
-// expectedEmbedDim is the on-disk embedding format's fixed dimensionality.
-// Both the JSON sidecars and the in-memory vec index assume 768 floats per
-// vector; switching providers with a different Dim() requires deleting all
-// `*.embedding.json` files first. SPEC §Embedding pipeline pins this.
-const expectedEmbedDim = 768
-
 // defaultMaxLoadedProjects mirrors cache.New's fallback for the same field;
 // the registry's LRU eviction uses it when cfg.MaxLoadedProjects is zero.
 const defaultMaxLoadedProjects = 16
@@ -66,9 +60,15 @@ type Service struct {
 	Cache *cache.ProjectCache
 
 	// Embed is the embedding Provider used by Worker. Built from
-	// cfg.EmbedProvider in New; the dim check happens before Worker starts
-	// so a wrong provider fails loud.
+	// cfg.EmbedProvider in New and probed once before Worker starts so a
+	// dead/misconfigured provider fails loud at startup.
 	Embed embed.Provider
+
+	// EmbedDim is the dimensionality the global Embed provider returns,
+	// captured at startup via provider.Probe. Hydrate uses it to drop
+	// dim-mismatched sidecars; per-project providers (a later wave) will
+	// shadow this field.
+	EmbedDim int
 
 	// Worker is the async embedding goroutine. Handlers Enqueue jobs after
 	// their StageOp commits; the worker drains the queue, writes the JSON
@@ -123,22 +123,21 @@ func New(cfg config.Config) (*Service, error) {
 }
 
 // NewWithEmbed is the same as New but lets the caller inject an
-// embed.Provider. Tests use this to drop in a deterministic fake (sha256 of
-// text → 768 floats) without contacting a real Ollama / OpenAI server.
+// embed.Provider. Tests use this to drop in a deterministic fake without
+// contacting a real Ollama / OpenAI server.
 //
-// The dim check still runs — a fake provider that returns the wrong shape is
-// still a programming error.
+// The provider is probed once before the worker starts; whatever Dim() reports
+// after probe is what the indexes and hydrate use.
 func NewWithEmbed(cfg config.Config, provider embed.Provider) (*Service, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("svc: nil embed provider")
 	}
-	if d := provider.Dim(); d != expectedEmbedDim {
-		return nil, fmt.Errorf(
-			"svc: embed provider %q returns %d-dim vectors but tickets_please pins %d on disk; "+
-				"delete all *.embedding.json sidecars and reconsider the provider before retrying",
-			provider.Name(), d, expectedEmbedDim,
-		)
+	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancelProbe()
+	if err := provider.Probe(probeCtx); err != nil {
+		return nil, fmt.Errorf("svc: probe embed provider %q: %w", provider.Name(), err)
 	}
+	embedDim := provider.Dim()
 
 	// Resolve the central data root. When DataRoot is empty (e.g. in tests that
 	// supply only DataDir) fall back to a sibling tempdir-like path so tests
@@ -175,6 +174,7 @@ func NewWithEmbed(cfg config.Config, provider embed.Provider) (*Service, error) 
 		Logger:        logger,
 		Cfg:           cfg,
 		Embed:         provider,
+		EmbedDim:      embedDim,
 		Worker:        w,
 		SummaryIdx:    indexes.Summaries,
 		TicketsIdx:    indexes.Tickets,

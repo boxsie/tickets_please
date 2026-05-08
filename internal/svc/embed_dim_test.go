@@ -2,36 +2,40 @@ package svc
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"tickets_please/internal/config"
 )
 
-// wrongDimEmbed is a test-only Provider that returns a non-768 dim. Used to
-// confirm the dim mismatch error in NewWithEmbed.
-type wrongDimEmbed struct{}
+// dimEmbed is a test-only Provider whose dim is settable and Probe is a
+// no-op. Used to confirm the dim flows from the provider through Service.EmbedDim.
+type dimEmbed struct{ dim int }
 
-func (wrongDimEmbed) Name() string                                      { return "wrong-dim" }
-func (wrongDimEmbed) Dim() int                                          { return 1536 }
-func (wrongDimEmbed) Embed(_ context.Context, _ string) ([]float32, error) { return nil, nil }
+func (d *dimEmbed) Name() string                  { return "fake-dim" }
+func (d *dimEmbed) Dim() int                      { return d.dim }
+func (d *dimEmbed) Probe(_ context.Context) error { return nil }
+func (d *dimEmbed) Embed(_ context.Context, _ string) ([]float32, error) {
+	return make([]float32, d.dim), nil
+}
 
-func TestNewWithEmbed_RejectsWrongDim(t *testing.T) {
-	cfg := config.Config{
-		DataDir:                t.TempDir(),
-		LockTimeoutSeconds:     5,
-		AgentSessionTTLMinutes: 60,
-		AgentSessionMaxMinutes: 240,
-	}
-	_, err := NewWithEmbed(cfg, wrongDimEmbed{})
-	if err == nil {
-		t.Fatal("expected dim mismatch error, got nil")
-	}
-	if !strings.Contains(err.Error(), "768") || !strings.Contains(err.Error(), "wrong-dim") {
-		t.Errorf("error %q lacks dim/provider context", err)
-	}
-	if !strings.Contains(err.Error(), "embedding.json") {
-		t.Errorf("error %q should hint at deleting *.embedding.json", err)
+func TestNewWithEmbed_DimFlowsFromProvider(t *testing.T) {
+	for _, want := range []int{768, 1024, 1536} {
+		t.Run("", func(t *testing.T) {
+			cfg := config.Config{
+				DataDir:                t.TempDir(),
+				LockTimeoutSeconds:     5,
+				AgentSessionTTLMinutes: 60,
+				AgentSessionMaxMinutes: 240,
+			}
+			s, err := NewWithEmbed(cfg, &dimEmbed{dim: want})
+			if err != nil {
+				t.Fatalf("NewWithEmbed: %v", err)
+			}
+			t.Cleanup(s.Close)
+			if s.EmbedDim != want {
+				t.Errorf("Service.EmbedDim = %d, want %d", s.EmbedDim, want)
+			}
+		})
 	}
 }
 

@@ -29,6 +29,7 @@ type fakeEmbedder struct{}
 
 func (fakeEmbedder) Name() string                                         { return "fake" }
 func (fakeEmbedder) Dim() int                                             { return 768 }
+func (fakeEmbedder) Probe(_ context.Context) error                        { return nil }
 func (fakeEmbedder) Embed(_ context.Context, _ string) ([]float32, error) { return make([]float32, 768), nil }
 
 // freshDeps builds a Deps wired to a clean tempdir-backed Service. Every test

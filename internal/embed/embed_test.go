@@ -34,9 +34,6 @@ func TestNewFactoryOllama(t *testing.T) {
 	if p.Name() != "ollama" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "ollama")
 	}
-	if p.Dim() != 768 {
-		t.Errorf("Dim() = %d, want 768", p.Dim())
-	}
 }
 
 func TestNewFactoryOpenAI(t *testing.T) {
@@ -53,9 +50,6 @@ func TestNewFactoryOpenAI(t *testing.T) {
 	}
 	if p.Name() != "openai" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "openai")
-	}
-	if p.Dim() != 1536 {
-		t.Errorf("Dim() = %d, want 1536", p.Dim())
 	}
 }
 
@@ -144,6 +138,35 @@ func TestOllamaEmbedRequestShape(t *testing.T) {
 			break
 		}
 	}
+}
+
+func TestOllamaProbeRecordsDim(t *testing.T) {
+	for _, dim := range []int{768, 1024} {
+		want := make([]float32, dim)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"embedding": want})
+		}))
+
+		o := NewOllama(config.Config{OllamaURL: srv.URL, OllamaModel: "any-model"})
+		if err := o.Probe(context.Background()); err != nil {
+			t.Fatalf("Probe(dim=%d): %v", dim, err)
+		}
+		if o.Dim() != dim {
+			t.Errorf("Dim() = %d, want %d", o.Dim(), dim)
+		}
+		srv.Close()
+	}
+}
+
+func TestOllamaDimPanicsBeforeProbe(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Dim() before Probe() did not panic")
+		}
+	}()
+	o := NewOllama(config.Config{OllamaURL: "http://unused", OllamaModel: "x"})
+	_ = o.Dim()
 }
 
 func TestOllamaEmbedTrimsTrailingSlash(t *testing.T) {

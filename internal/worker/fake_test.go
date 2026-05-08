@@ -17,8 +17,9 @@ type fakeProvider struct {
 
 func newFake() *fakeProvider { return &fakeProvider{dim: 768} }
 
-func (f *fakeProvider) Name() string { return "fake" }
-func (f *fakeProvider) Dim() int     { return f.dim }
+func (f *fakeProvider) Name() string                  { return "fake" }
+func (f *fakeProvider) Dim() int                      { return f.dim }
+func (f *fakeProvider) Probe(_ context.Context) error { return nil }
 
 func (f *fakeProvider) Embed(_ context.Context, text string) ([]float32, error) {
 	f.calls++
