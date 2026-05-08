@@ -195,10 +195,10 @@ func (s *Service) createProjectImpl(ctx context.Context, repoPath string, target
 		}
 	}
 
-	// Async embed: project summary → resident SummaryIdx. Fire-and-forget;
+	// Async embed: project summary → mount's SummaryIdx. Fire-and-forget;
 	// dropped jobs get picked up by backfill on the next boot.
-	if s.Worker != nil {
-		s.Worker.Enqueue(worker.Job{
+	if mount := s.mountForSlug(slug); mount != nil && mount.Worker != nil {
+		mount.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobProjectSummary,
 			SourcePath:  filepath.Join(targetStore.Root, "summary.md"),
 			SidecarPath: filepath.Join(targetStore.Root, "summary.embedding.json"),
@@ -367,8 +367,8 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	if newSummary != nil {
 		lp.Project.Summary = *newSummary
 		// Re-embed the summary so SearchProjects reflects the edit.
-		if s.Worker != nil {
-			s.Worker.Enqueue(worker.Job{
+		if mount := s.mountForSlug(slug); mount != nil && mount.Worker != nil {
+			mount.Worker.Enqueue(worker.Job{
 				Kind:        worker.JobProjectSummary,
 				SourcePath:  filepath.Join(st.Root, "summary.md"),
 				SidecarPath: filepath.Join(st.Root, "summary.embedding.json"),
@@ -420,8 +420,8 @@ func (s *Service) DeleteProject(ctx context.Context, idOrSlug string) error {
 	// the project dir we're about to RemovePath. Without this, RemoveAll
 	// can race a concurrent sidecar write and leave the project dir
 	// non-empty / partially-removed.
-	if s.Worker != nil {
-		s.Worker.Flush(ctx)
+	if mount := s.mountForSlug(slug); mount != nil && mount.Worker != nil {
+		mount.Worker.Flush(ctx)
 	}
 
 	op, err := st.BeginOp()

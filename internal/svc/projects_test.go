@@ -24,7 +24,15 @@ import (
 func freshServiceWithCfg(t *testing.T, cfg config.Config) *Service {
 	t.Helper()
 	if cfg.DataDir == "" {
-		cfg.DataDir = t.TempDir()
+		// Lay the data dir out the way production stdio does: <repo>/.tickets_please.
+		// CreateProject's post-create RegisterProjectMount only fires when the
+		// data dir's basename is `.tickets_please`, and per-mount workers
+		// require a mount — without this every legacy test would be writing
+		// into nothing.
+		cfg.DataDir = filepath.Join(t.TempDir(), ".tickets_please")
+		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+			t.Fatalf("mkdir DataDir: %v", err)
+		}
 	}
 	// Always use an isolated DataRoot per test so agent yamls never land in the
 	// user's real ~/.tickets_please.

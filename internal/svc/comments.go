@@ -110,11 +110,11 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 		return nil, fmt.Errorf("commit create comment: %w", err)
 	}
 
-	// Async embed: the comment body → resident CommentsIdx.
-	if s.Worker != nil {
+	// Async embed: the comment body → mount's CommentsIdx.
+	if mount := s.mountForSlug(slug); mount != nil && mount.Worker != nil {
 		commentAbs := filepath.Join(st.Root, relCommentPath)
 		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
-		s.Worker.Enqueue(worker.Job{
+		mount.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobComment,
 			SourcePath:  commentAbs,
 			SidecarPath: filepath.Join(filepath.Dir(commentAbs), stem+".embedding.json"),

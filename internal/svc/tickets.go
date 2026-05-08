@@ -145,10 +145,10 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		return nil, fmt.Errorf("commit create ticket: %w", err)
 	}
 
-	// Async embed: title + body → resident TicketsIdx.
-	if s.Worker != nil {
+	// Async embed: title + body → mount's TicketsIdx.
+	if mount := s.mountForSlug(lp.Project.Slug); mount != nil && mount.Worker != nil {
 		ticketDirAbs := filepath.Join(st.Root, ticketDirRel)
-		s.Worker.Enqueue(worker.Job{
+		mount.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobTicketBody,
 			SourcePath:  filepath.Join(ticketDirAbs, "body.md"),
 			SidecarPath: filepath.Join(ticketDirAbs, "body.embedding.json"),
@@ -400,16 +400,18 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 		return nil, fmt.Errorf("commit update ticket: %w", err)
 	}
 
-	if (titleChanged || bodyChanged) && s.Worker != nil {
-		ticketDirAbs := filepath.Join(st.Root, ticketDirRel)
-		s.Worker.Enqueue(worker.Job{
-			Kind:        worker.JobTicketBody,
-			SourcePath:  filepath.Join(ticketDirAbs, "body.md"),
-			SidecarPath: filepath.Join(ticketDirAbs, "body.embedding.json"),
-			EntryID:     rec.ID,
-			Owner:       lp.Project.Slug,
-			Text:        newTitle + "\n\n" + newBody,
-		})
+	if titleChanged || bodyChanged {
+		if mount := s.mountForSlug(lp.Project.Slug); mount != nil && mount.Worker != nil {
+			ticketDirAbs := filepath.Join(st.Root, ticketDirRel)
+			mount.Worker.Enqueue(worker.Job{
+				Kind:        worker.JobTicketBody,
+				SourcePath:  filepath.Join(ticketDirAbs, "body.md"),
+				SidecarPath: filepath.Join(ticketDirAbs, "body.embedding.json"),
+				EntryID:     rec.ID,
+				Owner:       lp.Project.Slug,
+				Text:        newTitle + "\n\n" + newBody,
+			})
+		}
 	}
 
 	// Apply mutations to the cached ticket in place. Lock is held.
@@ -560,10 +562,10 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 	}
 
 	// Async embed: system_move comment.
-	if s.Worker != nil {
+	if mount := s.mountForSlug(slug); mount != nil && mount.Worker != nil {
 		commentAbs := filepath.Join(st.Root, relCommentPath)
 		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
-		s.Worker.Enqueue(worker.Job{
+		mount.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobComment,
 			SourcePath:  commentAbs,
 			SidecarPath: filepath.Join(filepath.Dir(commentAbs), stem+".embedding.json"),
@@ -723,11 +725,11 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		return nil, fmt.Errorf("commit complete ticket: %w", err)
 	}
 
-	// Async embed: learnings → resident LearningsIdx, plus the
-	// system_completion comment → resident CommentsIdx.
-	if s.Worker != nil {
+	// Async embed: learnings → mount's LearningsIdx, plus the
+	// system_completion comment → mount's CommentsIdx.
+	if mount := s.mountForSlug(slug); mount != nil && mount.Worker != nil {
 		ticketDirAbs := filepath.Join(st.Root, relTicketDir)
-		s.Worker.Enqueue(worker.Job{
+		mount.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobTicketLearnings,
 			SourcePath:  filepath.Join(ticketDirAbs, "completion.md"),
 			SidecarPath: filepath.Join(ticketDirAbs, "learnings.embedding.json"),
@@ -737,7 +739,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		})
 		commentAbs := filepath.Join(ticketDirAbs, "comments", commentFilename)
 		stem := strings.TrimSuffix(filepath.Base(commentAbs), ".md")
-		s.Worker.Enqueue(worker.Job{
+		mount.Worker.Enqueue(worker.Job{
 			Kind:        worker.JobComment,
 			SourcePath:  commentAbs,
 			SidecarPath: filepath.Join(filepath.Dir(commentAbs), stem+".embedding.json"),
@@ -858,11 +860,11 @@ func (s *Service) DeleteTicket(ctx context.Context, id string) error {
 		return err
 	}
 
-	// Drain pending embed jobs so the worker doesn't write a sidecar into
-	// the ticket dir we're about to RemovePath. Mirrors DeleteProject /
-	// DeletePhase.
-	if s.Worker != nil {
-		s.Worker.Flush(ctx)
+	// Drain pending embed jobs on the mount's worker so it doesn't write a
+	// sidecar into the ticket dir we're about to RemovePath. Mirrors
+	// DeleteProject / DeletePhase.
+	if mount := s.mountForSlug(hostSlug); mount != nil && mount.Worker != nil {
+		mount.Worker.Flush(ctx)
 	}
 
 	op, err := st.BeginOp()

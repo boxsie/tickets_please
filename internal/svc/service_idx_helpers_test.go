@@ -1,6 +1,32 @@
 package svc
 
-import "tickets_please/internal/vecindex"
+import (
+	"context"
+
+	"tickets_please/internal/vecindex"
+)
+
+// flushAllMountWorkers drains every per-mount worker's queue. Used by
+// integration tests that need to wait for embed jobs to land sidecars and
+// index entries before asserting.
+func (s *Service) flushAllMountWorkers(ctx context.Context) {
+	s.mountsMu.Lock()
+	workers := make([]*workerHandle, 0, len(s.projectMounts))
+	for _, m := range s.projectMounts {
+		if m == nil || m.Worker == nil {
+			continue
+		}
+		workers = append(workers, &workerHandle{flush: m.Worker.Flush})
+	}
+	s.mountsMu.Unlock()
+	for _, w := range workers {
+		w.flush(ctx)
+	}
+}
+
+type workerHandle struct {
+	flush func(context.Context)
+}
 
 // Test-only aggregate views over per-mount indexes + defaultIndexes. The
 // production code (W2-T1 onward) reaches for mountProviderAndIndex or

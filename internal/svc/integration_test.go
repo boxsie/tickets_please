@@ -110,7 +110,7 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 
 	// 8. SearchLearnings finds the completed ticket. Drain any in-flight
 	// embed jobs (Flush is a barrier — blocks until the queue is empty).
-	s.Worker.Flush(ctx)
+	s.flushAllMountWorkers(ctx)
 	waitForIdxLen(t, s.testLearningLen, 1, 5*time.Second)
 	hits, err := s.SearchLearnings(ctx, domain.SearchLearningsInput{Query: ln})
 	if err != nil {
@@ -307,7 +307,7 @@ func TestIntegration_EmbeddingRoundTrip(t *testing.T) {
 	}
 
 	// Drain the worker so the embedding sidecar lands.
-	s.Worker.Flush(ctx)
+	s.flushAllMountWorkers(ctx)
 	waitForIdxLen(t, s.testTicketLen, 1, 5*time.Second)
 
 	// Search uses the same text that was indexed (title + "\n\n" + body).
@@ -363,7 +363,7 @@ func TestIntegration_SearchLearningsFiltersToDone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s.Worker.Flush(ctx)
+	s.flushAllMountWorkers(ctx)
 	waitForIdxLen(t, s.testLearningLen, 1, 5*time.Second)
 
 	hits, err := s.SearchLearnings(ctx, domain.SearchLearningsInput{Query: learningsText})
