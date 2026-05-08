@@ -183,13 +183,19 @@ func (a *app) handleGlobalSettingsUpdate(w http.ResponseWriter, r *http.Request)
 
 // handleReembedAll handles POST /settings/reembed-all. Calls
 // Service.ReembedAllProjects which iterates every cached mount and queues a
-// reembed; flashes the queued count and redirects back to /settings.
+// reembed; flashes the queued count (plus any per-project failures) and
+// redirects back to /settings.
 func (a *app) handleReembedAll(w http.ResponseWriter, r *http.Request) {
-	queued, err := a.deps.Service.ReembedAllProjects(r.Context())
-	if err != nil {
-		// Best-effort: flash the partial result alongside the error so the
-		// user sees both rather than getting a 500 with no context.
-		SetFlash(w, r, "error", fmt.Sprintf("Re-embed enqueued for %d projects (with errors: %s).", queued, err.Error()))
+	queued, failures := a.deps.Service.ReembedAllProjects(r.Context())
+	if len(failures) > 0 {
+		// Render each failure as `<slug>: <err>` so the user can tell which
+		// project blocked the swap and why (probe error message comes
+		// through verbatim from svc.rebuildMountEmbedAssets).
+		parts := make([]string, 0, len(failures))
+		for _, f := range failures {
+			parts = append(parts, fmt.Sprintf("%s: %s", f.Slug, f.Err.Error()))
+		}
+		SetFlash(w, r, "error", fmt.Sprintf("Re-embed enqueued for %d projects; failed for %d: %s.", queued, len(failures), strings.Join(parts, "; ")))
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}

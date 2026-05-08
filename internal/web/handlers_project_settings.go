@@ -150,10 +150,17 @@ func (a *app) handleProjectSettingsUpdate(w http.ResponseWriter, r *http.Request
 // handleProjectReembed handles POST /p/{slug}/reembed. Fires the explicit
 // wipe-and-rebuild path. The button's hx-confirm intercepts the click on the
 // browser side; CSRF is checked by the wrap middleware before we run.
+//
+// On failure (typically a probe error: the project's embed_model isn't pulled
+// in Ollama yet) we flash the verbatim error and redirect back to the
+// settings page so the user can see what went wrong without losing form
+// context. This matches the UpdateProject path: the mount's existing
+// embedder is still live, only the swap was refused.
 func (a *app) handleProjectReembed(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if err := a.deps.Service.ReembedProject(r.Context(), slug); err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		SetFlash(w, r, "error", "Re-embed failed: "+err.Error())
+		http.Redirect(w, r, "/p/"+slug+"/settings", http.StatusSeeOther)
 		return
 	}
 	SetFlash(w, r, "success", "Re-embed enqueued for "+slug+".")

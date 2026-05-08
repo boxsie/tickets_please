@@ -510,9 +510,14 @@ func (s *Service) allocMountIndexesAndWorker(mount *ProjectMount) {
 
 // rebuildMountEmbedAssets is the destructive variant used by ReembedProject
 // when project.yaml's embed_provider/embed_model differ from the mount's
-// currently-cached pair. It stops the existing worker, builds a brand-new
-// embed.Provider (probing for the new dim), then re-allocates the four
-// indexes + a fresh worker around it.
+// currently-cached pair. It builds + probes the new embed.Provider FIRST,
+// and only on success stops the old worker and re-allocates the four
+// indexes + a fresh worker around the new provider.
+//
+// On probe failure the mount is left fully intact (its existing
+// Embed/Worker/indexes survive untouched) and the error is returned so the
+// caller can surface it to the user — the previous "fall back to server
+// default" branch silently lied about the swap and is gone.
 //
 // Caller must hold mountsMu so concurrent reads of mount.Embed/Worker/etc.
 // don't observe a half-swapped state.
@@ -520,23 +525,21 @@ func (s *Service) rebuildMountEmbedAssets(mount *ProjectMount, rec *store.Projec
 	if mount == nil {
 		return fmt.Errorf("svc: rebuild mount embed assets: nil mount")
 	}
-	// Stop the old worker first so its goroutine doesn't keep writing into
-	// soon-to-be-orphaned indexes. A short budget — a stuck provider
-	// shouldn't pin this caller; on timeout we drop the worker anyway.
+	// Build the new provider BEFORE touching the existing assets. If the probe
+	// fails (e.g. user typed `bge-m3` before `ollama pull bge-m3`), we leave
+	// the mount in its pre-rebuild state and return the error verbatim.
+	provider, dim, err := s.buildMountProvider(rec.EmbedProvider, rec.EmbedModel)
+	if err != nil {
+		return err
+	}
+	// New provider is healthy — now it's safe to stop the old worker so its
+	// goroutine doesn't keep writing into soon-to-be-orphaned indexes. A
+	// short budget; on timeout we drop the worker anyway.
 	if mount.Worker != nil {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		mount.Worker.Stop(stopCtx)
 		cancel()
 		mount.Worker = nil
-	}
-	provider, dim, err := s.buildMountProvider(rec.EmbedProvider, rec.EmbedModel)
-	if err != nil {
-		if s.Logger != nil {
-			s.Logger.Warn("svc: per-mount embed rebuild failed; falling back to server default",
-				"slug", rec.Slug, "embed_provider", rec.EmbedProvider, "embed_model", rec.EmbedModel, "err", err)
-		}
-		provider = s.Embed
-		dim = s.EmbedDim
 	}
 	mount.Embed = provider
 	mount.EmbedDim = dim

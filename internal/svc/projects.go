@@ -308,12 +308,18 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 		return nil, err
 	}
 	// If the embed_provider or embed_model changed, kick off a wipe + rebuild
-	// so the mount's indexes/sidecars realign with the new identity. Best-
-	// effort: a stuck reembed shouldn't fail the underlying yaml update that
-	// already committed cleanly.
+	// so the mount's indexes/sidecars realign with the new identity. The
+	// project.yaml write has already committed at this point — if the rebuild
+	// fails (typically a probe error: user picked a model Ollama hasn't pulled
+	// yet) we surface that error to the caller verbatim. The yaml stays
+	// written so a follow-up `ollama pull` + Re-embed (or a service restart)
+	// realises the swap. The mount's existing Embed/Worker/indexes are left
+	// untouched on probe failure (rebuildMountEmbedAssets builds the new
+	// provider before swapping), so search keeps working with the old model
+	// until the user resolves the underlying issue.
 	if embedChanged {
-		if err := s.ReembedProject(ctx, cp.Slug); err != nil && s.Logger != nil {
-			s.Logger.Warn("svc: post-update reembed failed", "slug", cp.Slug, "err", err)
+		if err := s.ReembedProject(ctx, cp.Slug); err != nil {
+			return cp, err
 		}
 	}
 	return cp, nil
@@ -565,12 +571,22 @@ func (s *Service) removeAllSidecars(slug string, st *store.Store) error {
 	return nil
 }
 
+// ReembedFailure is one entry in the slice ReembedAllProjects returns
+// alongside the queued count. Slug identifies the project that failed; Err
+// is the underlying ReembedProject error, typically a probe failure (user
+// picked a model Ollama hasn't pulled yet). The web layer renders these
+// into a "queued for N; failed for M: <slug>: <err>; ..." flash.
+type ReembedFailure struct {
+	Slug string
+	Err  error
+}
+
 // ReembedAllProjects iterates every cached mount and calls ReembedProject on
-// each. Returns the count of projects successfully queued for reembed plus
-// the first error encountered (if any). Subsequent failures are warn-logged
-// but don't stop the iteration — best-effort reembed across all mounts is
-// more useful than aborting on the first stuck project.
-func (s *Service) ReembedAllProjects(ctx context.Context) (int, error) {
+// each. Returns the count of projects successfully queued plus the list of
+// per-project failures. Iteration continues across failures — best-effort
+// reembed across all mounts is more useful than aborting on the first stuck
+// project.
+func (s *Service) ReembedAllProjects(ctx context.Context) (int, []ReembedFailure) {
 	type slugMount struct{ slug string }
 	var slugs []slugMount
 	_ = s.WalkProjectMounts(func(slug string, _ *ProjectMount) error {
@@ -578,12 +594,10 @@ func (s *Service) ReembedAllProjects(ctx context.Context) (int, error) {
 		return nil
 	})
 	queued := 0
-	var firstErr error
+	var failures []ReembedFailure
 	for _, sm := range slugs {
 		if err := s.ReembedProject(ctx, sm.slug); err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
+			failures = append(failures, ReembedFailure{Slug: sm.slug, Err: err})
 			if s.Logger != nil {
 				s.Logger.Warn("reembed all: project failed", "slug", sm.slug, "err", err)
 			}
@@ -591,7 +605,7 @@ func (s *Service) ReembedAllProjects(ctx context.Context) (int, error) {
 		}
 		queued++
 	}
-	return queued, firstErr
+	return queued, failures
 }
 
 // DeleteProject removes a project unconditionally — including any active

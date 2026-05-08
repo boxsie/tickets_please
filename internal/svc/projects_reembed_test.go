@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -218,6 +219,180 @@ func TestReembedAllProjects_TwoMountsDifferentDims(t *testing.T) {
 	}
 	if mountB.EmbedDim != 1024 {
 		t.Errorf("beta EmbedDim after reembed = %d; want 1024", mountB.EmbedDim)
+	}
+}
+
+// probeFailingProvider mimics ollama's "model not found" path: factory hands
+// it out fine, but Probe() returns an error wrapped exactly like
+// internal/embed/ollama does so the verbatim-passthrough test asserts the
+// outer rebuild error still contains the underlying server message.
+type probeFailingProvider struct {
+	name     string
+	probeErr error
+}
+
+func (p *probeFailingProvider) Name() string                  { return p.name }
+func (p *probeFailingProvider) Dim() int                      { return 0 }
+func (p *probeFailingProvider) Probe(_ context.Context) error { return p.probeErr }
+func (p *probeFailingProvider) Embed(_ context.Context, _ string) ([]float32, error) {
+	return nil, p.probeErr
+}
+
+// TestUpdateProject_ProbeFailure_SurfacesError exercises the load-bearing
+// dogfood UX: user POSTs a settings change to a model their Ollama hasn't
+// pulled yet. The probe fails during rebuild; UpdateProject must surface the
+// verbatim error, leave the mount's existing embedder/worker intact, AND
+// still durably write the new project.yaml so a follow-up `ollama pull` +
+// re-embed picks up where the user left off.
+func TestUpdateProject_ProbeFailure_SurfacesError(t *testing.T) {
+	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 4})
+	tmp := t.TempDir()
+
+	probeErr := errors.New(`ollama: probe: ollama: http://localhost:11434/api/embeddings: status 404: {"error":"model \"bge-m3\" not found, try pulling it first"}`)
+	provFor := func(view embed.EmbedConfig) (embed.Provider, error) {
+		switch view.Model {
+		case "nomic-embed-text":
+			return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+		case "bge-m3":
+			return &probeFailingProvider{name: "ollama", probeErr: probeErr}, nil
+		}
+		return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+	}
+	s.EmbedNew = provFor
+
+	repo := seedRepoWithProvider(t, tmp, "repoAlpha", "alpha", "ollama", "nomic-embed-text")
+	if _, err := s.RegisterProjectMount(context.Background(), repo); err != nil {
+		t.Fatalf("mount alpha: %v", err)
+	}
+	ctx, _ := authedCtx(t, s)
+
+	// Snapshot the pre-rebuild mount state so we can confirm it's preserved
+	// after the failed swap.
+	mount := s.mountForSlug("alpha")
+	prevEmbed := mount.Embed
+	prevWorker := mount.Worker
+	prevDim := mount.EmbedDim
+	prevModel := mount.EmbedModel
+	prevSummaryIdx := mount.SummaryIdx
+	prevTicketsIdx := mount.TicketsIdx
+	prevLearningsIdx := mount.LearningsIdx
+	prevCommentsIdx := mount.CommentsIdx
+
+	// Drive the change via the public API: POST shape passes both fields.
+	newProvider := "ollama"
+	newModel := "bge-m3"
+	cp, err := s.UpdateProject(ctx, "alpha", domain.UpdateProjectInput{
+		EmbedProvider: &newProvider,
+		EmbedModel:    &newModel,
+	})
+	if err == nil {
+		t.Fatal("UpdateProject should have returned probe error")
+	}
+	// The verbatim probe message must be in the surfaced error so the user
+	// can read what went wrong (e.g. "model not found, try pulling it first").
+	if !strings.Contains(err.Error(), `model \"bge-m3\" not found`) {
+		t.Errorf("error missing verbatim probe message: %v", err)
+	}
+	// UpdateProject still returns the updated *Project payload alongside the
+	// error — the yaml write committed cleanly, the rebuild is what failed.
+	if cp == nil {
+		t.Fatal("UpdateProject returned nil project alongside probe error")
+	}
+
+	// Mount kept ALL of its pre-rebuild assets — the failed swap must not
+	// have half-stated the mount.
+	mount = s.mountForSlug("alpha")
+	if mount.Embed != prevEmbed {
+		t.Error("mount.Embed swapped despite probe failure")
+	}
+	if mount.Worker != prevWorker {
+		t.Error("mount.Worker swapped despite probe failure")
+	}
+	if mount.EmbedDim != prevDim {
+		t.Errorf("mount.EmbedDim drifted: %d → %d", prevDim, mount.EmbedDim)
+	}
+	if mount.EmbedModel != prevModel {
+		t.Errorf("mount.EmbedModel drifted: %q → %q", prevModel, mount.EmbedModel)
+	}
+	if mount.SummaryIdx != prevSummaryIdx ||
+		mount.TicketsIdx != prevTicketsIdx ||
+		mount.LearningsIdx != prevLearningsIdx ||
+		mount.CommentsIdx != prevCommentsIdx {
+		t.Error("mount indexes were re-allocated despite probe failure")
+	}
+
+	// project.yaml DID get written — the user's intent is recorded for next
+	// time (via W2-T3 staleness or a manual Re-embed after `ollama pull`).
+	rec, err := mount.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatalf("re-read project.yaml: %v", err)
+	}
+	if rec.EmbedModel != "bge-m3" {
+		t.Errorf("project.yaml EmbedModel = %q; want bge-m3 (write should have committed)", rec.EmbedModel)
+	}
+	if rec.EmbedProvider != "ollama" {
+		t.Errorf("project.yaml EmbedProvider = %q; want ollama", rec.EmbedProvider)
+	}
+}
+
+// TestReembedAllProjects_PartialFailure: one mount probes fine, the other
+// fails. Caller gets queued=1 plus a single ReembedFailure entry — the
+// healthy mount didn't get blocked by the broken one.
+func TestReembedAllProjects_PartialFailure(t *testing.T) {
+	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 4})
+	tmp := t.TempDir()
+
+	probeErr := errors.New("model \"bge-m3\" not found")
+	provFor := func(view embed.EmbedConfig) (embed.Provider, error) {
+		switch view.Model {
+		case "nomic-embed-text":
+			return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+		case "bge-m3":
+			return &probeFailingProvider{name: "ollama", probeErr: probeErr}, nil
+		}
+		return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+	}
+	s.EmbedNew = provFor
+
+	repoA := seedRepoWithProvider(t, tmp, "repoAlpha", "alpha", "ollama", "nomic-embed-text")
+	repoB := seedRepoWithProvider(t, tmp, "repoBeta", "beta", "ollama", "nomic-embed-text")
+	if err := os.WriteFile(filepath.Join(repoA, ".tickets_please", "summary.md"), []byte("alpha"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoB, ".tickets_please", "summary.md"), []byte("beta"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RegisterProjectMount(context.Background(), repoA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RegisterProjectMount(context.Background(), repoB); err != nil {
+		t.Fatal(err)
+	}
+	// Hand-edit beta's yaml to point at the broken model so Reembed has to
+	// rebuild against the failing provider.
+	mountB := s.mountForSlug("beta")
+	rec, err := mountB.Store.ReadProject("beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.EmbedModel = "bge-m3"
+	if err := store.WriteYAMLAtomic(filepath.Join(repoB, ".tickets_please", "project.yaml"), rec); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, _ := authedCtx(t, s)
+	queued, failures := s.ReembedAllProjects(ctx)
+	if queued != 1 {
+		t.Errorf("queued = %d; want 1 (alpha succeeds, beta fails)", queued)
+	}
+	if len(failures) != 1 {
+		t.Fatalf("failures = %+v; want 1 entry", failures)
+	}
+	if failures[0].Slug != "beta" {
+		t.Errorf("failure slug = %q; want beta", failures[0].Slug)
+	}
+	if !strings.Contains(failures[0].Err.Error(), "bge-m3") {
+		t.Errorf("failure err missing model name: %v", failures[0].Err)
 	}
 }
 
