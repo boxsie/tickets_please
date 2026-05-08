@@ -172,7 +172,7 @@ func (s *Service) upsertOrEnqueue(
 		// Don't add zero-length or wrong-dim vectors; index.Search would skip
 		// them anyway, but keeping the entries map clean makes Snapshot
 		// smaller and eviction by-owner cheaper.
-		if len(vec) == expectedEmbedDim {
+		if len(vec) == s.EmbedDim {
 			idx.Upsert(vecindex.Entry{
 				ID:    entryID,
 				Kind:  vKind,
@@ -182,7 +182,7 @@ func (s *Service) upsertOrEnqueue(
 			return
 		}
 		log.Debug("hydrate: sidecar dim mismatch, dropping",
-			"slug", slug, "path", sidePath, "got", len(vec), "want", expectedEmbedDim)
+			"slug", slug, "path", sidePath, "got", len(vec), "want", s.EmbedDim)
 		return
 	} else if !errors.Is(err, fs.ErrNotExist) && !os.IsNotExist(err) {
 		log.Warn("hydrate: read sidecar failed", "slug", slug, "path", sidePath, "err", err)

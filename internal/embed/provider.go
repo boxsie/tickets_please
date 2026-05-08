@@ -19,7 +19,12 @@ type Provider interface {
 	// Embed returns the embedding vector for text. Implementations should
 	// honor ctx for cancellation and deadlines.
 	Embed(ctx context.Context, text string) ([]float32, error)
+	// Probe contacts the backend once and records the embedding dim so Dim()
+	// has something to return. The Service contract is that Probe runs once
+	// at startup before anything else asks for Dim().
+	Probe(ctx context.Context) error
 	// Dim is the dimensionality of the vectors this provider returns.
+	// Implementations may panic if called before Probe.
 	Dim() int
 	// Name is a short identifier for logs ("ollama", "openai").
 	Name() string

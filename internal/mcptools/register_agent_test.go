@@ -539,8 +539,9 @@ func contains(s, sub string) bool {
 // of the right shape; no actual search is exercised here.
 type fakeEmbed struct{}
 
-func (f *fakeEmbed) Name() string { return "fake" }
-func (f *fakeEmbed) Dim() int     { return 768 }
+func (f *fakeEmbed) Name() string                  { return "fake" }
+func (f *fakeEmbed) Dim() int                      { return 768 }
+func (f *fakeEmbed) Probe(_ context.Context) error { return nil }
 func (f *fakeEmbed) Embed(_ context.Context, _ string) ([]float32, error) {
 	out := make([]float32, 768)
 	out[0] = 1

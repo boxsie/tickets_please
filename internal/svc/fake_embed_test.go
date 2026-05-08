@@ -16,8 +16,9 @@ type fakeEmbed struct{}
 
 func newFakeEmbed() *fakeEmbed { return &fakeEmbed{} }
 
-func (f *fakeEmbed) Name() string { return "fake" }
-func (f *fakeEmbed) Dim() int     { return 768 }
+func (f *fakeEmbed) Name() string                  { return "fake" }
+func (f *fakeEmbed) Dim() int                      { return 768 }
+func (f *fakeEmbed) Probe(_ context.Context) error { return nil }
 
 func (f *fakeEmbed) Embed(_ context.Context, text string) ([]float32, error) {
 	const dim = 768
