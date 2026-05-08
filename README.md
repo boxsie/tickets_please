@@ -29,10 +29,11 @@ make init-data
 # 2. Drop a sample config at ~/.tickets_please/config.yaml (idempotent).
 make init-config
 
-# 3. Start the embedding provider. Default is Ollama with nomic-embed-text;
-#    swap to OpenAI in ~/.tickets_please/config.yaml if you'd rather.
+# 3. Start the embedding provider. New projects default to Ollama with bge-m3
+#    (8192-token context, 1024-dim); swap to OpenAI in ~/.tickets_please/config.yaml,
+#    or override per-project in `.tickets_please/project.yaml`.
 ollama serve &
-ollama pull nomic-embed-text
+ollama pull bge-m3
 
 # 4. Build the single binary.
 make build
@@ -126,7 +127,7 @@ Three tools are load-bearing for LLM ergonomics:
 ## Highlights
 
 - **Filesystem-backed.** Projects, phases, tickets, comments, agents — all yaml + markdown files in a normal directory. Hand-edit-friendly. Diffable.
-- **Vector search.** Ollama (default, local) or OpenAI. Embeddings live as `*.embedding.json` sidecars next to their source. Brute-force cosine in-memory; pluggable for HNSW.
+- **Vector search.** Ollama (default, local) or OpenAI. Each project picks its own provider + model in its `project.yaml`; the server-wide config is just the template for newly created projects (currently `bge-m3`). Embeddings live as `*.embedding.json` sidecars next to their source. Brute-force cosine in-memory; pluggable for HNSW.
 - **Agent identity.** Every mutating call is attributed. Sessions have a TTL. Audit who-did-what across past work.
 - **Phases & waves.** Optional sub-projects for bigger bodies of work; each phase has a ≥200-char markdown summary an LLM can context-load. Waves are a soft int grouping inside a phase or project.
 - **Subagent-orchestratable.** Tickets carry `depends_on` / `parallelizable_with` / `blocked_by` (computed) plus `wave`, so a swarm of agents can pick ready work in batches.
@@ -140,7 +141,7 @@ Three tools are load-bearing for LLM ergonomics:
 
 ## Tech stack
 
-Go · `github.com/mark3labs/mcp-go` · `github.com/knadh/koanf/v2` · `github.com/fsnotify/fsnotify` · `github.com/google/uuid` · `github.com/go-git/go-git/v5` · `gopkg.in/yaml.v3` · Ollama (`nomic-embed-text`) for embeddings.
+Go · `github.com/mark3labs/mcp-go` · `github.com/knadh/koanf/v2` · `github.com/fsnotify/fsnotify` · `github.com/google/uuid` · `github.com/go-git/go-git/v5` · `gopkg.in/yaml.v3` · Ollama (`bge-m3` by default) for embeddings.
 
 Filesystem storage instead of a database. No protobuf, no gRPC, no docker. One binary, MCP stdio, in-process everything.
 
