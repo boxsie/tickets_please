@@ -1,0 +1,89 @@
+{{define "main"}}
+{{- $f := .Body -}}
+<section class="settings-page">
+  <header class="page-header">
+    <h1>Server settings</h1>
+    <p class="subtitle">
+      Defaults for <em>new</em> projects, plus shared transport bits like the Ollama URL.
+      Existing projects pin their own embedder in <code>project.yaml</code> — flip those via per-project Settings.
+    </p>
+    <p class="muted">
+      Edits write to <code>{{$f.ConfigPath}}</code> and preserve any comments in that file.
+      Loaded from: <code>{{$f.ConfigSource}}</code>.
+    </p>
+  </header>
+
+  {{if $f.FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{$f.FormError}}</div>{{end}}
+
+  <form method="post" action="/settings" class="stack">
+    <label for="embed_provider">Default embed provider (new projects)</label>
+    <select id="embed_provider" name="embed_provider">
+      <option value="ollama" {{if eq $f.EmbedProvider "ollama"}}selected{{end}}>ollama</option>
+      <option value="openai" {{if eq $f.EmbedProvider "openai"}}selected{{end}}>openai</option>
+    </select>
+
+    <label for="embed_model">Default embed model (Ollama)</label>
+    <input type="text" id="embed_model" name="embed_model" value="{{$f.EmbedModel}}" placeholder="nomic-embed-text">
+
+    <label for="ollama_url">Ollama URL</label>
+    <input type="text" id="ollama_url" name="ollama_url" value="{{$f.OllamaURL}}" placeholder="http://localhost:11434">
+
+    <label for="openai_api_key">OpenAI API key</label>
+    <input type="password" id="openai_api_key" name="openai_api_key"
+      placeholder="{{if $f.KeyMasked}}••••••••  (leave blank to keep existing){{else}}sk-…{{end}}"
+      autocomplete="off">
+    {{if $f.KeyMasked}}<p class="muted">A key is currently set. Leaving this blank preserves it; type a new value to overwrite.</p>{{end}}
+
+    <label for="data_dir">Data dir (read-only)</label>
+    <input type="text" id="data_dir" name="data_dir" value="{{$f.DataDir}}" readonly disabled>
+
+    <label for="data_root">Data root (read-only)</label>
+    <input type="text" id="data_root" name="data_root" value="{{$f.DataRoot}}" readonly disabled>
+
+    <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
+    <div class="form-actions">
+      <button type="submit">Save settings</button>
+    </div>
+  </form>
+
+  <h2>Mounted projects</h2>
+  {{if $f.Mounts}}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Slug</th>
+        <th>Embed provider</th>
+        <th>Embed model</th>
+        <th>Dim</th>
+        <th>Re-embed</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range $f.Mounts}}
+      <tr>
+        <td><a href="/p/{{.Slug}}"><code>{{.Slug}}</code></a></td>
+        <td>{{.EmbedName}}</td>
+        <td>{{.EmbedModel}}</td>
+        <td>{{.EmbedDim}}</td>
+        <td>
+          <form method="post" action="/p/{{.Slug}}/reembed" class="inline-form">
+            <input type="hidden" name="_csrf" value="{{$.Chrome.CSRF}}">
+            <button type="submit" class="btn-link">Re-embed</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No projects mounted yet.</p>
+  {{end}}
+
+  <h2>Bulk re-embed</h2>
+  <p class="muted">Re-embed every cached project mount. Useful after switching the default embed model.</p>
+  <form method="post" action="/settings/reembed-all" class="inline-form">
+    <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
+    <button type="submit">Re-embed all projects</button>
+  </form>
+</section>
+{{end}}

@@ -78,6 +78,13 @@ func configPath() (string, error) {
 	return filepath.Join(home, ".tickets_please", "config.yaml"), nil
 }
 
+// UserConfigPath is the exported variant of configPath, used by the web UI to
+// locate the on-disk config file when applying settings updates. Returns the
+// canonical ~/.tickets_please/config.yaml path even when the file does not
+// (yet) exist — callers that need a guaranteed-existing file should fall back
+// to writing the path themselves.
+func UserConfigPath() (string, error) { return configPath() }
+
 // Load builds a Config from layered providers: defaults → file → env.
 // Missing config file is not an error.
 func Load() (Config, error) {
