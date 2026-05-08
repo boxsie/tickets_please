@@ -45,8 +45,9 @@ func (o *Ollama) Dim() int { return ollamaDim }
 func (o *Ollama) Name() string { return "ollama" }
 
 type ollamaRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
+	Model   string         `json:"model"`
+	Prompt  string         `json:"prompt"`
+	Options map[string]any `json:"options,omitempty"`
 }
 
 type ollamaResponse struct {
@@ -55,7 +56,11 @@ type ollamaResponse struct {
 
 // Embed POSTs text to ${url}/api/embeddings and returns the resulting vector.
 func (o *Ollama) Embed(ctx context.Context, text string) ([]float32, error) {
-	body, err := json.Marshal(ollamaRequest{Model: o.model, Prompt: text})
+	body, err := json.Marshal(ollamaRequest{
+		Model:   o.model,
+		Prompt:  text,
+		Options: map[string]any{"num_ctx": 8192},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("ollama: marshal request: %w", err)
 	}
