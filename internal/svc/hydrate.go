@@ -10,9 +10,11 @@ package svc
 //
 // Sidecars that are missing get enqueued via the existing async embed worker
 // so a freshly-cloned repo doesn't pay the embedding latency synchronously
-// during mount. Dimension-mismatched sidecars are silently skipped — the
-// safeguard documented at the index Search layer (entries with the wrong
-// length are ignored at query time) does the rest.
+// during mount. Sidecars whose recorded (Provider, Model) pair doesn't match
+// the mount's expected pair — including the legacy flat-array shape that
+// fails to decode entirely — are deleted and re-enqueued so a config change
+// like flipping `embed_model: nomic-embed-text → bge-m3` triggers a clean
+// rebuild on next start instead of silently mixing models in one index.
 
 import (
 	"errors"
@@ -156,10 +158,12 @@ func (s *Service) hydrateTicketComments(slug string, mount *ProjectMount, ticket
 	}
 }
 
-// upsertOrEnqueue is the per-entry hot path: if the sidecar exists and parses
-// as a vector, Upsert it directly into the resident index. Otherwise read the
-// source text via getText and Enqueue an embed Job. Empty sidecars / empty
-// text / missing source files are silently skipped.
+// upsertOrEnqueue is the per-entry hot path: if the sidecar exists, parses,
+// and was stamped by the mount's current (Provider, Model) pair, Upsert it
+// directly into the resident index. A stale stamp — or any decode error,
+// e.g. a legacy flat-array sidecar — drops the file from disk and falls
+// through to the missing-sidecar branch so the worker re-embeds it under
+// the new identity. Missing source / empty text are silently skipped.
 func (s *Service) upsertOrEnqueue(
 	slug string,
 	mount *ProjectMount,
@@ -170,15 +174,10 @@ func (s *Service) upsertOrEnqueue(
 	getText func() (string, error),
 	log *slog.Logger,
 ) {
-	wantDim := s.EmbedDim
-	if mount != nil && mount.EmbedDim > 0 {
-		wantDim = mount.EmbedDim
-	}
-	if sc, err := vecindex.ReadSidecar(sidePath); err == nil {
-		// Don't add zero-length or wrong-dim vectors; index.Search would skip
-		// them anyway, but keeping the entries map clean makes Snapshot
-		// smaller and eviction by-owner cheaper.
-		if len(sc.Vec) == wantDim {
+	sc, err := vecindex.ReadSidecar(sidePath)
+	switch {
+	case err == nil:
+		if !staleSidecar(sc, mount) {
 			if idx != nil {
 				idx.Upsert(vecindex.Entry{
 					ID:    entryID,
@@ -189,15 +188,23 @@ func (s *Service) upsertOrEnqueue(
 			}
 			return
 		}
-		log.Debug("hydrate: sidecar dim mismatch, dropping",
-			"slug", slug, "path", sidePath, "got", len(sc.Vec), "want", wantDim)
-		return
-	} else if !errors.Is(err, fs.ErrNotExist) && !os.IsNotExist(err) {
-		log.Warn("hydrate: read sidecar failed", "slug", slug, "path", sidePath, "err", err)
-		return
+		log.Debug("sidecar provider/model mismatch, re-embedding",
+			"slug", slug, "path", sidePath,
+			"expected", expectedIdentity(mount),
+			"got", fmt.Sprintf("%s/%s", sc.Provider, sc.Model))
+		dropStaleSidecar(sidePath, slug, log)
+		// fall through to the missing-sidecar enqueue branch below.
+	case errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err):
+		// No sidecar yet — cold-clone path. Fall through to enqueue.
+	default:
+		// Decode error (truncated JSON, legacy flat-array shape, perms, …).
+		// Treat the same as a stale sidecar: warn, drop, re-enqueue.
+		log.Warn("hydrate: read sidecar failed; treating as stale",
+			"slug", slug, "path", sidePath, "err", err)
+		dropStaleSidecar(sidePath, slug, log)
 	}
 
-	// No sidecar — pull source text and hand it to the embed worker.
+	// No usable sidecar — pull source text and hand it to the embed worker.
 	text, err := getText()
 	if err != nil {
 		// Source missing (deleted ticket, no completion.md, etc.) is normal;
@@ -221,6 +228,37 @@ func (s *Service) upsertOrEnqueue(
 		Owner:       slug,
 		Text:        text,
 	})
+}
+
+// staleSidecar reports whether sc was stamped by a different (Provider, Model)
+// pair than mount currently expects. A nil mount or one without an Embed
+// provider can't compare, so it's treated as not-stale (lets the legacy
+// fallback path keep working in tests that build mounts by hand).
+func staleSidecar(sc vecindex.Sidecar, mount *ProjectMount) bool {
+	if mount == nil || mount.Embed == nil {
+		return false
+	}
+	return sc.Provider != mount.Embed.Name() || sc.Model != mount.EmbedModel
+}
+
+// expectedIdentity formats the mount's expected (Provider, Model) pair for
+// log fields. Pulled out so the log call stays readable.
+func expectedIdentity(mount *ProjectMount) string {
+	if mount == nil || mount.Embed == nil {
+		return "/"
+	}
+	return fmt.Sprintf("%s/%s", mount.Embed.Name(), mount.EmbedModel)
+}
+
+// dropStaleSidecar removes a sidecar that's been judged unusable. A failure
+// to remove is warn-logged but doesn't propagate — the worker write that
+// follows the re-enqueue uses an atomic rename, so a leftover file gets
+// overwritten on the next pass anyway.
+func dropStaleSidecar(sidePath, slug string, log *slog.Logger) {
+	if err := os.Remove(sidePath); err != nil && !errors.Is(err, fs.ErrNotExist) && !os.IsNotExist(err) {
+		log.Warn("hydrate: remove stale sidecar failed",
+			"slug", slug, "path", sidePath, "err", err)
+	}
 }
 
 // extractLearningsSection mirrors worker.extractLearnings but lives here to
