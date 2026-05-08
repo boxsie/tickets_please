@@ -487,6 +487,15 @@ func (s *Service) attachMountEmbedAssets(mount *ProjectMount, rec *store.Project
 		view := embedViewFromCfg(s.Cfg, rec.EmbedProvider, rec.EmbedModel)
 		mount.EmbedModel = view.Model
 	}
+	s.allocMountIndexesAndWorker(mount)
+	return nil
+}
+
+// allocMountIndexesAndWorker (re)allocates fresh empty indexes and a fresh
+// embed Worker for the mount, using whatever Embed/EmbedModel the mount
+// currently carries. Caller is responsible for stopping any pre-existing
+// worker before invoking this — otherwise the goroutine leaks.
+func (s *Service) allocMountIndexesAndWorker(mount *ProjectMount) {
 	mount.SummaryIdx = vecindex.New()
 	mount.TicketsIdx = vecindex.New()
 	mount.LearningsIdx = vecindex.New()
@@ -497,6 +506,43 @@ func (s *Service) attachMountEmbedAssets(mount *ProjectMount, rec *store.Project
 		Learnings: mount.LearningsIdx,
 		Comments:  mount.CommentsIdx,
 	}, 256, s.Logger)
+}
+
+// rebuildMountEmbedAssets is the destructive variant used by ReembedProject
+// when project.yaml's embed_provider/embed_model differ from the mount's
+// currently-cached pair. It stops the existing worker, builds a brand-new
+// embed.Provider (probing for the new dim), then re-allocates the four
+// indexes + a fresh worker around it.
+//
+// Caller must hold mountsMu so concurrent reads of mount.Embed/Worker/etc.
+// don't observe a half-swapped state.
+func (s *Service) rebuildMountEmbedAssets(mount *ProjectMount, rec *store.ProjectRecord) error {
+	if mount == nil {
+		return fmt.Errorf("svc: rebuild mount embed assets: nil mount")
+	}
+	// Stop the old worker first so its goroutine doesn't keep writing into
+	// soon-to-be-orphaned indexes. A short budget — a stuck provider
+	// shouldn't pin this caller; on timeout we drop the worker anyway.
+	if mount.Worker != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		mount.Worker.Stop(stopCtx)
+		cancel()
+		mount.Worker = nil
+	}
+	provider, dim, err := s.buildMountProvider(rec.EmbedProvider, rec.EmbedModel)
+	if err != nil {
+		if s.Logger != nil {
+			s.Logger.Warn("svc: per-mount embed rebuild failed; falling back to server default",
+				"slug", rec.Slug, "embed_provider", rec.EmbedProvider, "embed_model", rec.EmbedModel, "err", err)
+		}
+		provider = s.Embed
+		dim = s.EmbedDim
+	}
+	mount.Embed = provider
+	mount.EmbedDim = dim
+	view := embedViewFromCfg(s.Cfg, rec.EmbedProvider, rec.EmbedModel)
+	mount.EmbedModel = view.Model
+	s.allocMountIndexesAndWorker(mount)
 	return nil
 }
 

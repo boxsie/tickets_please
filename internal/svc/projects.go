@@ -303,6 +303,28 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	if err != nil {
 		return nil, err
 	}
+	cp, embedChanged, err := s.updateProjectLocked(ctx, lp, st, agent, in)
+	if err != nil {
+		return nil, err
+	}
+	// If the embed_provider or embed_model changed, kick off a wipe + rebuild
+	// so the mount's indexes/sidecars realign with the new identity. Best-
+	// effort: a stuck reembed shouldn't fail the underlying yaml update that
+	// already committed cleanly.
+	if embedChanged {
+		if err := s.ReembedProject(ctx, cp.Slug); err != nil && s.Logger != nil {
+			s.Logger.Warn("svc: post-update reembed failed", "slug", cp.Slug, "err", err)
+		}
+	}
+	return cp, nil
+}
+
+// updateProjectLocked is the inner half of UpdateProject — runs under the
+// per-project Lock and returns whether the embed identity changed so the
+// caller can fire ReembedProject after dropping the lock (ReembedProject
+// re-acquires Cache.Get's RLock, so it can't run while we hold the write
+// lock here).
+func (s *Service) updateProjectLocked(ctx context.Context, lp *cache.LoadedProject, st *store.Store, agent *domain.Agent, in domain.UpdateProjectInput) (*domain.Project, bool, error) {
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -310,7 +332,7 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	var newSummary *string
 	if in.Summary != nil {
 		if err := requireSummary("summary", *in.Summary); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		newSummary = in.Summary
 	}
@@ -321,8 +343,9 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	// about (forward-compat: an older binary plus newer yaml shape).
 	rec, err := st.ReadProject(slug)
 	if err != nil {
-		return nil, fmt.Errorf("read project: %w", err)
+		return nil, false, fmt.Errorf("read project: %w", err)
 	}
+	embedChanged := false
 	if in.Name != nil {
 		rec.Name = normalizeLabel(*in.Name)
 	}
@@ -330,34 +353,42 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 		rec.Description = normalizeLabel(*in.Description)
 	}
 	if in.EmbedProvider != nil {
-		rec.EmbedProvider = strings.TrimSpace(*in.EmbedProvider)
+		newP := strings.TrimSpace(*in.EmbedProvider)
+		if newP != rec.EmbedProvider {
+			embedChanged = true
+		}
+		rec.EmbedProvider = newP
 	}
 	if in.EmbedModel != nil {
-		rec.EmbedModel = strings.TrimSpace(*in.EmbedModel)
+		newM := strings.TrimSpace(*in.EmbedModel)
+		if newM != rec.EmbedModel {
+			embedChanged = true
+		}
+		rec.EmbedModel = newM
 	}
 	rec.UpdatedAt = time.Now()
 
 	yamlBytes, err := store.MarshalYAML(rec)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	op, err := st.BeginOp()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer op.Abort()
 	if err := op.Write("project.yaml", yamlBytes); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if newSummary != nil {
 		if err := op.Write("summary.md", []byte(ensureTrailingNewline(*newSummary))); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 	caption := fmt.Sprintf("update project %s", slug)
 	if err := op.Commit(ctx, store.LockProject(slug), agent, caption); err != nil {
-		return nil, fmt.Errorf("commit update project: %w", err)
+		return nil, false, fmt.Errorf("commit update project: %w", err)
 	}
 
 	// Mutate the cached project in place. Lock is held above.
@@ -367,20 +398,200 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	if newSummary != nil {
 		lp.Project.Summary = *newSummary
 		// Re-embed the summary so the mount's SummaryIdx reflects the edit.
-		if mount := s.mountForSlug(slug); mount != nil && mount.Worker != nil {
-			mount.Worker.Enqueue(worker.Job{
-				Kind:        worker.JobProjectSummary,
-				SourcePath:  filepath.Join(st.Root, "summary.md"),
-				SidecarPath: filepath.Join(st.Root, "summary.embedding.json"),
-				EntryID:     rec.ID,
-				Owner:       slug,
-				Text:        *newSummary,
-			})
+		// (Skipped when embed_provider/embed_model also changed — the caller
+		// will trigger a full ReembedProject which handles the summary too.)
+		if !embedChanged {
+			if mount := s.mountForSlug(slug); mount != nil && mount.Worker != nil {
+				mount.Worker.Enqueue(worker.Job{
+					Kind:        worker.JobProjectSummary,
+					SourcePath:  filepath.Join(st.Root, "summary.md"),
+					SidecarPath: filepath.Join(st.Root, "summary.embedding.json"),
+					EntryID:     rec.ID,
+					Owner:       slug,
+					Text:        *newSummary,
+				})
+			}
 		}
 	}
 
 	cp := *lp.Project
-	return &cp, nil
+	return &cp, embedChanged, nil
+}
+
+// ReembedProject wipes every `*.embedding.json` sidecar for the given project
+// and re-enqueues every source file via the mount's embed worker. The call
+// returns immediately — the worker drains async. Used by the Settings page
+// (W5) and the MCP tool (W3-T2) to recover from corrupted sidecars or to
+// realize an embed_provider/embed_model change made via UpdateProject (which
+// auto-triggers this path) or by hand-editing project.yaml.
+//
+// If project.yaml's (embed_provider, embed_model) differs from the mount's
+// currently-cached pair, the mount's Embed/indexes/Worker are torn down and
+// rebuilt at the new dim before the walk + hydrate; this is the load-bearing
+// "switched models, including different dims" recovery path.
+func (s *Service) ReembedProject(ctx context.Context, idOrSlug string) error {
+	ctx, _, err := s.requireSession(ctx)
+	if err != nil {
+		return err
+	}
+
+	lp, _, err := s.Cache.Get(ctx, idOrSlug)
+	if err != nil {
+		return err
+	}
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
+	if err != nil {
+		return err
+	}
+
+	lp.Lock.RLock()
+	slug := lp.Project.Slug
+	lp.Lock.RUnlock()
+
+	// Re-read the on-disk project.yaml so we observe any embed_provider/
+	// embed_model edit that was just persisted (UpdateProject writes yaml
+	// before calling us; manual yaml edits also flow through here).
+	rec, err := st.ReadProject(slug)
+	if err != nil {
+		return fmt.Errorf("read project: %w", err)
+	}
+
+	mount := s.mountForSlug(slug)
+	if mount == nil {
+		return fmt.Errorf("svc: project %q not mounted", slug)
+	}
+
+	// If the yaml's (provider, model) drifted from the mount's cached pair,
+	// rebuild Embed/indexes/Worker at the new dim. Hold mountsMu for the
+	// swap so concurrent search/index reads can't observe a half-swapped
+	// state. Lock is dropped before the long-running walk + hydrate.
+	view := embedViewFromCfg(s.Cfg, rec.EmbedProvider, rec.EmbedModel)
+	s.mountsMu.Lock()
+	needRebuild := mount.Embed == nil ||
+		mount.Embed.Name() != view.Provider ||
+		mount.EmbedModel != view.Model
+	if needRebuild {
+		if err := s.rebuildMountEmbedAssets(mount, rec); err != nil {
+			s.mountsMu.Unlock()
+			return err
+		}
+	}
+	s.mountsMu.Unlock()
+
+	// Flush BEFORE the destructive walk so no in-flight job can write a
+	// sidecar back into the doomed-set after we've removed it. Generalizes
+	// the "Flush before tree-removal" rule from DeleteTicket / DeletePhase
+	// to "Flush before any destructive sidecar walk".
+	if mount.Worker != nil {
+		mount.Worker.Flush(ctx)
+	}
+
+	// Take the project lock for the duration of the walk + remove. Serializes
+	// against concurrent UpdateProject / Delete* on this slug. We don't use a
+	// StageOp because sidecars are gitignored — there's no audit trail to
+	// preserve and no commit caption that would make sense.
+	if err := st.WithProjectLock(ctx, slug, func() error {
+		return s.removeAllSidecars(slug, st)
+	}); err != nil {
+		return fmt.Errorf("reembed walk: %w", err)
+	}
+
+	// Re-enqueue everything via the mount's worker. hydrateMount's
+	// upsertOrEnqueue branch handles the missing-sidecar case by reading
+	// source text and submitting a Job — which is exactly what we want.
+	s.hydrateMount(slug, mount)
+	return nil
+}
+
+// removeAllSidecars walks the project tree and os.Removes every
+// `*.embedding.json` sibling of every source file. Missing-file is swallowed
+// (errors.Is(fs.ErrNotExist)); other errors warn-log but continue — we'd
+// rather get a partial wipe than abort midway and leave a half-deleted state.
+func (s *Service) removeAllSidecars(slug string, st *store.Store) error {
+	log := s.Logger
+	rm := func(path string) {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			if log != nil {
+				log.Warn("reembed: remove sidecar failed", "slug", slug, "path", path, "err", err)
+			}
+		}
+	}
+
+	// Project summary sidecar.
+	if err := st.WalkProjects(func(_ string, _ *store.ProjectRecord) error {
+		rm(filepath.Join(st.ProjectDir(slug), "summary.embedding.json"))
+		return nil
+	}); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("walk projects: %w", err)
+	}
+
+	// Phase summary sidecars.
+	if err := st.WalkPhases(slug, func(rec *store.PhaseRecord) error {
+		dirName := fmt.Sprintf("%03d-%s", rec.Number, rec.Slug)
+		rm(filepath.Join(st.PhaseDir(slug, dirName), "summary.embedding.json"))
+		return nil
+	}); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("walk phases: %w", err)
+	}
+
+	// Ticket body + learnings sidecars + comment sidecars.
+	if err := st.WalkTickets(slug, func(ticketDir, _ string, _ *store.TicketRecord) error {
+		rm(filepath.Join(ticketDir, "body.embedding.json"))
+		rm(filepath.Join(ticketDir, "learnings.embedding.json"))
+		commentsDir := filepath.Join(ticketDir, "comments")
+		entries, err := os.ReadDir(commentsDir)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			if log != nil {
+				log.Warn("reembed: read comments dir failed", "slug", slug, "dir", commentsDir, "err", err)
+			}
+			return nil
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if strings.HasSuffix(name, ".embedding.json") {
+				rm(filepath.Join(commentsDir, name))
+			}
+		}
+		return nil
+	}); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("walk tickets: %w", err)
+	}
+	return nil
+}
+
+// ReembedAllProjects iterates every cached mount and calls ReembedProject on
+// each. Returns the count of projects successfully queued for reembed plus
+// the first error encountered (if any). Subsequent failures are warn-logged
+// but don't stop the iteration — best-effort reembed across all mounts is
+// more useful than aborting on the first stuck project.
+func (s *Service) ReembedAllProjects(ctx context.Context) (int, error) {
+	type slugMount struct{ slug string }
+	var slugs []slugMount
+	_ = s.WalkProjectMounts(func(slug string, _ *ProjectMount) error {
+		slugs = append(slugs, slugMount{slug: slug})
+		return nil
+	})
+	queued := 0
+	var firstErr error
+	for _, sm := range slugs {
+		if err := s.ReembedProject(ctx, sm.slug); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			if s.Logger != nil {
+				s.Logger.Warn("reembed all: project failed", "slug", sm.slug, "err", err)
+			}
+			continue
+		}
+		queued++
+	}
+	return queued, firstErr
 }
 
 // DeleteProject removes a project unconditionally — including any active
