@@ -2,12 +2,14 @@ id: 3d543207-fca8-4d88-8be9-833730c0e757
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 41
 title: 'Hydrate: sidecar metadata mismatch → re-enqueue'
-column: testing
+column: done
 phase_id: 69d6390c-3565-4e70-b82e-022b69c68f82
 wave: 2
 depends_on:
     - 69c057de-475e-4d7f-b32c-1c818538688f
     - 6d6e83c3-a0dd-46d1-80bf-33e5de3332c2
 created_by: 3868e790-8a50-4ed1-9964-3d778ce7c3fb
+completed_by: 2a13dcea-f31d-46e2-8fd8-29f333ddfc79
+completed_at: 2026-05-08T14:32:40.010755875+01:00
 created_at: 2026-05-08T11:30:22.519308784+01:00
-updated_at: 2026-05-08T14:31:43.690708818+01:00
+updated_at: 2026-05-08T14:32:40.010755875+01:00
