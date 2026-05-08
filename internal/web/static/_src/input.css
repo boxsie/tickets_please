@@ -123,20 +123,50 @@
     flex-shrink: 0;
   }
   .topbar .brand:hover { text-decoration: none; opacity: 0.85; }
-  .topbar .search { flex: 1; max-width: 36rem; margin: 0 0.5rem; }
+  .topbar .search {
+    position: relative;
+    flex: 1;
+    max-width: 28rem;
+    min-width: 12rem;
+    margin: 0 0.5rem;
+    display: flex;
+    align-items: center;
+  }
+  .topbar .search .search-icon {
+    position: absolute;
+    left: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--fg-faint);
+    display: inline-flex;
+    align-items: center;
+    pointer-events: none;
+    transition: color 0.1s;
+  }
   .topbar .search input[type="search"] {
     width: 100%;
     background: var(--bg);
     color: var(--fg);
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     border-radius: 6px;
-    padding: 0.42rem 0.75rem;
+    padding: 0.42rem 0.75rem 0.42rem 2rem;
     font-size: 0.88rem;
+    transition: border-color 0.1s, box-shadow 0.1s, background 0.1s;
+  }
+  .topbar .search input[type="search"]::placeholder {
+    color: var(--fg-faint);
+  }
+  .topbar .search input[type="search"]:hover {
+    border-color: var(--fg-faint);
   }
   .topbar .search input[type="search"]:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(106,169,255,0.18);
+    background: var(--bg-elev-2);
+  }
+  .topbar .search:focus-within .search-icon {
+    color: var(--accent);
   }
   .topbar .agent {
     display: inline-flex;
