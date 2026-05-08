@@ -274,6 +274,14 @@ func TestSmoke_ProjectSearch_HappyPath(t *testing.T) {
 	if !strings.Contains(s, `action="/p/`+slug+`/search"`) {
 		t.Errorf("topbar search form missing on project page\n%s", s)
 	}
+	// Topbar search box should carry its inline magnifying-glass icon and
+	// the polished `.search` chrome class (not just the bare wrapper).
+	if !strings.Contains(s, `class="search-icon"`) {
+		t.Errorf("topbar search icon wrapper missing on project page\n%s", s)
+	}
+	if !strings.Contains(s, "<svg") {
+		t.Errorf("topbar search SVG missing on project page\n%s", s)
+	}
 }
 
 // TestSmoke_ProjectSearch_TwoProject verifies project-A search returns no
