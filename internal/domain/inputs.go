@@ -89,9 +89,11 @@ type SearchLearningsInput struct {
 // UpdateProjectInput is accepted by Service.UpdateProject. Pointer fields are
 // optional: nil means "leave unchanged". Summary edits trigger re-embedding.
 type UpdateProjectInput struct {
-	Name        *string
-	Description *string
-	Summary     *string
+	Name          *string
+	Description   *string
+	Summary       *string
+	EmbedProvider *string
+	EmbedModel    *string
 }
 
 // UpdatePhaseInput is accepted by Service.UpdatePhase. Pointer fields are

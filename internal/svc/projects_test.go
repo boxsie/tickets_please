@@ -93,6 +93,56 @@ func TestCreateProject_Happy(t *testing.T) {
 	}
 }
 
+// CreateProject stamps the embed provider/model from cfg into the on-disk
+// project.yaml so each project carries its own embedding declaration.
+func TestCreateProject_StampsEmbedFromCfg(t *testing.T) {
+	s := freshServiceWithCfg(t, config.Config{
+		EmbedProvider: "ollama",
+		OllamaModel:   "nomic-embed-text",
+	})
+	ctx, _ := authedCtx(t, s)
+	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := s.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.EmbedProvider != "ollama" || rec.EmbedModel != "nomic-embed-text" {
+		t.Fatalf("embed fields: provider=%q model=%q", rec.EmbedProvider, rec.EmbedModel)
+	}
+	body, err := os.ReadFile(filepath.Join(s.Store.Root, "project.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "embed_provider: ollama") {
+		t.Fatalf("yaml missing embed_provider line:\n%s", body)
+	}
+	if !strings.Contains(string(body), "embed_model: nomic-embed-text") {
+		t.Fatalf("yaml missing embed_model line:\n%s", body)
+	}
+}
+
+// OpenAI cfg gets the hardcoded text-embedding-3-small default since there's
+// no separate OpenAIModel knob in config.
+func TestCreateProject_OpenAIDefaultModel(t *testing.T) {
+	s := freshServiceWithCfg(t, config.Config{
+		EmbedProvider: "openai",
+		OllamaModel:   "nomic-embed-text", // present but ignored for openai
+	})
+	ctx, _ := authedCtx(t, s)
+	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := s.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.EmbedProvider != "openai" || rec.EmbedModel != "text-embedding-3-small" {
+		t.Fatalf("embed fields: provider=%q model=%q", rec.EmbedProvider, rec.EmbedModel)
+	}
+}
+
 func TestCreateProject_RejectsShortSummary(t *testing.T) {
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx, _ := authedCtx(t, s)
@@ -288,6 +338,103 @@ func TestUpdateProject_ChangesNameAndSummary(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(disk), newSummary) {
 		t.Fatalf("disk summary did not pick up update: %q", string(disk[:50]))
+	}
+}
+
+// UpdateProject writes embed_provider/embed_model when the input pointers are
+// set and leaves them alone when nil — round-tripping the on-disk yaml.
+func TestUpdateProject_WritesEmbedFields(t *testing.T) {
+	s := freshServiceWithCfg(t, config.Config{
+		EmbedProvider: "ollama",
+		OllamaModel:   "nomic-embed-text",
+	})
+	ctx, _ := authedCtx(t, s)
+	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
+		t.Fatal(err)
+	}
+
+	newProvider := "openai"
+	newModel := "text-embedding-3-small"
+	if _, err := s.UpdateProject(ctx, "alpha", domain.UpdateProjectInput{
+		EmbedProvider: &newProvider,
+		EmbedModel:    &newModel,
+	}); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	rec, err := s.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.EmbedProvider != newProvider || rec.EmbedModel != newModel {
+		t.Fatalf("embed fields after update: provider=%q model=%q", rec.EmbedProvider, rec.EmbedModel)
+	}
+
+	// A no-op update doesn't clobber what's already there.
+	newName := "Alpha v2"
+	if _, err := s.UpdateProject(ctx, "alpha", domain.UpdateProjectInput{Name: &newName}); err != nil {
+		t.Fatal(err)
+	}
+	rec, err = s.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.EmbedProvider != newProvider || rec.EmbedModel != newModel {
+		t.Fatalf("embed fields lost after unrelated update: %+v", rec)
+	}
+}
+
+// project.yaml fixtures from older binaries lack embed fields. omitempty plus
+// re-read-then-write means UpdateProject backfills them only when the form
+// supplies them; otherwise the record continues to load cleanly with empty
+// strings.
+func TestUpdateProject_LegacyYamlWithoutEmbedFieldsLoads(t *testing.T) {
+	s := freshServiceWithCfg(t, config.Config{})
+	ctx, _ := authedCtx(t, s)
+	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
+		t.Fatal(err)
+	}
+	// Overwrite project.yaml with a legacy shape (no embed fields).
+	yamlPath := filepath.Join(s.Store.Root, "project.yaml")
+	rec, err := s.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.EmbedProvider = ""
+	rec.EmbedModel = ""
+	bytes, err := store.MarshalYAML(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(yamlPath, bytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(bytes), "embed_provider") {
+		t.Fatalf("fixture still mentions embed_provider:\n%s", bytes)
+	}
+
+	// Re-read works (omitempty leaves them as zero values).
+	got, err := s.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatalf("re-read legacy yaml: %v", err)
+	}
+	if got.EmbedProvider != "" || got.EmbedModel != "" {
+		t.Fatalf("expected zero embed fields, got %+v", got)
+	}
+
+	// Next UpdateProject backfills when supplied.
+	prov, model := "ollama", "nomic-embed-text"
+	if _, err := s.UpdateProject(ctx, "alpha", domain.UpdateProjectInput{
+		EmbedProvider: &prov,
+		EmbedModel:    &model,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EmbedProvider != prov || got.EmbedModel != model {
+		t.Fatalf("backfill failed: %+v", got)
 	}
 }
 
