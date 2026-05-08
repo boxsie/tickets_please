@@ -2,12 +2,16 @@ package web
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/svc"
+	"tickets_please/internal/vecindex"
 )
 
 // TestSmoke_EndToEnd runs the full happy-path flow against the wired-up
@@ -207,5 +211,175 @@ func TestSmoke_AuditTrail(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("user comment missing from thread")
+	}
+}
+
+// upsertTicketIntoMount embeds `text` via the mount's provider and Upserts
+// it as a KindTicketBody entry into the mount's TicketsIdx. Mirrors what the
+// embed worker would do but synchronous so the test doesn't have to race the
+// worker.
+func upsertTicketIntoMount(t *testing.T, deps Deps, slug, ticketID, text string) {
+	t.Helper()
+	var mount *svc.ProjectMount
+	_ = deps.Service.WalkProjectMounts(func(s string, m *svc.ProjectMount) error {
+		if s == slug {
+			mount = m
+		}
+		return nil
+	})
+	if mount == nil {
+		t.Fatalf("mount %q not registered", slug)
+	}
+	vec, err := mount.Embed.Embed(context.Background(), text)
+	if err != nil {
+		t.Fatalf("embed: %v", err)
+	}
+	mount.TicketsIdx.Upsert(vecindex.Entry{
+		ID:    ticketID,
+		Kind:  vecindex.KindTicketBody,
+		Owner: slug,
+		Vec:   vec,
+	})
+}
+
+// TestSmoke_ProjectSearch_HappyPath registers a project, creates a ticket,
+// upserts it into the resident TicketsIdx with the same vec the search will
+// produce, and confirms GET /p/{slug}/search?q=...&kind=tickets returns 200
+// with the ticket title in the body.
+func TestSmoke_ProjectSearch_HappyPath(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, tid := seedProjectAndTicket(t, deps, "psh", "Search Hit")
+	// Synthesise an index entry for the ticket using a known query string —
+	// the test issues that exact string as q so the deterministic fakeEmbedder
+	// produces an identical vector and cosine == 1.0.
+	upsertTicketIntoMount(t, deps, slug, tid, "embed needle")
+
+	resp, err := client.Get(srv.URL + "/p/" + slug + "/search?q=embed+needle&kind=tickets")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	s := string(body)
+	if !strings.Contains(s, "Search Hit") {
+		t.Errorf("ticket title missing from results\n%s", s)
+	}
+	if !strings.Contains(s, "/tickets/"+tid) {
+		t.Errorf("hit link missing\n%s", s)
+	}
+	// Topbar search form should be present (CurrentSlug wired through).
+	if !strings.Contains(s, `action="/p/`+slug+`/search"`) {
+		t.Errorf("topbar search form missing on project page\n%s", s)
+	}
+}
+
+// TestSmoke_ProjectSearch_TwoProject verifies project-A search returns no
+// hits owned by project-B's TicketsIdx — the per-mount routing is what keeps
+// the two indexes from contaminating one another.
+func TestSmoke_ProjectSearch_TwoProject(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	tmp := t.TempDir()
+	repoA := seedRepoOnDisk(t, tmp, "repo-a", "proj-a")
+	repoB := seedRepoOnDisk(t, tmp, "repo-b", "proj-b")
+	if _, err := deps.Service.RegisterProjectMount(context.Background(), repoA); err != nil {
+		t.Fatalf("mount A: %v", err)
+	}
+	if _, err := deps.Service.RegisterProjectMount(context.Background(), repoB); err != nil {
+		t.Fatalf("mount B: %v", err)
+	}
+	// CreateTicket requires an authenticated agent.
+	id, _, err := deps.Service.RegisterAgent(context.Background(), "two-proj-fixture", "two-proj",
+		map[string]string{"client_name": "test"}, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(context.Background(), id)
+	tA, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+		ProjectIDOrSlug: "proj-a", Title: "Alpha-Only Ticket", Body: "alpha body",
+	})
+	if err != nil {
+		t.Fatalf("create ticket A: %v", err)
+	}
+	tB, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+		ProjectIDOrSlug: "proj-b", Title: "Beta-Only Ticket", Body: "beta body",
+	})
+	if err != nil {
+		t.Fatalf("create ticket B: %v", err)
+	}
+	tidA, tidB := tA.ID, tB.ID
+	upsertTicketIntoMount(t, deps, "proj-a", tidA, "alpha needle text")
+	upsertTicketIntoMount(t, deps, "proj-b", tidB, "beta needle text")
+
+	// Search proj-a for beta's text — no hit (cosine differs, but more
+	// importantly we shouldn't see beta's id leak through).
+	resp, err := client.Get(srv.URL + "/p/proj-a/search?q=beta+needle+text&kind=tickets")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	s := string(body)
+	if strings.Contains(s, tidB) {
+		t.Errorf("proj-a search leaked proj-b ticket id %s\n%s", tidB, s)
+	}
+	if strings.Contains(s, "Beta-Only Ticket") {
+		t.Errorf("proj-a search leaked proj-b ticket title\n%s", s)
+	}
+}
+
+// TestSmoke_ProjectSearch_HxRequest_Fragment confirms HX-Request returns just
+// the results partial — no <html>, no sidebar.
+func TestSmoke_ProjectSearch_HxRequest_Fragment(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, tid := seedProjectAndTicket(t, deps, "hxs", "HX Search")
+	upsertTicketIntoMount(t, deps, slug, tid, "needle hx")
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/p/"+slug+"/search?q=needle+hx&kind=tickets", nil)
+	req.Header.Set("HX-Request", "true")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	s := string(body)
+	for _, banned := range []string{"<html", "<aside", "id=\"sidebar\"", "<header"} {
+		if strings.Contains(s, banned) {
+			t.Errorf("partial leaked chrome marker %q\n%s", banned, s)
+		}
+	}
+	if !strings.Contains(s, "HX Search") {
+		t.Errorf("results fragment missing hit\n%s", s)
+	}
+}
+
+// TestSmoke_ProjectSearch_EmptyQuery: an empty q renders "Type to search" and
+// does not dial out to the embedder. Implicit guard: if it tried to embed an
+// empty string, the response would still be 200 here, but the test pinning
+// the hint copy makes the no-op visible.
+func TestSmoke_ProjectSearch_EmptyQuery(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, _ := seedProjectAndTicket(t, deps, "emp", "Empty Q")
+
+	resp, err := client.Get(srv.URL + "/p/" + slug + "/search")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "Type to search") {
+		t.Errorf("empty-q search missing hint\n%s", body)
 	}
 }

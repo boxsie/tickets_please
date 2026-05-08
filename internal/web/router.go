@@ -56,6 +56,7 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /p/{slug}/delete", wrap(a.handleProjectDelete))
 	mux.Handle("GET /p/{slug}/summary", wrap(a.handleProjectSummaryView))
 	mux.Handle("POST /p/{slug}/summary", wrap(a.handleProjectSummaryUpdate))
+	mux.Handle("GET /p/{slug}/search", wrap(a.handleProjectSearch))
 
 	// Phase routes. Same wrap (session + CSRF on POST). Literal segments
 	// (/phases, /new) take precedence over the {phase} wildcard.
