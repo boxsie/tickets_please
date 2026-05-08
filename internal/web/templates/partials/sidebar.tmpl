@@ -35,7 +35,7 @@
     <a class="project-nav-link{{if hasSuffix $url "/summary"}} active{{end}}" href="/p/{{$cur}}/summary"{{if hasSuffix $url "/summary"}} aria-current="page"{{end}}>Summary</a>
     <hr class="project-nav-sep">
     <a class="project-nav-cta{{if hasSuffix $url "/tickets/new"}} active{{end}}" href="/p/{{$cur}}/tickets/new"{{if hasSuffix $url "/tickets/new"}} aria-current="page"{{end}}>+ New ticket</a>
-    <a class="project-nav-link muted{{if hasSuffix $url "/edit"}} active{{end}}" href="/p/{{$cur}}/edit"{{if hasSuffix $url "/edit"}} aria-current="page"{{end}}>Edit project</a>
+    <a class="project-nav-link muted{{if hasSuffix $url "/settings"}} active{{end}}" href="/p/{{$cur}}/settings"{{if hasSuffix $url "/settings"}} aria-current="page"{{end}}>Settings</a>
   </nav>
   {{else}}
   <p class="sidebar-empty">No project selected. Pick one from the dropdown above or create a new one.</p>

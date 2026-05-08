@@ -480,34 +480,11 @@ func firstLine(s string, max int) string {
 	return ""
 }
 
-// handleProjectEditForm serves GET /p/{slug}/edit. Renders the form
-// pre-filled from the current project record. Slug is shown read-only.
-func (a *app) handleProjectEditForm(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
-	proj, err := a.deps.Service.GetProject(r.Context(), slug)
-	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
-		return
-	}
-	a.renderer.Page(w, r, "projects/edit", PageOpts{
-		Title:       "Edit " + proj.Name + " · tickets_please",
-		CurrentSlug: proj.Slug,
-		Body: projectFormData{
-			Mode:    "edit",
-			Project: proj,
-			Submitted: projectFormSubmitted{
-				Slug:        proj.Slug,
-				Name:        proj.Name,
-				Description: proj.Description,
-				// Summary deliberately not populated here — the dedicated
-				// summary editor handles that to keep the edit form small.
-			},
-		},
-	})
-}
-
 // handleProjectUpdate handles POST /p/{slug} — name + description only.
 // Slug is immutable; summary lives behind the dedicated summary editor.
+// Kept around for back-compat with htmx in-place editors / the
+// `update_project` MCP-adjacent flow; the Settings page (/p/{slug}/settings)
+// is the new primary editor.
 func (a *app) handleProjectUpdate(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
@@ -525,7 +502,10 @@ func (a *app) handleProjectUpdate(w http.ResponseWriter, r *http.Request) {
 		Description: &in.Description,
 	}
 	if _, err := a.deps.Service.UpdateProject(r.Context(), slug, updateIn); err != nil {
-		a.renderProjectFormError(w, r, "projects/edit", "edit", proj, in, err)
+		// Back-compat path — htmx in-place editors and update_project. We no
+		// longer carry a dedicated edit form template; surface validation
+		// errors via the standard error partial.
+		a.renderer.Error(w, r, classifyServiceError(err), err)
 		return
 	}
 	SetFlash(w, r, "success", "Project updated.")

@@ -45,9 +45,9 @@ test('03 create project + redirect', async ({ page }) => {
   await shoot(page, '03-project-detail-after-create');
 });
 
-test('04 project edit form', async ({ page }) => {
-  await page.goto('/p/demo/edit');
-  await shoot(page, '04-project-edit-form');
+test('04 project settings page', async ({ page }) => {
+  await page.goto('/p/demo/settings');
+  await shoot(page, '04-project-settings');
 });
 
 test('05 project summary view', async ({ page }) => {
