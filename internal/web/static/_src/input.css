@@ -670,6 +670,118 @@
   .form-actions .hint { margin-left: auto; }
 
   /* ============================================================
+     Settings page
+     ============================================================ */
+  .settings-page { max-width: 48rem; }
+  .settings-page > .settings-mounts,
+  .settings-page > .settings-readonly { max-width: 56rem; }
+
+  form.settings-form.stack { padding: 0; background: transparent; border: none; gap: 1rem; }
+
+  .settings-section {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1rem 1.25rem 1.1rem;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .settings-section > legend {
+    padding: 0 0.4rem;
+    margin-left: -0.4rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--fg-muted);
+    font-weight: 600;
+  }
+  .settings-section > .hint { margin: -0.25rem 0 0.25rem; }
+  .settings-section > label { margin-top: 0.3rem; }
+
+  .badge-inline {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.5rem;
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid rgba(106,169,255,0.3);
+    line-height: 1.5;
+  }
+
+  .settings-readonly {
+    margin-top: 1.5rem;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1rem 1.25rem 1.15rem;
+  }
+  .settings-readonly > h2 {
+    margin: 0 0 0.25rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--fg-muted);
+    font-weight: 600;
+  }
+  .settings-readonly > .hint { margin-bottom: 0.75rem; }
+
+  .kv-list {
+    margin: 0;
+    display: grid;
+    grid-template-columns: minmax(10rem, max-content) 1fr;
+    column-gap: 1.25rem;
+    row-gap: 0.5rem;
+    align-items: baseline;
+  }
+  .kv-list dt {
+    font-size: 0.78rem;
+    color: var(--fg-muted);
+    font-weight: 500;
+  }
+  .kv-list dd {
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    color: var(--fg);
+    font-size: 0.88rem;
+  }
+  .kv-aside {
+    color: var(--fg-faint);
+    font-size: 0.78rem;
+    font-style: italic;
+  }
+
+  .settings-mounts { margin-top: 1.5rem; }
+  .settings-mounts > h2 {
+    margin: 0 0 0.25rem;
+    font-size: 0.95rem;
+  }
+  .settings-mounts > .hint { margin-bottom: 0.75rem; }
+  .settings-mounts .data-table .ra { text-align: right; }
+  .mounts-bulk {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+  .mounts-bulk .hint { margin: 0; }
+
+  @media (max-width: 720px) {
+    .kv-list { grid-template-columns: 1fr; row-gap: 0.15rem; }
+    .kv-list dt { margin-top: 0.4rem; }
+  }
+
+  /* ============================================================
      Tabs (project detail)
      ============================================================ */
   .tabs {

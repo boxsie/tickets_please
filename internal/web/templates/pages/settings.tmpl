@@ -15,30 +15,36 @@
 
   {{if $f.FormError}}<div class="form-error" role="alert"><strong>Error:</strong> {{$f.FormError}}</div>{{end}}
 
-  <form method="post" action="/settings" class="stack">
-    <label for="embed_provider">Default embed provider (new projects)</label>
-    <select id="embed_provider" name="embed_provider">
-      <option value="ollama" {{if eq $f.EmbedProvider "ollama"}}selected{{end}}>ollama</option>
-      <option value="openai" {{if eq $f.EmbedProvider "openai"}}selected{{end}}>openai</option>
-    </select>
+  <form method="post" action="/settings" class="stack settings-form">
+    <fieldset class="settings-section">
+      <legend>Embedding defaults</legend>
+      <p class="hint">Used when registering a new project. Existing mounts keep whatever they pinned in <code>project.yaml</code>.</p>
 
-    <label for="embed_model">Default embed model (Ollama)</label>
-    <input type="text" id="embed_model" name="embed_model" value="{{$f.EmbedModel}}" placeholder="nomic-embed-text">
+      <label for="embed_provider">Default embed provider</label>
+      <select id="embed_provider" name="embed_provider">
+        <option value="ollama" {{if eq $f.EmbedProvider "ollama"}}selected{{end}}>ollama</option>
+        <option value="openai" {{if eq $f.EmbedProvider "openai"}}selected{{end}}>openai</option>
+      </select>
 
-    <label for="ollama_url">Ollama URL</label>
-    <input type="text" id="ollama_url" name="ollama_url" value="{{$f.OllamaURL}}" placeholder="http://localhost:11434">
+      <label for="embed_model">Default embed model</label>
+      <input type="text" id="embed_model" name="embed_model" value="{{$f.EmbedModel}}" placeholder="nomic-embed-text">
+    </fieldset>
 
-    <label for="openai_api_key">OpenAI API key</label>
-    <input type="password" id="openai_api_key" name="openai_api_key"
-      placeholder="{{if $f.KeyMasked}}••••••••  (leave blank to keep existing){{else}}sk-…{{end}}"
-      autocomplete="off">
-    {{if $f.KeyMasked}}<p class="muted">A key is currently set. Leaving this blank preserves it; type a new value to overwrite.</p>{{end}}
+    <fieldset class="settings-section">
+      <legend>Provider transport</legend>
+      <p class="hint">Where this server reaches out to talk to its embedders.</p>
 
-    <label for="data_dir">Data dir (read-only)</label>
-    <input type="text" id="data_dir" name="data_dir" value="{{$f.DataDir}}" readonly disabled>
+      <label for="ollama_url">Ollama URL</label>
+      <input type="text" id="ollama_url" name="ollama_url" value="{{$f.OllamaURL}}" placeholder="http://localhost:11434">
 
-    <label for="data_root">Data root (read-only)</label>
-    <input type="text" id="data_root" name="data_root" value="{{$f.DataRoot}}" readonly disabled>
+      <label for="openai_api_key">
+        OpenAI API key
+        {{if $f.KeyMasked}}<span class="badge-inline">currently set — type to overwrite</span>{{end}}
+      </label>
+      <input type="password" id="openai_api_key" name="openai_api_key"
+        placeholder="{{if $f.KeyMasked}}••••••••{{else}}sk-…{{end}}"
+        autocomplete="off">
+    </fieldset>
 
     <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
     <div class="form-actions">
@@ -46,44 +52,57 @@
     </div>
   </form>
 
-  <h2>Mounted projects</h2>
-  {{if $f.Mounts}}
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Slug</th>
-        <th>Embed provider</th>
-        <th>Embed model</th>
-        <th>Dim</th>
-        <th>Re-embed</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range $f.Mounts}}
-      <tr>
-        <td><a href="/p/{{.Slug}}"><code>{{.Slug}}</code></a></td>
-        <td>{{.EmbedName}}</td>
-        <td>{{.EmbedModel}}</td>
-        <td>{{.EmbedDim}}</td>
-        <td>
-          <form method="post" action="/p/{{.Slug}}/reembed" class="inline-form">
-            <input type="hidden" name="_csrf" value="{{$.Chrome.CSRF}}">
-            <button type="submit" class="btn-link">Re-embed</button>
-          </form>
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-  {{else}}
-  <p class="muted">No projects mounted yet.</p>
-  {{end}}
+  <section class="settings-readonly" aria-label="Storage paths">
+    <h2>Storage</h2>
+    <p class="hint">Read-only — set via <code>config.yaml</code> or environment variables.</p>
+    <dl class="kv-list">
+      <dt>Per-repo data dir</dt>
+      <dd><code>{{$f.DataDir}}</code><span class="kv-aside">project content checked into each repo</span></dd>
 
-  <h2>Bulk re-embed</h2>
-  <p class="muted">Re-embed every cached project mount. Useful after switching the default embed model.</p>
-  <form method="post" action="/settings/reembed-all" class="inline-form">
-    <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
-    <button type="submit">Re-embed all projects</button>
-  </form>
+      <dt>Shared data root</dt>
+      <dd><code>{{$f.DataRoot}}</code><span class="kv-aside">cross-repo agent + mount cache</span></dd>
+    </dl>
+  </section>
+
+  <section class="settings-mounts">
+    <h2>Mounted projects</h2>
+    <p class="hint">Currently mounted projects with their per-project embedder. Re-embed rebuilds that project's index.</p>
+    {{if $f.Mounts}}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Embed provider</th>
+          <th>Embed model</th>
+          <th>Dim</th>
+          <th class="ra">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $f.Mounts}}
+        <tr>
+          <td><a href="/p/{{.Slug}}">{{.Slug}}</a></td>
+          <td>{{.EmbedName}}</td>
+          <td><code>{{.EmbedModel}}</code></td>
+          <td>{{.EmbedDim}}</td>
+          <td class="ra">
+            <form method="post" action="/p/{{.Slug}}/reembed" class="inline-form">
+              <input type="hidden" name="_csrf" value="{{$.Chrome.CSRF}}">
+              <button type="submit" class="btn-link">Re-embed</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    <form method="post" action="/settings/reembed-all" class="inline-form mounts-bulk">
+      <input type="hidden" name="_csrf" value="{{.Chrome.CSRF}}">
+      <button type="submit" class="btn">Re-embed all projects</button>
+      <span class="hint">Useful after switching the default embed model.</span>
+    </form>
+    {{else}}
+    <p class="muted">No projects mounted yet.</p>
+    {{end}}
+  </section>
 </section>
 {{end}}
