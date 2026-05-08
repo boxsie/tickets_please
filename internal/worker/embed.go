@@ -67,6 +67,7 @@ type Indexes struct {
 type Worker struct {
 	queue    chan Job
 	provider embed.Provider
+	model    string // model identifier stamped into sidecars (e.g. "nomic-embed-text")
 	indexes  Indexes
 	log      *slog.Logger
 
@@ -81,6 +82,11 @@ type Worker struct {
 // New constructs a Worker with the given provider, target indexes, and queue
 // buffer size. A nil log defaults to slog.Default() so callers don't have to
 // special-case it. Wait blocks until Run returns.
+//
+// The embedder model identifier (stamped into every sidecar the worker
+// writes) defaults to empty and can be set after construction with
+// SetModel. The provider's Name() is read fresh on each write so it always
+// reflects the current Provider.
 func New(provider embed.Provider, indexes Indexes, bufferSize int, log *slog.Logger) *Worker {
 	if bufferSize <= 0 {
 		bufferSize = 256
@@ -96,6 +102,20 @@ func New(provider embed.Provider, indexes Indexes, bufferSize int, log *slog.Log
 	}
 	w.wg.Add(1)
 	return w
+}
+
+// SetModel records the embedder model identifier (e.g. "nomic-embed-text",
+// "bge-m3") that the Service-supplied provider was configured with. Stamped
+// into every sidecar the worker writes from this point on, so a future
+// hydrate can detect "wrong embedder" and re-enqueue.
+//
+// Safe to call before Run starts; not safe to race with concurrent process
+// calls (set once at Service init, then leave alone).
+func (w *Worker) SetModel(model string) {
+	if w == nil {
+		return
+	}
+	w.model = model
 }
 
 // Wait blocks until Run has returned. Used by Service.Close so the test
@@ -215,7 +235,13 @@ func (w *Worker) process(ctx context.Context, j Job) {
 		return
 	}
 	if j.SidecarPath != "" {
-		if err := vecindex.WriteSidecar(j.SidecarPath, vec); err != nil {
+		sc := vecindex.Sidecar{
+			Provider: w.provider.Name(),
+			Model:    w.model,
+			Dim:      len(vec),
+			Vec:      vec,
+		}
+		if err := vecindex.WriteSidecar(j.SidecarPath, sc); err != nil {
 			w.log.Warn("write embedding sidecar failed",
 				"err", err, "path", j.SidecarPath, "entry_id", j.EntryID)
 			return

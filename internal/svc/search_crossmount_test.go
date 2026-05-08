@@ -60,7 +60,12 @@ func seedRepoWithCompletedTicket(
 	if err != nil {
 		t.Fatalf("fakeEmbed summary: %v", err)
 	}
-	if err := vecindex.WriteSidecar(filepath.Join(dataDir, "summary.embedding.json"), vec); err != nil {
+	if err := vecindex.WriteSidecar(filepath.Join(dataDir, "summary.embedding.json"), vecindex.Sidecar{
+		Provider: "fake",
+		Model:    "fake",
+		Dim:      len(vec),
+		Vec:      vec,
+	}); err != nil {
 		t.Fatalf("write summary sidecar: %v", err)
 	}
 
@@ -95,7 +100,12 @@ func seedRepoWithCompletedTicket(
 	if err != nil {
 		t.Fatalf("fakeEmbed learnings: %v", err)
 	}
-	if err := vecindex.WriteSidecar(filepath.Join(tdir, "learnings.embedding.json"), lvec); err != nil {
+	if err := vecindex.WriteSidecar(filepath.Join(tdir, "learnings.embedding.json"), vecindex.Sidecar{
+		Provider: "fake",
+		Model:    "fake",
+		Dim:      len(lvec),
+		Vec:      lvec,
+	}); err != nil {
 		t.Fatalf("write learnings sidecar: %v", err)
 	}
 

@@ -32,6 +32,7 @@ func silentLogger() *slog.Logger {
 func runWorker(t *testing.T, p *fakeProvider, idx Indexes) (*Worker, func()) {
 	t.Helper()
 	w := New(p, idx, 16, silentLogger())
+	w.SetModel("fake-model")
 	ctx, cancel := context.WithCancel(context.Background())
 	go w.Run(ctx)
 	return w, func() {
@@ -82,12 +83,21 @@ func TestWorker_ProjectSummary_WritesSidecarAndUpserts(t *testing.T) {
 			fileExists(side), idx.Summaries.Len())
 	}
 
-	vec, err := vecindex.ReadSidecar(side)
+	sc, err := vecindex.ReadSidecar(side)
 	if err != nil {
 		t.Fatalf("read sidecar: %v", err)
 	}
-	if len(vec) != 768 {
-		t.Errorf("sidecar dim = %d, want 768", len(vec))
+	if len(sc.Vec) != 768 {
+		t.Errorf("sidecar dim = %d, want 768", len(sc.Vec))
+	}
+	if sc.Dim != 768 {
+		t.Errorf("sidecar Dim field = %d, want 768", sc.Dim)
+	}
+	if sc.Provider == "" {
+		t.Errorf("sidecar Provider empty; want fake provider Name()")
+	}
+	if sc.Model != "fake-model" {
+		t.Errorf("sidecar Model = %q; want fake-model", sc.Model)
 	}
 }
 
@@ -134,6 +144,7 @@ func TestWorker_AllKindsRouteToCorrectIndex(t *testing.T) {
 func TestWorker_FullBufferDropsNonBlocking(t *testing.T) {
 	// Tiny buffer, no consumer. Enqueue more than capacity; never blocks.
 	w := New(newFake(), freshIndexes(), 1, silentLogger())
+	w.SetModel("fake-model")
 	for i := 0; i < 100; i++ {
 		w.Enqueue(Job{Kind: JobProjectSummary, EntryID: "x", Text: "hi"})
 	}
@@ -193,6 +204,7 @@ func TestWorker_ContextCancelDrains(t *testing.T) {
 	side := filepath.Join(dir, "s.embedding.json")
 
 	w := New(newFake(), idx, 16, silentLogger())
+	w.SetModel("fake-model")
 	ctx, cancel := context.WithCancel(context.Background())
 	go w.Run(ctx)
 

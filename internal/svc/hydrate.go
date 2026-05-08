@@ -43,6 +43,13 @@ func (s *Service) hydrateMount(slug string, st *store.Store) {
 		log = slog.Default()
 	}
 
+	// Make sure the worker stamps the right embedder model into every
+	// sidecar it writes from this point on. The Service has the Cfg; the
+	// worker package doesn't. Idempotent — fine to set on every hydrate.
+	if s.Worker != nil {
+		s.Worker.SetModel(s.Cfg.OllamaModel)
+	}
+
 	if err := st.WalkProjects(func(_ string, rec *store.ProjectRecord) error {
 		s.hydrateProjectSummary(slug, st, rec, log)
 		return nil
@@ -168,21 +175,25 @@ func (s *Service) upsertOrEnqueue(
 	getText func() (string, error),
 	log *slog.Logger,
 ) {
-	if vec, err := vecindex.ReadSidecar(sidePath); err == nil {
+	if sc, err := vecindex.ReadSidecar(sidePath); err == nil {
 		// Don't add zero-length or wrong-dim vectors; index.Search would skip
 		// them anyway, but keeping the entries map clean makes Snapshot
 		// smaller and eviction by-owner cheaper.
-		if len(vec) == expectedEmbedDim {
+		//
+		// sc.Provider/sc.Model are read but not yet acted on — a later ticket
+		// (W2-T3) will use them for staleness detection (drop sidecars whose
+		// embedder identity doesn't match the current provider).
+		if len(sc.Vec) == expectedEmbedDim {
 			idx.Upsert(vecindex.Entry{
 				ID:    entryID,
 				Kind:  vKind,
 				Owner: slug,
-				Vec:   vec,
+				Vec:   sc.Vec,
 			})
 			return
 		}
 		log.Debug("hydrate: sidecar dim mismatch, dropping",
-			"slug", slug, "path", sidePath, "got", len(vec), "want", expectedEmbedDim)
+			"slug", slug, "path", sidePath, "got", len(sc.Vec), "want", expectedEmbedDim)
 		return
 	} else if !errors.Is(err, fs.ErrNotExist) && !os.IsNotExist(err) {
 		log.Warn("hydrate: read sidecar failed", "slug", slug, "path", sidePath, "err", err)
