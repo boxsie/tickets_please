@@ -1,0 +1,17 @@
+# tickets_please configuration
+# Top-of-file banner comment.
+
+# Where per-repo project content lives.
+data_dir: ./.tickets_please
+
+# Where shared agent state lives (across repos).
+data_root: ~/.tickets_please
+
+# --- embedding section ---
+
+# Embedding provider to use: ollama | openai
+embed_provider: ollama
+ollama_url: http://localhost:11434 # inline comment
+ollama_model: nomic-embed-text
+
+# trailing comment
