@@ -1,11 +1,14 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -298,5 +301,145 @@ func TestWorker_TwoMounts_DifferentDims(t *testing.T) {
 	}
 	if scB.Dim != 1024 {
 		t.Errorf("B dim = %d; want 1024", scB.Dim)
+	}
+}
+
+// blockingProvider gates Embed on a release channel so tests can pin the
+// worker mid-job (and thus keep the queue full long enough to exercise the
+// blocking enqueue path).
+type blockingProvider struct {
+	release chan struct{}
+	calls   int32
+}
+
+func (b *blockingProvider) Name() string                  { return "blocking" }
+func (b *blockingProvider) Dim() int                      { return 768 }
+func (b *blockingProvider) Probe(_ context.Context) error { return nil }
+func (b *blockingProvider) Embed(ctx context.Context, _ string) ([]float32, error) {
+	atomic.AddInt32(&b.calls, 1)
+	select {
+	case <-b.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return make([]float32, 768), nil
+}
+
+// TestWorker_EnqueueBlocking_BlocksUntilSlotOpens fills a 1-slot queue with a
+// blocked-in-Embed worker, fires EnqueueBlocking from a goroutine, then
+// releases one job and asserts the blocking enqueue returned nil.
+func TestWorker_EnqueueBlocking_BlocksUntilSlotOpens(t *testing.T) {
+	bp := &blockingProvider{release: make(chan struct{}, 8)}
+	w := New(context.Background(), bp, "fake-model", freshIndexes(), 1, silentLogger())
+	defer w.Stop(context.Background())
+
+	// Job 1: gets dequeued, blocks in provider.Embed.
+	w.Enqueue(Job{Kind: JobProjectSummary, EntryID: "j1", Text: "one"})
+	// Wait for the worker to pull job 1 off the queue and enter Embed so the
+	// channel has a free slot but the worker is pinned. Once that happens
+	// job 2 will go straight onto the empty buffered slot.
+	if !waitFor(time.Second, func() bool { return atomic.LoadInt32(&bp.calls) >= 1 }) {
+		t.Fatalf("worker never started embedding job 1")
+	}
+	// Job 2: lands in the freed buffer slot (worker still in Embed).
+	w.Enqueue(Job{Kind: JobProjectSummary, EntryID: "j2", Text: "two"})
+
+	// Job 3: queue is full and the worker is pinned. EnqueueBlocking must block.
+	enqDone := make(chan error, 1)
+	go func() {
+		enqDone <- w.EnqueueBlocking(context.Background(), Job{
+			Kind: JobProjectSummary, EntryID: "j3", Text: "three",
+		})
+	}()
+
+	// Confirm it's actually blocked.
+	select {
+	case err := <-enqDone:
+		t.Fatalf("EnqueueBlocking returned early (err=%v); expected to block on full queue", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Release one Embed call; that pops job 1, the worker pulls job 2 off
+	// the buffered slot, and EnqueueBlocking can finally land job 3.
+	bp.release <- struct{}{}
+
+	select {
+	case err := <-enqDone:
+		if err != nil {
+			t.Fatalf("EnqueueBlocking returned err=%v; want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("EnqueueBlocking never unblocked after slot opened")
+	}
+
+	// Drain the rest so Stop doesn't time out on shutdown.
+	close(bp.release)
+}
+
+// TestWorker_EnqueueBlocking_CtxCancel asserts that a canceled context aborts
+// the blocking enqueue with ctx.Err().
+func TestWorker_EnqueueBlocking_CtxCancel(t *testing.T) {
+	bp := &blockingProvider{release: make(chan struct{})}
+	w := New(context.Background(), bp, "fake-model", freshIndexes(), 1, silentLogger())
+	defer func() {
+		close(bp.release)
+		w.Stop(context.Background())
+	}()
+
+	// Pin the worker mid-Embed and saturate the buffer.
+	w.Enqueue(Job{Kind: JobProjectSummary, EntryID: "j1", Text: "one"})
+	if !waitFor(time.Second, func() bool { return atomic.LoadInt32(&bp.calls) >= 1 }) {
+		t.Fatalf("worker never started embedding")
+	}
+	w.Enqueue(Job{Kind: JobProjectSummary, EntryID: "j2", Text: "two"})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	enqDone := make(chan error, 1)
+	go func() {
+		enqDone <- w.EnqueueBlocking(ctx, Job{
+			Kind: JobProjectSummary, EntryID: "j3", Text: "three",
+		})
+	}()
+	// Make sure the goroutine is parked on the send before we cancel.
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-enqDone:
+		if err == nil {
+			t.Fatal("EnqueueBlocking returned nil on canceled ctx; want ctx.Err()")
+		}
+		if err != context.Canceled {
+			t.Errorf("EnqueueBlocking err = %v; want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("EnqueueBlocking didn't return after ctx cancel")
+	}
+}
+
+// TestWorker_EnqueueBlocking_NoQueueFullWarning_BootBackfill exercises the
+// boot-time pattern: enqueue more jobs than the buffer holds via
+// EnqueueBlocking and assert the captured logger never emits the
+// "queue full; dropping job" warning. Mirrors the 256-slot overflow that
+// dropped 183 jobs on the smoke-test repo.
+func TestWorker_EnqueueBlocking_NoQueueFullWarning_BootBackfill(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	w := New(context.Background(), newFake(), "fake-model", freshIndexes(), 4, log)
+	defer w.Stop(context.Background())
+
+	const total = 64 // > bufferSize (4); would have dropped many on Enqueue.
+	ctx := context.Background()
+	for i := 0; i < total; i++ {
+		if err := w.EnqueueBlocking(ctx, Job{
+			Kind: JobProjectSummary, EntryID: "j", Text: "text",
+		}); err != nil {
+			t.Fatalf("EnqueueBlocking[%d] err=%v", i, err)
+		}
+	}
+
+	if got := buf.String(); strings.Contains(got, "queue full; dropping job") {
+		t.Fatalf("blocking enqueue path emitted drop warning:\n%s", got)
 	}
 }

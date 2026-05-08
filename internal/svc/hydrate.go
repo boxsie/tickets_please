@@ -17,6 +17,7 @@ package svc
 // rebuild on next start instead of silently mixing models in one index.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -220,14 +221,22 @@ func (s *Service) upsertOrEnqueue(
 	if mount == nil || mount.Worker == nil {
 		return
 	}
-	mount.Worker.Enqueue(worker.Job{
+	// Boot-time / re-mount path: block until the worker accepts. Dropping
+	// here means the source file goes un-embedded until the next restart's
+	// staleness/backfill pass picks it up — slow + noisy. Backfilling 200
+	// projects through a 256-slot queue would otherwise lose ~half the jobs
+	// on a cold boot. context.Background() is fine: hydrate is bounded by
+	// the on-disk tree and the worker drains continuously.
+	if err := mount.Worker.EnqueueBlocking(context.Background(), worker.Job{
 		Kind:        jobKind,
 		SourcePath:  srcPath,
 		SidecarPath: sidePath,
 		EntryID:     entryID,
 		Owner:       slug,
 		Text:        text,
-	})
+	}); err != nil {
+		log.Warn("hydrate: enqueue canceled", "slug", slug, "path", srcPath, "err", err)
+	}
 }
 
 // staleSidecar reports whether sc was stamped by a different (Provider, Model)

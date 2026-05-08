@@ -51,9 +51,17 @@ func (b *Backfiller) Run(ctx context.Context) error {
 	})
 }
 
+// enqueue routes through EnqueueBlocking so a slow worker back-pressures the
+// walk instead of dropping jobs (default 256-slot queue overflowed and
+// silently lost ~half the boot backfill on multi-project setups). Walk-level
+// ctx-cancel surfaces back to Run via the per-callsite return.
+func (b *Backfiller) enqueue(ctx context.Context, j Job) error {
+	return b.worker.EnqueueBlocking(ctx, j)
+}
+
 // backfillProjectSummary checks projects/<slug>/summary.embedding.json and
 // enqueues a JobProjectSummary if missing.
-func (b *Backfiller) backfillProjectSummary(_ context.Context, slug string, rec *store.ProjectRecord) {
+func (b *Backfiller) backfillProjectSummary(ctx context.Context, slug string, rec *store.ProjectRecord) {
 	dir := b.store.ProjectDir(slug)
 	src := filepath.Join(dir, "summary.md")
 	side := filepath.Join(dir, "summary.embedding.json")
@@ -67,19 +75,21 @@ func (b *Backfiller) backfillProjectSummary(_ context.Context, slug string, rec 
 		}
 		return
 	}
-	b.worker.Enqueue(Job{
+	if err := b.enqueue(ctx, Job{
 		Kind:        JobProjectSummary,
 		SourcePath:  src,
 		SidecarPath: side,
 		EntryID:     rec.ID,
 		Owner:       slug,
 		Text:        string(text),
-	})
+	}); err != nil {
+		b.log.Debug("backfill: enqueue canceled", "slug", slug, "err", err)
+	}
 }
 
 // backfillPhases walks every phase under the project and enqueues missing
 // summary embeddings (phase summaries share the resident summaries index).
-func (b *Backfiller) backfillPhases(_ context.Context, slug string) {
+func (b *Backfiller) backfillPhases(ctx context.Context, slug string) {
 	err := b.store.WalkPhases(slug, func(rec *store.PhaseRecord) error {
 		dirName := fmt.Sprintf("%03d-%s", rec.Number, rec.Slug)
 		phaseDir := b.store.PhaseDir(slug, dirName)
@@ -95,14 +105,16 @@ func (b *Backfiller) backfillPhases(_ context.Context, slug string) {
 			}
 			return nil
 		}
-		b.worker.Enqueue(Job{
+		if err := b.enqueue(ctx, Job{
 			Kind:        JobProjectSummary,
 			SourcePath:  src,
 			SidecarPath: side,
 			EntryID:     rec.ID,
 			Owner:       slug,
 			Text:        string(text),
-		})
+		}); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -117,9 +129,9 @@ func (b *Backfiller) backfillTickets(ctx context.Context, slug string) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		b.backfillTicketBody(ticketDir, slug, rec)
-		b.backfillTicketLearnings(ticketDir, slug, rec)
-		b.backfillTicketComments(ticketDir, slug, rec)
+		b.backfillTicketBody(ctx, ticketDir, slug, rec)
+		b.backfillTicketLearnings(ctx, ticketDir, slug, rec)
+		b.backfillTicketComments(ctx, ticketDir, slug, rec)
 		return nil
 	})
 	if err != nil {
@@ -130,7 +142,7 @@ func (b *Backfiller) backfillTickets(ctx context.Context, slug string) {
 // backfillTicketBody enqueues a JobTicketBody if body.embedding.json is
 // missing. Text = title + "\n\n" + body, matching what the create/update
 // handlers enqueue.
-func (b *Backfiller) backfillTicketBody(ticketDir, slug string, rec *store.TicketRecord) {
+func (b *Backfiller) backfillTicketBody(ctx context.Context, ticketDir, slug string, rec *store.TicketRecord) {
 	src := filepath.Join(ticketDir, "body.md")
 	side := filepath.Join(ticketDir, "body.embedding.json")
 	if sidecarExists(side) {
@@ -144,19 +156,21 @@ func (b *Backfiller) backfillTicketBody(ticketDir, slug string, rec *store.Ticke
 		return
 	}
 	text := rec.Title + "\n\n" + string(body)
-	b.worker.Enqueue(Job{
+	if err := b.enqueue(ctx, Job{
 		Kind:        JobTicketBody,
 		SourcePath:  src,
 		SidecarPath: side,
 		EntryID:     rec.ID,
 		Owner:       slug,
 		Text:        text,
-	})
+	}); err != nil {
+		b.log.Debug("backfill: enqueue canceled", "ticket_id", rec.ID, "err", err)
+	}
 }
 
 // backfillTicketLearnings enqueues a JobTicketLearnings if completion.md
 // exists with a Learnings section but no learnings.embedding.json sibling.
-func (b *Backfiller) backfillTicketLearnings(ticketDir, slug string, rec *store.TicketRecord) {
+func (b *Backfiller) backfillTicketLearnings(ctx context.Context, ticketDir, slug string, rec *store.TicketRecord) {
 	src := filepath.Join(ticketDir, "completion.md")
 	side := filepath.Join(ticketDir, "learnings.embedding.json")
 	if sidecarExists(side) {
@@ -171,19 +185,21 @@ func (b *Backfiller) backfillTicketLearnings(ticketDir, slug string, rec *store.
 	if learnings == "" {
 		return
 	}
-	b.worker.Enqueue(Job{
+	if err := b.enqueue(ctx, Job{
 		Kind:        JobTicketLearnings,
 		SourcePath:  src,
 		SidecarPath: side,
 		EntryID:     rec.ID,
 		Owner:       slug,
 		Text:        learnings,
-	})
+	}); err != nil {
+		b.log.Debug("backfill: enqueue canceled", "ticket_id", rec.ID, "err", err)
+	}
 }
 
 // backfillTicketComments walks comments/ and enqueues a JobComment for any
 // .md file lacking its sibling `<stem>.embedding.json`.
-func (b *Backfiller) backfillTicketComments(ticketDir, slug string, _ *store.TicketRecord) {
+func (b *Backfiller) backfillTicketComments(ctx context.Context, ticketDir, slug string, _ *store.TicketRecord) {
 	err := b.store.WalkComments(ticketDir, func(rec *store.CommentRecord, body string) error {
 		// Reconstruct the file path the same way the comment writer did. The
 		// store's WalkComments doesn't expose the filename directly, but the
@@ -201,14 +217,16 @@ func (b *Backfiller) backfillTicketComments(ticketDir, slug string, _ *store.Tic
 		if sidecarExists(side) {
 			return nil
 		}
-		b.worker.Enqueue(Job{
+		if err := b.enqueue(ctx, Job{
 			Kind:        JobComment,
 			SourcePath:  src,
 			SidecarPath: side,
 			EntryID:     rec.ID,
 			Owner:       slug,
 			Text:        body,
-		})
+		}); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
