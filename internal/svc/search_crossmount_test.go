@@ -61,8 +61,12 @@ func seedRepoWithCompletedTicket(
 		t.Fatalf("fakeEmbed summary: %v", err)
 	}
 	if err := vecindex.WriteSidecar(filepath.Join(dataDir, "summary.embedding.json"), vecindex.Sidecar{
+		// Match what the in-process worker stamps under freshServiceNoDataDir's
+		// fake provider: Name()="fake", and mount.EmbedModel resolves to ""
+		// because the test cfg leaves OllamaModel blank. Hand-seeded sidecars
+		// have to match or W2-T3 staleness detection evicts them.
 		Provider: "fake",
-		Model:    "fake",
+		Model:    "",
 		Dim:      len(vec),
 		Vec:      vec,
 	}); err != nil {
@@ -101,8 +105,9 @@ func seedRepoWithCompletedTicket(
 		t.Fatalf("fakeEmbed learnings: %v", err)
 	}
 	if err := vecindex.WriteSidecar(filepath.Join(tdir, "learnings.embedding.json"), vecindex.Sidecar{
+		// Provider/Model match the mount's stamp; see the summary block above.
 		Provider: "fake",
-		Model:    "fake",
+		Model:    "",
 		Dim:      len(lvec),
 		Vec:      lvec,
 	}); err != nil {
