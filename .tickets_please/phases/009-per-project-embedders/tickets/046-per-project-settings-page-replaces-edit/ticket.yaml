@@ -2,11 +2,11 @@ id: 60fd4d8c-4384-4a5b-adef-792b400a1470
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 46
 title: Per-project Settings page (replaces /edit)
-column: in_progress
+column: testing
 phase_id: 69d6390c-3565-4e70-b82e-022b69c68f82
 wave: 5
 depends_on:
     - ef8be475-0163-491d-9f38-f605bdee6b2e
 created_by: 3868e790-8a50-4ed1-9964-3d778ce7c3fb
 created_at: 2026-05-08T11:31:54.175913042+01:00
-updated_at: 2026-05-08T14:43:30.363914378+01:00
+updated_at: 2026-05-08T14:52:05.594871757+01:00
