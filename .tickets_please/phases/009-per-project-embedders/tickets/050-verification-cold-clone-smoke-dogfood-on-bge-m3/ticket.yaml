@@ -2,7 +2,7 @@ id: 543a4382-f5b5-4a38-af32-4a4fb98f387a
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 50
 title: 'Verification: cold-clone smoke + dogfood on bge-m3'
-column: todo
+column: in_progress
 phase_id: 69d6390c-3565-4e70-b82e-022b69c68f82
 wave: 6
 depends_on:
@@ -14,4 +14,4 @@ depends_on:
     - bb3ebb84-db2e-43a0-a1e8-6b271990c90d
 created_by: 3868e790-8a50-4ed1-9964-3d778ce7c3fb
 created_at: 2026-05-08T11:33:06.36818353+01:00
-updated_at: 2026-05-08T11:33:06.36818353+01:00
+updated_at: 2026-05-08T18:46:14.15512457+01:00
