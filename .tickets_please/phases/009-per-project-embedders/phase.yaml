@@ -1,0 +1,9 @@
+id: 69d6390c-3565-4e70-b82e-022b69c68f82
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+slug: per-project-embedders
+number: 9
+name: Per-project embedders
+description: Each project owns its embedder; sidecar metadata + cold-clone re-embed migrations; Settings UI + drop cross-project search.
+created_by: 3868e790-8a50-4ed1-9964-3d778ce7c3fb
+created_at: 2026-05-08T11:28:31.537406642+01:00
+updated_at: 2026-05-08T11:28:31.537406642+01:00
