@@ -2,8 +2,11 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -23,14 +26,42 @@ import (
 )
 
 // fakeEmbedder is a minimal embed.Provider stand-in so the Service constructor
-// doesn't need a live Ollama. It's deterministic but otherwise meaningless —
-// these tests don't exercise search.
+// doesn't need a live Ollama. Deterministic SHA256-derived vectors so search
+// tests can exercise real cosine similarity (identical text → identical vec
+// → top hit).
 type fakeEmbedder struct{}
 
-func (fakeEmbedder) Name() string                                         { return "fake" }
-func (fakeEmbedder) Dim() int                                             { return 768 }
-func (fakeEmbedder) Probe(_ context.Context) error                        { return nil }
-func (fakeEmbedder) Embed(_ context.Context, _ string) ([]float32, error) { return make([]float32, 768), nil }
+func (fakeEmbedder) Name() string                  { return "fake" }
+func (fakeEmbedder) Dim() int                      { return 768 }
+func (fakeEmbedder) Probe(_ context.Context) error { return nil }
+func (fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
+	const dim = 768
+	out := make([]float32, dim)
+	seed := sha256.Sum256([]byte(text))
+	for i := 0; i < dim/8; i++ {
+		var nonce [4]byte
+		binary.BigEndian.PutUint32(nonce[:], uint32(i))
+		h := sha256.New()
+		h.Write(seed[:])
+		h.Write(nonce[:])
+		block := h.Sum(nil)
+		for j := 0; j < 8; j++ {
+			u := binary.BigEndian.Uint32(block[j*4 : j*4+4])
+			out[i*8+j] = float32(int32(u)) / float32(math.MaxInt32)
+		}
+	}
+	var sum float64
+	for _, v := range out {
+		sum += float64(v) * float64(v)
+	}
+	if sum > 0 {
+		inv := 1.0 / math.Sqrt(sum)
+		for i, v := range out {
+			out[i] = float32(float64(v) * inv)
+		}
+	}
+	return out, nil
+}
 
 // freshDeps builds a Deps wired to a clean tempdir-backed Service. Every test
 // gets its own DataDir + DataRoot so agent yamls don't bleed between tests.

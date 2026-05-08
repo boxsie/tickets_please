@@ -1,5 +1,10 @@
 {{define "_nav.tmpl"}}<header class="topbar">
   <a class="brand" href="/">tickets_please</a>
+  {{if .CurrentSlug}}
+  <form class="topbar-search" method="get" action="/p/{{.CurrentSlug}}/search" role="search">
+    <input type="search" name="q" placeholder="Search this project…" aria-label="Search project">
+  </form>
+  {{end}}
   {{if .Chrome.AgentLabel}}<span class="agent" title="Web UI session — visible in the audit trail">{{.Chrome.AgentLabel}}</span>{{end}}
 </header>
 {{end}}

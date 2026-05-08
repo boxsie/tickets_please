@@ -116,8 +116,13 @@ func (a *app) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 func (a *app) renderProjectFormError(w http.ResponseWriter, r *http.Request, page, mode string, existing *domain.Project, in projectFormSubmitted, err error) {
 	status := classifyServiceError(err)
 	w.WriteHeader(status)
+	currentSlug := ""
+	if existing != nil {
+		currentSlug = existing.Slug
+	}
 	a.renderer.Page(w, r, page, PageOpts{
-		Title: titleForFormError(mode),
+		Title:       titleForFormError(mode),
+		CurrentSlug: currentSlug,
 		Body: projectFormData{
 			Mode:      mode,
 			Project:   existing,
