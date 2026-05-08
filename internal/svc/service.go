@@ -33,17 +33,30 @@ const defaultMaxLoadedProjects = 16
 // so ResolveProjectStore can re-mount silently on the next access. ProjectID
 // is captured at registration to detect "same slug, different project" repos
 // trying to claim the same mount key.
+//
+// Each mount carries its own embed.Provider built from project.yaml's
+// embed_provider/embed_model (with server defaults filling blanks) so projects
+// using different models can coexist; EmbedDim is the probed-from-this-provider
+// dim (per-mount; shadows Service.EmbedDim). The four vec indexes are sized
+// to that dim — search routes through them.
 type ProjectMount struct {
 	Store         *store.Store
 	RepoPath      string
 	ProjectID     string
 	LastTouchedAt time.Time
+
+	Embed        embed.Provider
+	EmbedDim     int
+	SummaryIdx   *vecindex.Index
+	TicketsIdx   *vecindex.Index
+	LearningsIdx *vecindex.Index
+	CommentsIdx  *vecindex.Index
 }
 
 // Service is the in-process API surface. T15 declared the foundational
-// fields; T10 appends the embedding provider, async worker, and four
-// resident vec indexes. T11 will refactor TicketsIdx / CommentsIdx to
-// per-project routing later.
+// fields; W2-T1 of the per-project-embedders phase moved the embedder +
+// vec indexes onto each ProjectMount so different projects can run
+// different models simultaneously.
 type Service struct {
 	// Store is the "default" project Store used by stdio mode (where cfg.DataDir
 	// points at the one repo's .tickets_please/). In multi-project HTTP mode
@@ -59,32 +72,33 @@ type Service struct {
 	// changes via fsnotify.
 	Cache *cache.ProjectCache
 
-	// Embed is the embedding Provider used by Worker. Built from
-	// cfg.EmbedProvider in New and probed once before Worker starts so a
-	// dead/misconfigured provider fails loud at startup.
+	// Embed is the server-default embedding Provider. Used as the fallback
+	// when a mount doesn't override (or before any mount is built). Per-mount
+	// providers shadow this for project-specific search/embedding work.
 	Embed embed.Provider
 
-	// EmbedDim is the dimensionality the global Embed provider returns,
-	// captured at startup via provider.Probe. Hydrate uses it to drop
-	// dim-mismatched sidecars; per-project providers (a later wave) will
-	// shadow this field.
+	// EmbedDim is the dimensionality of the server-default Embed. Per-mount
+	// providers carry their own probed Dim on ProjectMount.EmbedDim.
 	EmbedDim int
+
+	// EmbedNew is the factory that builds a provider for a mount from a
+	// per-project EmbedConfig view. Defaults to embed.New; tests override
+	// to inject deterministic fakes without touching real Ollama/OpenAI.
+	EmbedNew func(embed.EmbedConfig) (embed.Provider, error)
 
 	// Worker is the async embedding goroutine. Handlers Enqueue jobs after
 	// their StageOp commits; the worker drains the queue, writes the JSON
-	// sidecar, and Upserts into the right resident index.
+	// sidecar, and Upserts into the right resident index. Per-mount workers
+	// land in W2-T2; for now the single global worker writes into the
+	// fallback resident indexes (defaultIndexes) which the registry-empty
+	// stdio fallback search consults.
 	Worker *worker.Worker
 
-	// SummaryIdx holds project + phase summary embeddings. Resident.
-	SummaryIdx *vecindex.Index
-	// TicketsIdx holds ticket body embeddings. Resident; T11 may refactor
-	// to per-project routing later.
-	TicketsIdx *vecindex.Index
-	// LearningsIdx holds completed-ticket learnings embeddings. Resident.
-	LearningsIdx *vecindex.Index
-	// CommentsIdx holds comment embeddings (user + system). Resident; T11
-	// may refactor to per-project routing later.
-	CommentsIdx *vecindex.Index
+	// defaultIndexes are the resident vec indexes used by the global Worker
+	// and consulted as the registry-empty stdio fallback by search RPCs.
+	// Per-mount indexes on ProjectMount shadow these for any registered
+	// project. Sized at startup to the server-default EmbedDim.
+	defaultIndexes worker.Indexes
 
 	// cacheCancel stops the background eviction goroutine. Held so tests
 	// (and future graceful-shutdown paths) can tear it down.
@@ -108,27 +122,69 @@ type Service struct {
 
 // New builds a Service: resolves the data dir into a *store.Store, wires a
 // JSON-handler slog logger pointed at stderr, builds the project cache, the
-// embedding provider, the four resident vec indexes, and the async embed
-// worker. The dim check happens BEFORE the worker starts so a misconfigured
-// provider fails loud rather than silently writing mismatched sidecars.
+// server-default embedding provider, the resident fallback vec indexes, and
+// the async embed worker. The dim check happens BEFORE the worker starts so
+// a misconfigured provider fails loud rather than silently writing
+// mismatched sidecars.
 //
 // The boot backfill walk runs in its own goroutine — startup never blocks on
 // embedding latency.
 func New(cfg config.Config) (*Service, error) {
-	provider, err := embed.New(cfg)
+	provider, err := embed.New(embedViewFromCfg(cfg, "", ""))
 	if err != nil {
 		return nil, fmt.Errorf("svc: build embed provider: %w", err)
 	}
-	return NewWithEmbed(cfg, provider)
+	return newServiceCore(cfg, provider, embed.New)
+}
+
+// embedViewFromCfg builds an embed.EmbedConfig from cfg, optionally overriding
+// the (provider, model) pair from a project.yaml. Empty overrides fall back to
+// the server defaults so partially-configured projects still work.
+func embedViewFromCfg(cfg config.Config, provider, model string) embed.EmbedConfig {
+	if provider == "" {
+		provider = cfg.EmbedProvider
+	}
+	if model == "" {
+		// Pick the model that pairs with the resolved provider. When the
+		// project record overrides only the provider (no model), the cfg's
+		// OllamaModel is the right default for ollama; OpenAI ignores model.
+		switch provider {
+		case "openai":
+			model = "text-embedding-3-small"
+		default:
+			model = cfg.OllamaModel
+		}
+	}
+	return embed.EmbedConfig{
+		Provider:  provider,
+		Model:     model,
+		OllamaURL: cfg.OllamaURL,
+		OpenAIKey: cfg.OpenAIKey,
+	}
 }
 
 // NewWithEmbed is the same as New but lets the caller inject an
 // embed.Provider. Tests use this to drop in a deterministic fake without
-// contacting a real Ollama / OpenAI server.
+// contacting a real Ollama / OpenAI server. The same provider is also used
+// as the per-mount factory's return value so per-project mount build never
+// dials out either; tests that want different per-mount providers should
+// override Service.EmbedNew after construction.
 //
 // The provider is probed once before the worker starts; whatever Dim() reports
 // after probe is what the indexes and hydrate use.
 func NewWithEmbed(cfg config.Config, provider embed.Provider) (*Service, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("svc: nil embed provider")
+	}
+	factory := func(_ embed.EmbedConfig) (embed.Provider, error) { return provider, nil }
+	return newServiceCore(cfg, provider, factory)
+}
+
+// newServiceCore is the shared body that New and NewWithEmbed delegate to.
+// The caller passes the server-default Provider plus the per-mount factory
+// — production wires factory=embed.New (per-project models picked from yaml);
+// tests get a closure that returns the injected fake regardless of view.
+func newServiceCore(cfg config.Config, provider embed.Provider, factory func(embed.EmbedConfig) (embed.Provider, error)) (*Service, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("svc: nil embed provider")
 	}
@@ -164,27 +220,32 @@ func NewWithEmbed(cfg config.Config, provider embed.Provider) (*Service, error) 
 		Comments:  vecindex.New(),
 	}
 	w := worker.New(provider, indexes, 256, logger)
+	w.SetModel(cfg.OllamaModel)
 
 	evictCtx, cancelCache := context.WithCancel(context.Background())
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 
 	s := &Service{
-		Store:         st,
-		AgentStore:    as,
-		Logger:        logger,
-		Cfg:           cfg,
-		Embed:         provider,
-		EmbedDim:      embedDim,
-		Worker:        w,
-		SummaryIdx:    indexes.Summaries,
-		TicketsIdx:    indexes.Tickets,
-		LearningsIdx:  indexes.Learnings,
-		CommentsIdx:   indexes.Comments,
-		cacheCancel:   cancelCache,
-		cancelWorker:  cancelWorker,
-		touchOnce:     make(map[string]time.Time),
-		projectMounts: make(map[string]*ProjectMount),
+		Store:          st,
+		AgentStore:     as,
+		Logger:         logger,
+		Cfg:            cfg,
+		Embed:          provider,
+		EmbedDim:       embedDim,
+		EmbedNew:       factory,
+		Worker:         w,
+		defaultIndexes: indexes,
+		cacheCancel:    cancelCache,
+		cancelWorker:   cancelWorker,
+		touchOnce:      make(map[string]time.Time),
+		projectMounts:  make(map[string]*ProjectMount),
 	}
+
+	// Per-mount index routing: when the worker dequeues a job, look up the
+	// owner-slug's mount and write into its per-mount index. Falls back to
+	// defaultIndexes (the worker's own Indexes) when no mount is registered
+	// for the slug — that's the registry-empty stdio bootstrap path.
+	w.SetIndexResolver(s.workerIndexResolver)
 
 	// Cache resolves Stores via service-owned closures so a single ProjectCache
 	// can serve multiple project mounts. In single-store stdio mode the
@@ -331,12 +392,15 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 			if err != nil {
 				return "", err
 			}
+			if err := s.attachMountEmbedAssets(existing, rec); err != nil {
+				return "", err
+			}
 			existing.Store = st
 			existing.LastTouchedAt = time.Now()
 			s.maybeEvictLocked(rec.Slug)
 			// Re-hydrate the resident indexes for this slug; eviction earlier
 			// may have dropped its entries.
-			s.hydrateMount(rec.Slug, st)
+			s.hydrateMount(rec.Slug, existing)
 			s.persistMountRegistry(repoPath, true)
 			return rec.Slug, nil
 		}
@@ -347,20 +411,87 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 	if err != nil {
 		return "", err
 	}
-	s.projectMounts[rec.Slug] = &ProjectMount{
+	mount := &ProjectMount{
 		Store:         st,
 		RepoPath:      repoPath,
 		ProjectID:     rec.ID,
 		LastTouchedAt: time.Now(),
 	}
+	if err := s.attachMountEmbedAssets(mount, rec); err != nil {
+		return "", err
+	}
+	s.projectMounts[rec.Slug] = mount
 	s.maybeEvictLocked(rec.Slug)
 	// Populate resident indexes from this project's on-disk sidecars (and
 	// enqueue missing ones via the embed worker). Done with the lock still
-	// held — hydrate only touches Service-level indexes + the embed worker
+	// held — hydrate only touches mount-level indexes + the embed worker
 	// queue, neither of which loops back into mountsMu.
-	s.hydrateMount(rec.Slug, st)
+	s.hydrateMount(rec.Slug, mount)
 	s.persistMountRegistry(repoPath, true)
 	return rec.Slug, nil
+}
+
+// attachMountEmbedAssets builds (or reuses) the mount's embed.Provider and the
+// four resident vec indexes, sized to that provider's probed dim. Provider
+// build falls back to the server default when the project record's
+// embed_provider is blank or when the factory errors (with a warn log) — a
+// project that mis-configures its embedder shouldn't lock the user out of
+// their data; per-project re-embed (W3-T1) lets them recover.
+//
+// Re-mount of a previously-evicted entry skips re-probing the provider when
+// it survived eviction (only indexes get nilled there); we just re-allocate
+// the four indexes at the previously-probed dim.
+func (s *Service) attachMountEmbedAssets(mount *ProjectMount, rec *store.ProjectRecord) error {
+	if mount.Embed != nil && mount.SummaryIdx != nil {
+		// Fully populated; nothing to do.
+		return nil
+	}
+	if mount.Embed == nil {
+		provider, dim, err := s.buildMountProvider(rec.EmbedProvider, rec.EmbedModel)
+		if err != nil {
+			// Soft fallback: log and use the server default. Search/embed
+			// will still work; sidecars will be stamped with the server
+			// provider's identity.
+			if s.Logger != nil {
+				s.Logger.Warn("svc: per-mount embed build failed; falling back to server default",
+					"slug", rec.Slug, "embed_provider", rec.EmbedProvider, "embed_model", rec.EmbedModel, "err", err)
+			}
+			provider = s.Embed
+			dim = s.EmbedDim
+		}
+		mount.Embed = provider
+		mount.EmbedDim = dim
+	}
+	mount.SummaryIdx = vecindex.New()
+	mount.TicketsIdx = vecindex.New()
+	mount.LearningsIdx = vecindex.New()
+	mount.CommentsIdx = vecindex.New()
+	return nil
+}
+
+// buildMountProvider constructs and probes a fresh embed.Provider from the
+// per-project (provider, model) override, with server cfg filling the gaps.
+// Returns the provider plus its probed dim. A nil EmbedNew falls back to
+// embed.New (production path); tests inject deterministic fakes via EmbedNew.
+func (s *Service) buildMountProvider(provider, model string) (embed.Provider, int, error) {
+	view := embedViewFromCfg(s.Cfg, provider, model)
+	factory := s.EmbedNew
+	if factory == nil {
+		factory = embed.New
+	}
+	p, err := factory(view)
+	if err != nil {
+		return nil, 0, fmt.Errorf("build embed provider: %w", err)
+	}
+	if p == nil {
+		return nil, 0, fmt.Errorf("embed factory returned nil provider for %q", view.Provider)
+	}
+	probeCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	if err := p.Probe(probeCtx); err != nil {
+		return nil, 0, fmt.Errorf("probe embed provider %q: %w", p.Name(), err)
+	}
+	return p, p.Dim(), nil
 }
 
 // persistMountRegistry writes the add/remove to <DataRoot>/registry.yaml so
@@ -407,12 +538,16 @@ func (s *Service) ResolveProjectStore(_ context.Context, slug string) (*store.St
 			rec := &store.ProjectRecord{}
 			if err := store.ReadYAML(filepath.Join(s.Store.Root, "project.yaml"), rec); err == nil {
 				if rec.Slug == slug {
-					s.projectMounts[slug] = &ProjectMount{
+					m := &ProjectMount{
 						Store:         s.Store,
 						RepoPath:      filepath.Dir(s.Store.Root),
 						ProjectID:     rec.ID,
 						LastTouchedAt: time.Now(),
 					}
+					if err := s.attachMountEmbedAssets(m, rec); err != nil {
+						return nil, err
+					}
+					s.projectMounts[slug] = m
 					return s.Store, nil
 				}
 			}
@@ -428,6 +563,15 @@ func (s *Service) ResolveProjectStore(_ context.Context, slug string) (*store.St
 		if err != nil {
 			return nil, fmt.Errorf("svc: re-mount project %q: %w", slug, err)
 		}
+		// Eviction nilled the four indexes (Embed/EmbedDim survive); just
+		// re-allocate fresh empty indexes at the same dim. A change to the
+		// project's embed_provider/embed_model in the yaml between
+		// eviction and re-mount won't be picked up here — that's a future
+		// re-embed flow's job (W3-T1), not silent re-probe at resolve time.
+		rec := &store.ProjectRecord{Slug: slug}
+		if err := s.attachMountEmbedAssets(mount, rec); err != nil {
+			return nil, fmt.Errorf("svc: re-attach embed assets for %q: %w", slug, err)
+		}
 		mount.Store = st
 		rehydrated = true
 	}
@@ -436,7 +580,7 @@ func (s *Service) ResolveProjectStore(_ context.Context, slug string) (*store.St
 	if rehydrated {
 		// Eviction nuked the resident-index entries for this slug; refill
 		// them from disk so search results return for this project again.
-		s.hydrateMount(slug, mount.Store)
+		s.hydrateMount(slug, mount)
 	}
 	return mount.Store, nil
 }
@@ -512,9 +656,12 @@ func (s *Service) maybeEvictLocked(keep string) {
 			continue
 		}
 		m.Store = nil
-		// Drop the project's resident-index entries so cross-project search
-		// stops returning hits we can no longer hydrate without a re-mount.
-		// ResolveProjectStore re-hydrates on next access.
+		// Nil the per-mount indexes (same shape Store is nilled in) and
+		// drop any defaultIndexes entries tagged with this slug. The
+		// freed []float32 vectors don't keep memory alive for an evicted
+		// project; ResolveProjectStore rebuilds + rehydrates on next
+		// access. Embed and EmbedDim survive on the mount so the fast
+		// re-mount can reuse the probed dim without another round-trip.
 		s.dropMountFromIndexes(resident[i].slug)
 		over--
 	}
@@ -563,6 +710,34 @@ func (s *Service) cacheWalkAllStores(fn func(*store.Store) error) error {
 		if err := fn(st); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// workerIndexResolver maps a worker Job's (kind, owner-slug) to the right
+// per-mount *vecindex.Index. Returns nil for an unknown slug so the worker
+// falls back to its own Indexes (the stdio bootstrap path). Read of
+// mount.*Idx happens under mountsMu so it can't race with the eviction
+// path that nils them out.
+func (s *Service) workerIndexResolver(kind worker.JobKind, owner string) *vecindex.Index {
+	if owner == "" {
+		return nil
+	}
+	s.mountsMu.Lock()
+	defer s.mountsMu.Unlock()
+	mount, ok := s.projectMounts[owner]
+	if !ok || mount == nil {
+		return nil
+	}
+	switch kind {
+	case worker.JobProjectSummary:
+		return mount.SummaryIdx
+	case worker.JobTicketBody:
+		return mount.TicketsIdx
+	case worker.JobTicketLearnings:
+		return mount.LearningsIdx
+	case worker.JobComment:
+		return mount.CommentsIdx
 	}
 	return nil
 }

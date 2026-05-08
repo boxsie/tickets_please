@@ -11,13 +11,66 @@ package svc
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/embed"
 	"tickets_please/internal/store"
 	"tickets_please/internal/vecindex"
 )
+
+// indexKind selects which of a mount's four resident indexes
+// mountProviderAndIndex returns. Lives here rather than vecindex.Kind because
+// per-mount routing also touches the embed.Provider, which Kind does not.
+type indexKind int
+
+const (
+	indexKindSummaries indexKind = iota
+	indexKindTickets
+	indexKindLearnings
+	indexKindComments
+)
+
+// mountProviderAndIndex returns the (embed.Provider, *vecindex.Index) pair
+// the search RPCs use for project-scoped queries. Walks the mount registry;
+// falls back to s.Embed + s.defaultIndexes when the slug isn't mounted (the
+// stdio bootstrap path). Never returns nil pointers — defaults are filled.
+func (s *Service) mountProviderAndIndex(slug string, kind indexKind) (embed.Provider, *vecindex.Index) {
+	provider := s.Embed
+	var idx *vecindex.Index
+	s.mountsMu.Lock()
+	if mount, ok := s.projectMounts[slug]; ok && mount != nil {
+		if mount.Embed != nil {
+			provider = mount.Embed
+		}
+		switch kind {
+		case indexKindSummaries:
+			idx = mount.SummaryIdx
+		case indexKindTickets:
+			idx = mount.TicketsIdx
+		case indexKindLearnings:
+			idx = mount.LearningsIdx
+		case indexKindComments:
+			idx = mount.CommentsIdx
+		}
+	}
+	s.mountsMu.Unlock()
+	if idx == nil {
+		switch kind {
+		case indexKindSummaries:
+			idx = s.defaultIndexes.Summaries
+		case indexKindTickets:
+			idx = s.defaultIndexes.Tickets
+		case indexKindLearnings:
+			idx = s.defaultIndexes.Learnings
+		case indexKindComments:
+			idx = s.defaultIndexes.Comments
+		}
+	}
+	return provider, idx
+}
 
 // searchDefaultLimit / searchMaxLimit cap each search method's limit param so
 // a runaway client can't ask for an unbounded result set. Mirrors
@@ -69,10 +122,13 @@ type LearningHit struct {
 	CompletedAt time.Time
 }
 
-// SearchProjects runs semantic search over the resident SummaryIdx. The same
-// index also holds phase summaries (T10 stored both under the same Kind tag);
-// this method filters hits down to entries whose ID matches a known project
-// id, dropping phase hits silently.
+// SearchProjects runs semantic search over each mounted project's per-mount
+// SummaryIdx. Per-mount dims may differ (each project carries its own embed
+// model), so the query is embedded once per distinct provider/mount and the
+// resulting hits are merged + re-sorted by score.
+//
+// Phase summaries share each mount's SummaryIdx; they're filtered out by
+// id-shape (only project ids appear in the per-mount id→slug map).
 //
 // Read-only — no requireSession.
 func (s *Service) SearchProjects(ctx context.Context, query string, limit int) ([]ProjectHit, error) {
@@ -81,71 +137,96 @@ func (s *Service) SearchProjects(ctx context.Context, query string, limit int) (
 		return nil, fmt.Errorf("%w: query required", domain.ErrInvalidArgument)
 	}
 	limit = clampSearchLimit(limit)
-
-	vec, err := s.Embed.Embed(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
-	}
-
-	// Over-fetch by 2x so we still come back with `limit` results after the
-	// phase-id filter drops some hits. Cap at the index's own ceiling.
 	rawLimit := limit * 2
 	if rawLimit > searchMaxLimit*2 {
 		rawLimit = searchMaxLimit * 2
 	}
-	hits := s.SummaryIdx.Search(vec, vecindex.KindProjectSummary, "", rawLimit)
-	if len(hits) == 0 {
-		return []ProjectHit{}, nil
-	}
 
-	// Build an id → slug index for every mounted project so we can both
-	// filter out phase hits (whose ids won't be in the map) and route
-	// each hit back to the right Store / cache for hydration.
-	idToSlug := make(map[string]string)
-	walkErr := s.WalkProjectMounts(func(mountSlug string, mount *ProjectMount) error {
-		if mount == nil || mount.Store == nil {
+	// Snapshot mounts (slug + provider + index + store).
+	type sumSrc struct {
+		slug     string
+		provider embed.Provider
+		idx      *vecindex.Index
+		st       *store.Store
+	}
+	var sources []sumSrc
+	_ = s.WalkProjectMounts(func(slug string, mount *ProjectMount) error {
+		if mount == nil || mount.Store == nil || mount.SummaryIdx == nil {
 			return nil
 		}
-		// Each Store is single-project post-flatten; the slug we're given on
-		// the registry IS the on-disk project slug. Capture project IDs only;
-		// skip the per-project WalkProjects error so one broken mount
-		// doesn't sink the whole search.
-		_ = mount.Store.WalkProjects(func(_ string, rec *store.ProjectRecord) error {
-			idToSlug[rec.ID] = mountSlug
-			return nil
-		})
+		p := mount.Embed
+		if p == nil {
+			p = s.Embed
+		}
+		sources = append(sources, sumSrc{slug: slug, provider: p, idx: mount.SummaryIdx, st: mount.Store})
 		return nil
 	})
-	if walkErr != nil {
-		return nil, fmt.Errorf("walk project mounts: %w", walkErr)
-	}
-	// Stdio fallback: when the registry is empty (e.g. a test that built
-	// Service without an eager mount and never registered one), still consult
-	// the default Store so single-project tests/CLIs see their project.
-	if len(idToSlug) == 0 && s.Store != nil {
-		_ = s.Store.WalkProjects(func(slug string, rec *store.ProjectRecord) error {
-			idToSlug[rec.ID] = slug
-			return nil
+	// Stdio fallback: registry empty + default Store + default index. Built
+	// once at startup so single-project tests/CLI work without registering.
+	if len(sources) == 0 && s.Store != nil && s.defaultIndexes.Summaries != nil {
+		sources = append(sources, sumSrc{
+			slug: "", provider: s.Embed, idx: s.defaultIndexes.Summaries, st: s.Store,
 		})
 	}
 
+	type scored struct {
+		hit  vecindex.Hit
+		slug string
+	}
+	var pool []scored
+	idToSlug := make(map[string]string)
+	for _, src := range sources {
+		// Resolve slug-from-store for the stdio-fallback empty-slug case so
+		// idToSlug below still works.
+		_ = src.st.WalkProjects(func(slug string, rec *store.ProjectRecord) error {
+			projSlug := src.slug
+			if projSlug == "" {
+				projSlug = slug
+			}
+			idToSlug[rec.ID] = projSlug
+			return nil
+		})
+		vec, err := src.provider.Embed(ctx, q)
+		if err != nil {
+			return nil, fmt.Errorf("embed query (slug=%s): %w", src.slug, err)
+		}
+		hits := src.idx.Search(vec, vecindex.KindProjectSummary, "", rawLimit)
+		for _, h := range hits {
+			projSlug := src.slug
+			if projSlug == "" {
+				projSlug = idToSlug[h.ID]
+			}
+			pool = append(pool, scored{hit: h, slug: projSlug})
+		}
+	}
+	if len(pool) == 0 {
+		return []ProjectHit{}, nil
+	}
+	sort.SliceStable(pool, func(i, j int) bool {
+		if pool[i].hit.Score != pool[j].hit.Score {
+			return pool[i].hit.Score > pool[j].hit.Score
+		}
+		return pool[i].hit.ID < pool[j].hit.ID
+	})
+
 	out := make([]ProjectHit, 0, limit)
-	for _, h := range hits {
+	for _, sh := range pool {
 		if len(out) >= limit {
 			break
 		}
-		slug, ok := idToSlug[h.ID]
-		if !ok {
+		slug := sh.slug
+		if slug == "" {
+			slug = idToSlug[sh.hit.ID]
+		}
+		if slug == "" {
 			// Phase hit (or project deleted between embed write and search).
 			continue
 		}
 		p, err := s.GetProject(ctx, slug)
 		if err != nil {
-			// Project vanished mid-walk; skip silently rather than fail the
-			// whole call.
 			continue
 		}
-		out = append(out, ProjectHit{Project: p, ProjectSlug: slug, Score: h.Score})
+		out = append(out, ProjectHit{Project: p, ProjectSlug: slug, Score: sh.hit.Score})
 	}
 	return out, nil
 }
@@ -172,7 +253,8 @@ func (s *Service) SearchTickets(ctx context.Context, in domain.SearchTicketsInpu
 	}
 	slug := lp.Project.Slug
 
-	vec, err := s.Embed.Embed(ctx, q)
+	provider, idx := s.mountProviderAndIndex(slug, indexKindTickets)
+	vec, err := provider.Embed(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
@@ -185,7 +267,7 @@ func (s *Service) SearchTickets(ctx context.Context, in domain.SearchTicketsInpu
 			rawLimit = searchMaxLimit * 4
 		}
 	}
-	hits := s.TicketsIdx.Search(vec, vecindex.KindTicketBody, slug, rawLimit)
+	hits := idx.Search(vec, vecindex.KindTicketBody, slug, rawLimit)
 	if len(hits) == 0 {
 		return []TicketHit{}, nil
 	}
@@ -236,23 +318,6 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 	}
 	limit := clampSearchLimit(in.Limit)
 
-	// Optional project scoping: load the project so we can both narrow the
-	// index search and hydrate comment owners later. When unset, we walk hits
-	// across all projects.
-	var scopedSlug string
-	if strings.TrimSpace(in.ProjectIDOrSlug) != "" {
-		lp, _, err := s.Cache.Get(ctx, in.ProjectIDOrSlug)
-		if err != nil {
-			return nil, err
-		}
-		scopedSlug = lp.Project.Slug
-	}
-
-	vec, err := s.Embed.Embed(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
-	}
-
 	// Over-fetch when post-filtering by ticket id.
 	rawLimit := limit
 	if strings.TrimSpace(in.TicketID) != "" {
@@ -261,33 +326,105 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 			rawLimit = searchMaxLimit * 4
 		}
 	}
-	hits := s.CommentsIdx.Search(vec, vecindex.KindComment, scopedSlug, rawLimit)
-	if len(hits) == 0 {
-		return []CommentHit{}, nil
+
+	// Project-scoped path: use the mount's provider + its CommentsIdx.
+	if strings.TrimSpace(in.ProjectIDOrSlug) != "" {
+		lp, _, err := s.Cache.Get(ctx, in.ProjectIDOrSlug)
+		if err != nil {
+			return nil, err
+		}
+		slug := lp.Project.Slug
+		provider, idx := s.mountProviderAndIndex(slug, indexKindComments)
+		vec, err := provider.Embed(ctx, q)
+		if err != nil {
+			return nil, fmt.Errorf("embed query: %w", err)
+		}
+		hits := idx.Search(vec, vecindex.KindComment, slug, rawLimit)
+		out := make([]CommentHit, 0, limit)
+		for _, h := range hits {
+			if len(out) >= limit {
+				break
+			}
+			hit, ok := s.hydrateCommentHit(ctx, slug, h, in.TicketID)
+			if !ok {
+				continue
+			}
+			out = append(out, hit)
+		}
+		return out, nil
 	}
 
-	// Snapshot the index so we can recover each hit's Owner slug for routing
-	// to the right project cache entry (when not already scoped).
+	// Unscoped path: aggregate across mounts. Per-mount dims may differ, so
+	// embed once per mount-provider and merge hits by score. Falls back to
+	// the registry-empty defaultIndexes when no mounts exist.
+	type src struct {
+		slug     string
+		provider embed.Provider
+		idx      *vecindex.Index
+	}
+	var sources []src
+	_ = s.WalkProjectMounts(func(slug string, mount *ProjectMount) error {
+		if mount == nil || mount.CommentsIdx == nil {
+			return nil
+		}
+		p := mount.Embed
+		if p == nil {
+			p = s.Embed
+		}
+		sources = append(sources, src{slug: slug, provider: p, idx: mount.CommentsIdx})
+		return nil
+	})
+	if len(sources) == 0 && s.defaultIndexes.Comments != nil {
+		sources = append(sources, src{slug: "", provider: s.Embed, idx: s.defaultIndexes.Comments})
+	}
+	type scored struct {
+		hit  vecindex.Hit
+		slug string
+	}
+	var pool []scored
+	for _, sr := range sources {
+		vec, err := sr.provider.Embed(ctx, q)
+		if err != nil {
+			return nil, fmt.Errorf("embed query (slug=%s): %w", sr.slug, err)
+		}
+		// In the registry-empty stdio path, sr.slug is "" and the index entry
+		// Owner carries the slug, so don't filter by owner. When sr.slug is
+		// set, scope the search to that mount's slug as a defence against
+		// crossed entries (per-mount index should only hold its own slug).
+		hits := sr.idx.Search(vec, vecindex.KindComment, sr.slug, rawLimit)
+		for _, h := range hits {
+			pool = append(pool, scored{hit: h, slug: sr.slug})
+		}
+	}
+	if len(pool) == 0 {
+		return []CommentHit{}, nil
+	}
+	sort.SliceStable(pool, func(i, j int) bool {
+		if pool[i].hit.Score != pool[j].hit.Score {
+			return pool[i].hit.Score > pool[j].hit.Score
+		}
+		return pool[i].hit.ID < pool[j].hit.ID
+	})
+	// For the stdio fallback (slug=""), recover Owner via the index Snapshot.
 	ownerByID := map[string]string{}
-	if scopedSlug == "" {
-		for _, e := range s.CommentsIdx.Snapshot() {
+	if s.defaultIndexes.Comments != nil {
+		for _, e := range s.defaultIndexes.Comments.Snapshot() {
 			ownerByID[e.ID] = e.Owner
 		}
 	}
-
 	out := make([]CommentHit, 0, limit)
-	for _, h := range hits {
+	for _, sh := range pool {
 		if len(out) >= limit {
 			break
 		}
-		slug := scopedSlug
+		slug := sh.slug
 		if slug == "" {
-			slug = ownerByID[h.ID]
-			if slug == "" {
-				continue
-			}
+			slug = ownerByID[sh.hit.ID]
 		}
-		hit, ok := s.hydrateCommentHit(ctx, slug, h, in.TicketID)
+		if slug == "" {
+			continue
+		}
+		hit, ok := s.hydrateCommentHit(ctx, slug, sh.hit, in.TicketID)
 		if !ok {
 			continue
 		}
@@ -334,10 +471,10 @@ func (s *Service) hydrateCommentHit(ctx context.Context, slug string, h vecindex
 	return CommentHit{}, false
 }
 
-// SearchLearnings runs semantic search over the resident LearningsIdx (a
-// global index — its working set is small enough to keep in memory). The
-// optional ProjectIDOrSlug filter is applied post-hoc against the hit's Owner
-// (the entry was tagged with the project slug at upsert time).
+// SearchLearnings runs semantic search across mounted projects' per-mount
+// LearningsIdx. Each mount may use a different embedder/dim, so the query is
+// embedded once per provider and the resulting hits are merged by score.
+// The optional ProjectIDOrSlug filter scopes to one mount.
 //
 // Read-only — no requireSession.
 func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearningsInput) ([]LearningHit, error) {
@@ -346,16 +483,11 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 		return nil, fmt.Errorf("%w: query required", domain.ErrInvalidArgument)
 	}
 	limit := clampSearchLimit(in.Limit)
-
-	vec, err := s.Embed.Embed(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+	rawLimit := limit
+	if rawLimit > searchMaxLimit*4 {
+		rawLimit = searchMaxLimit * 4
 	}
 
-	// Resolve the optional project filter to a slug we can compare against
-	// each entry's Owner. If the project doesn't exist, fall through with
-	// an empty filter rather than fail — caller likely typoed the slug; an
-	// empty result is more useful than a 404.
 	var scopedSlug string
 	if strings.TrimSpace(in.ProjectIDOrSlug) != "" {
 		lp, _, err := s.Cache.Get(ctx, in.ProjectIDOrSlug)
@@ -365,41 +497,80 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 		scopedSlug = lp.Project.Slug
 	}
 
-	// Over-fetch when post-filtering by project, since the index search runs
-	// without an owner filter to keep its single resident shape.
-	rawLimit := limit
-	if scopedSlug != "" {
-		rawLimit = limit * 4
-		if rawLimit > searchMaxLimit*4 {
-			rawLimit = searchMaxLimit * 4
+	// Snapshot mounts (filtered to scopedSlug if set).
+	type src struct {
+		slug     string
+		provider embed.Provider
+		idx      *vecindex.Index
+	}
+	var sources []src
+	_ = s.WalkProjectMounts(func(slug string, mount *ProjectMount) error {
+		if mount == nil || mount.LearningsIdx == nil {
+			return nil
+		}
+		if scopedSlug != "" && slug != scopedSlug {
+			return nil
+		}
+		p := mount.Embed
+		if p == nil {
+			p = s.Embed
+		}
+		sources = append(sources, src{slug: slug, provider: p, idx: mount.LearningsIdx})
+		return nil
+	})
+	// Stdio fallback: registry-empty + scoped → no-op (scoped to a slug we
+	// can't resolve). Otherwise consult defaultIndexes.
+	if len(sources) == 0 && scopedSlug == "" && s.defaultIndexes.Learnings != nil {
+		sources = append(sources, src{slug: "", provider: s.Embed, idx: s.defaultIndexes.Learnings})
+	}
+
+	type scored struct {
+		hit  vecindex.Hit
+		slug string
+	}
+	var pool []scored
+	for _, sr := range sources {
+		vec, err := sr.provider.Embed(ctx, q)
+		if err != nil {
+			return nil, fmt.Errorf("embed query (slug=%s): %w", sr.slug, err)
+		}
+		// Per-mount index already only holds this slug's entries; passing
+		// owner=sr.slug is defence-in-depth. The stdio fallback path uses
+		// owner="" (snapshot lookup below recovers slug from Owner field).
+		hits := sr.idx.Search(vec, vecindex.KindTicketLearnings, sr.slug, rawLimit)
+		for _, h := range hits {
+			pool = append(pool, scored{hit: h, slug: sr.slug})
 		}
 	}
-	hits := s.LearningsIdx.Search(vec, vecindex.KindTicketLearnings, "", rawLimit)
-	if len(hits) == 0 {
+	if len(pool) == 0 {
 		return []LearningHit{}, nil
 	}
-
-	// Map id → owner so we can scope to a project without re-reading every
-	// project off disk on each hit.
+	sort.SliceStable(pool, func(i, j int) bool {
+		if pool[i].hit.Score != pool[j].hit.Score {
+			return pool[i].hit.Score > pool[j].hit.Score
+		}
+		return pool[i].hit.ID < pool[j].hit.ID
+	})
+	// stdio-fallback owner recovery
 	ownerByID := map[string]string{}
-	for _, e := range s.LearningsIdx.Snapshot() {
-		ownerByID[e.ID] = e.Owner
+	if s.defaultIndexes.Learnings != nil {
+		for _, e := range s.defaultIndexes.Learnings.Snapshot() {
+			ownerByID[e.ID] = e.Owner
+		}
 	}
-
 	out := make([]LearningHit, 0, limit)
-	for _, h := range hits {
+	for _, sh := range pool {
 		if len(out) >= limit {
 			break
 		}
-		slug := ownerByID[h.ID]
+		slug := sh.slug
 		if slug == "" {
-			// Owner unknown (shouldn't happen post-T10 but guard anyway).
+			slug = ownerByID[sh.hit.ID]
+		}
+		if slug == "" {
 			continue
 		}
-		if scopedSlug != "" && slug != scopedSlug {
-			continue
-		}
-		hit, ok := s.hydrateLearningHit(ctx, slug, h)
+		hit, ok := s.hydrateLearningHit(ctx, slug, sh.hit)
 		if !ok {
 			continue
 		}

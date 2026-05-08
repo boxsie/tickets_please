@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"tickets_please/internal/config"
 )
 
 // ollamaTimeout caps a single Embed call. The first request after a model load
@@ -26,12 +24,12 @@ type Ollama struct {
 	dim    int
 }
 
-// NewOllama constructs an Ollama provider from cfg. It does not contact the
+// NewOllama constructs an Ollama provider from view. It does not contact the
 // server.
-func NewOllama(cfg config.Config) *Ollama {
+func NewOllama(view EmbedConfig) *Ollama {
 	return &Ollama{
-		url:    strings.TrimRight(cfg.OllamaURL, "/"),
-		model:  cfg.OllamaModel,
+		url:    strings.TrimRight(view.OllamaURL, "/"),
+		model:  view.Model,
 		client: &http.Client{Timeout: ollamaTimeout},
 	}
 }

@@ -9,8 +9,6 @@ package embed
 import (
 	"context"
 	"fmt"
-
-	"tickets_please/internal/config"
 )
 
 // Provider is the embedding backend abstraction. Implementations must be safe
@@ -30,22 +28,33 @@ type Provider interface {
 	Name() string
 }
 
-// New constructs a Provider keyed off cfg.EmbedProvider.
+// EmbedConfig is the small projection of config that an embedding provider
+// needs. Per-project mounts merge their project.yaml's (provider, model) over
+// the server's defaults and pass the resulting view here. Decouples the
+// embed package from the full server config shape.
+type EmbedConfig struct {
+	Provider  string // "ollama" or "openai"
+	Model     string // model identifier; ollama uses it verbatim, openai ignores it (model is hardcoded by SDK)
+	OllamaURL string // base URL for the local Ollama server
+	OpenAIKey string // API key for OpenAI
+}
+
+// New constructs a Provider keyed off view.Provider.
 //
 // Recognized values: "ollama" (default), "openai". Unknown values return an
-// error. For OpenAI an empty cfg.OpenAIKey is also a clear error.
-func New(cfg config.Config) (Provider, error) {
-	switch cfg.EmbedProvider {
+// error. For OpenAI an empty view.OpenAIKey is also a clear error.
+func New(view EmbedConfig) (Provider, error) {
+	switch view.Provider {
 	case "ollama":
-		return NewOllama(cfg), nil
+		return NewOllama(view), nil
 	case "openai":
-		if cfg.OpenAIKey == "" {
+		if view.OpenAIKey == "" {
 			return nil, fmt.Errorf("embed: openai provider selected but openai_api_key is empty (set OPENAI_API_KEY)")
 		}
-		return NewOpenAI(cfg), nil
+		return NewOpenAI(view), nil
 	case "":
 		return nil, fmt.Errorf("embed: empty embed_provider; expected one of: ollama, openai")
 	default:
-		return nil, fmt.Errorf("embed: unknown embed_provider %q; expected one of: ollama, openai", cfg.EmbedProvider)
+		return nil, fmt.Errorf("embed: unknown embed_provider %q; expected one of: ollama, openai", view.Provider)
 	}
 }
