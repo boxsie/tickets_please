@@ -2,11 +2,13 @@ id: a28797b8-51c3-490b-bd6c-fda9f7cfd1bc
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 44
 title: 'MCP tool: reembed_project'
-column: testing
+column: done
 phase_id: 69d6390c-3565-4e70-b82e-022b69c68f82
 wave: 3
 depends_on:
     - ef8be475-0163-491d-9f38-f605bdee6b2e
 created_by: 3868e790-8a50-4ed1-9964-3d778ce7c3fb
+completed_by: 2a13dcea-f31d-46e2-8fd8-29f333ddfc79
+completed_at: 2026-05-08T14:46:40.79508283+01:00
 created_at: 2026-05-08T11:31:22.096927228+01:00
-updated_at: 2026-05-08T14:46:24.908333478+01:00
+updated_at: 2026-05-08T14:46:40.79508283+01:00
