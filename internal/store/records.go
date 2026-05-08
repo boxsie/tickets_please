@@ -19,6 +19,8 @@ type ProjectRecord struct {
 	Slug             string    `yaml:"slug"`
 	Name             string    `yaml:"name"`
 	Description      string    `yaml:"description,omitempty"`
+	EmbedProvider    string    `yaml:"embed_provider,omitempty"`
+	EmbedModel       string    `yaml:"embed_model,omitempty"`
 	CreatedByAgentID *string   `yaml:"created_by,omitempty"`
 	CreatedAt        time.Time `yaml:"created_at"`
 	UpdatedAt        time.Time `yaml:"updated_at"`

@@ -13,10 +13,27 @@ import (
 	"github.com/google/uuid"
 
 	"tickets_please/internal/cache"
+	"tickets_please/internal/config"
 	"tickets_please/internal/domain"
 	"tickets_please/internal/store"
 	"tickets_please/internal/worker"
 )
+
+// defaultEmbedFor returns the (provider, model) pair to stamp into a freshly
+// created project record. Falls back to ollama when cfg.EmbedProvider is unset
+// so brand-new projects always carry concrete values.
+func defaultEmbedFor(cfg config.Config) (string, string) {
+	provider := cfg.EmbedProvider
+	if provider == "" {
+		provider = "ollama"
+	}
+	switch provider {
+	case "openai":
+		return provider, "text-embedding-3-small"
+	default:
+		return provider, cfg.OllamaModel
+	}
+}
 
 // LoadProjectResult is what Service.LoadProject returns. Handle is purely
 // diagnostic: subsequent calls just pass slug-or-id, and the cache key is
@@ -126,13 +143,16 @@ func (s *Service) createProjectImpl(ctx context.Context, repoPath string, target
 	}
 
 	now := time.Now()
+	provider, model := defaultEmbedFor(s.Cfg)
 	rec := &store.ProjectRecord{
-		ID:          uuid.NewString(),
-		Slug:        slug,
-		Name:        name,
-		Description: normalizeLabel(description),
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:            uuid.NewString(),
+		Slug:          slug,
+		Name:          name,
+		Description:   normalizeLabel(description),
+		EmbedProvider: provider,
+		EmbedModel:    model,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	if agent != nil {
 		rec.CreatedByAgentID = &agent.ID
@@ -308,6 +328,12 @@ func (s *Service) UpdateProject(ctx context.Context, idOrSlug string, in domain.
 	}
 	if in.Description != nil {
 		rec.Description = normalizeLabel(*in.Description)
+	}
+	if in.EmbedProvider != nil {
+		rec.EmbedProvider = strings.TrimSpace(*in.EmbedProvider)
+	}
+	if in.EmbedModel != nil {
+		rec.EmbedModel = strings.TrimSpace(*in.EmbedModel)
 	}
 	rec.UpdatedAt = time.Now()
 
