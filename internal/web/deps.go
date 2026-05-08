@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"tickets_please/internal/config"
+	tplog "tickets_please/internal/log"
 	"tickets_please/internal/svc"
 )
 
@@ -20,4 +21,7 @@ type Deps struct {
 	// Dev enables on-disk template + static reload. Off in prod (templates
 	// served from the embedded FS).
 	Dev bool
+	// Logs is the in-process log ring backing /logs. nil → /logs renders an
+	// empty buffer (tests that don't care about the page leave it nil).
+	Logs *tplog.Ring
 }

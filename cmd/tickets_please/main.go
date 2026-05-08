@@ -26,6 +26,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"tickets_please/internal/config"
+	tplog "tickets_please/internal/log"
 	"tickets_please/internal/mcptools"
 	"tickets_please/internal/svc"
 	"tickets_please/internal/web"
@@ -45,7 +46,15 @@ func main() {
 		sub = os.Args[1]
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	// Tee logs into an in-process ring buffer in addition to stderr so the
+	// /logs page (only mounted under `serve`) can render recent records.
+	// The ring is process-global; passing it through deps keeps the wiring
+	// explicit instead of leaning on a package-level singleton.
+	logRing := tplog.NewRing(tplog.DefaultCapacity)
+	logger := slog.New(tplog.NewMultiHandler(
+		slog.NewJSONHandler(os.Stderr, nil),
+		tplog.NewRingHandler(logRing, nil),
+	))
 
 	// `migrate` is a tooling subcommand that runs entirely off-config (it
 	// operates on a path the user passes), so handle it before config.Load.
@@ -76,7 +85,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "serve":
-		if err := runServe(os.Args[2:], cfg, logger); err != nil {
+		if err := runServe(os.Args[2:], cfg, logger, logRing); err != nil {
 			logger.Error("serve failed", "err", err)
 			os.Exit(1)
 		}
@@ -175,7 +184,7 @@ func runMCP(cfg config.Config, log *slog.Logger) error {
 //	/healthz  → 200 "ok" plaintext liveness probe
 //
 // Localhost-only by default, no TLS, no auth — out of scope for v1.
-func runServe(args []string, cfg config.Config, log *slog.Logger) error {
+func runServe(args []string, cfg config.Config, log *slog.Logger, logRing *tplog.Ring) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", ":8765", "HTTP listen address")
 	dataRoot := fs.String("data-root", "", "override central data root (default: cfg.DataRoot)")
@@ -215,7 +224,7 @@ func runServe(args []string, cfg config.Config, log *slog.Logger) error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok")
 	})
-	web.Mount(mux, web.Deps{Service: s, Logger: log, Cfg: cfg, Dev: *dev})
+	web.Mount(mux, web.Deps{Service: s, Logger: log, Cfg: cfg, Dev: *dev, Logs: logRing})
 
 	srv := &http.Server{
 		Addr:              *addr,

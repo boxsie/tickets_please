@@ -1,0 +1,18 @@
+{{define "main"}}
+{{- $f := .Body -}}
+<section class="logs-page">
+  <header class="page-header">
+    <h1>Server logs</h1>
+    <p class="subtitle">
+      Last {{$f.Count}} structured log records, JSON-encoded, oldest first. Mirrors what the operator sees on stderr.
+    </p>
+    <p class="muted">Auto-refreshing every 2 seconds.</p>
+  </header>
+  {{if $f.Empty}}
+  <p class="muted">No log records captured yet.</p>
+  {{else}}
+  <pre class="logs-pre" style="background:#111;color:#eee;padding:1em;max-height:70vh;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.4;white-space:pre-wrap;word-break:break-all;">{{$f.Lines}}</pre>
+  {{end}}
+</section>
+<meta http-equiv="refresh" content="2">
+{{end}}
