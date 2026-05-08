@@ -2,12 +2,14 @@ id: 6d6e83c3-a0dd-46d1-80bf-33e5de3332c2
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 39
 title: Per-project Embed + vec indexes on ProjectMount
-column: testing
+column: done
 phase_id: 69d6390c-3565-4e70-b82e-022b69c68f82
 wave: 2
 depends_on:
     - 6dc8d112-8c94-4546-acae-33b279089dbb
     - b69056f8-a0b8-4ff5-bd2e-ecc8659290e1
 created_by: 3868e790-8a50-4ed1-9964-3d778ce7c3fb
+completed_by: 79c60585-1930-4165-b847-b3f7dd04e4b5
+completed_at: 2026-05-08T13:14:51.36289746+01:00
 created_at: 2026-05-08T11:29:49.497861838+01:00
-updated_at: 2026-05-08T13:14:37.230355047+01:00
+updated_at: 2026-05-08T13:14:51.36289746+01:00
