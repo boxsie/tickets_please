@@ -1,0 +1,8 @@
+.git
+.gitignore
+.tickets_please
+*.md
+planning
+e2e
+examples
+tickets_please
