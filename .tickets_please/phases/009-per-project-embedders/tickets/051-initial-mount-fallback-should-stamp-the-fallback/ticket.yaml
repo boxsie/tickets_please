@@ -2,10 +2,8 @@ id: de1a552e-d51b-4867-85e5-a5e910de23c8
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 51
 title: Initial-mount fallback should stamp the fallback's model name (truth, not user intent)
-column: done
+column: todo
 phase_id: 69d6390c-3565-4e70-b82e-022b69c68f82
 created_by: 3be3a56c-8b79-4b56-82c4-ad3a53153274
-completed_by: 7fdab114-6b63-48e4-ab87-43698fbc3c32
-completed_at: 2026-05-09T19:37:01.821130014+01:00
 created_at: 2026-05-08T18:46:45.103070749+01:00
-updated_at: 2026-05-09T19:37:01.821130014+01:00
+updated_at: 2026-05-08T18:46:45.103070749+01:00
