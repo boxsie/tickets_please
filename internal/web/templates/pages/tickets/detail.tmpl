@@ -20,7 +20,7 @@
       {{if $b.IsDone}}
         {{template "frozen_actions.tmpl" $b}}
       {{else}}
-        <button type="button" class="btn-primary" data-dialog="dlg-complete">Complete</button>
+        <button type="button" class="btn btn-primary" data-dialog="dlg-complete">Complete</button>
         <button type="button" class="btn" data-dialog="dlg-move">Move</button>
         {{if $b.Phases}}<button type="button" class="btn" data-dialog="dlg-assign-phase">Reassign phase</button>{{end}}
         <a class="btn" href="/tickets/{{$tkt.ID}}/edit?slug={{$proj.Slug}}">Edit ticket</a>
