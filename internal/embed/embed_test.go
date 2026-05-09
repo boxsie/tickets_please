@@ -204,6 +204,80 @@ func TestOllamaEmbedNon2xxError(t *testing.T) {
 	}
 }
 
+func TestOllamaProbeAutoPullsMissingModel(t *testing.T) {
+	var (
+		embedHits int
+		pulled    bool
+		pullModel string
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/embeddings":
+			embedHits++
+			if !pulled {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"model \"bge-m3\" not found, try pulling it first"}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"embedding": make([]float32, 1024)})
+		case "/api/pull":
+			var body struct {
+				Name string `json:"name"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			pullModel = body.Name
+			pulled = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success"})
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	o := NewOllama(EmbedConfig{Provider: "ollama", OllamaURL: srv.URL, Model: "bge-m3"})
+	if err := o.Probe(context.Background()); err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if !pulled {
+		t.Fatal("expected /api/pull to be called")
+	}
+	if pullModel != "bge-m3" {
+		t.Errorf("pull model = %q, want bge-m3", pullModel)
+	}
+	if embedHits != 2 {
+		t.Errorf("embed hits = %d, want 2 (initial 404 + retry)", embedHits)
+	}
+	if got := o.Dim(); got != 1024 {
+		t.Errorf("Dim() = %d, want 1024", got)
+	}
+}
+
+func TestOllamaProbeUnrelated404DoesNotPull(t *testing.T) {
+	var pulled bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/pull" {
+			pulled = true
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		// 404 with a different message — e.g. wrong endpoint, generic gateway 404 — must NOT trigger a pull.
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	o := NewOllama(EmbedConfig{Provider: "ollama", OllamaURL: srv.URL, Model: "bge-m3"})
+	if err := o.Probe(context.Background()); err == nil {
+		t.Fatal("Probe: expected error, got nil")
+	}
+	if pulled {
+		t.Error("/api/pull was called for an unrelated 404 — should only auto-pull on 'not found, try pulling it' message")
+	}
+}
+
 // --- Ollama smoke (real server, gated) --------------------------------------
 
 // TestOllamaSmoke hits a real Ollama and confirms a 768-dim vector.

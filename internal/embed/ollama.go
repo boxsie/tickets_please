@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +16,10 @@ import (
 // ollamaTimeout caps a single Embed call. The first request after a model load
 // can take 10+ seconds while Ollama warms up, so we leave generous headroom.
 const ollamaTimeout = 60 * time.Second
+
+// ollamaPullTimeout caps an /api/pull call. Embedding models like bge-m3 are
+// ~1.2GB; on a slow link the pull can take several minutes.
+const ollamaPullTimeout = 15 * time.Minute
 
 // Ollama is the embed.Provider backed by a local Ollama server. It uses the
 // /api/embeddings HTTP endpoint directly (no SDK).
@@ -37,12 +43,97 @@ func NewOllama(view EmbedConfig) *Ollama {
 // Probe runs a single Embed call against the configured Ollama server and
 // records the resulting vector length. The Service guarantees Probe runs once
 // before any caller asks for Dim().
+//
+// If the first call fails because the model isn't installed, Probe attempts an
+// /api/pull and retries once. This makes a fresh Ollama deployment usable
+// without an out-of-band `ollama pull` step.
 func (o *Ollama) Probe(ctx context.Context) error {
 	vec, err := o.Embed(ctx, "ping")
+	if err != nil && isOllamaModelMissing(err) {
+		slog.Default().Info("ollama: model not present; pulling", "model", o.model, "url", o.url)
+		if pullErr := o.pull(ctx); pullErr != nil {
+			return fmt.Errorf("ollama: probe: model %q missing and pull failed: %w", o.model, pullErr)
+		}
+		slog.Default().Info("ollama: pull complete; retrying probe", "model", o.model)
+		vec, err = o.Embed(ctx, "ping")
+	}
 	if err != nil {
 		return fmt.Errorf("ollama: probe: %w", err)
 	}
 	o.dim = len(vec)
+	return nil
+}
+
+// isOllamaModelMissing detects the specific 404 Ollama returns when an
+// embedding call references a model that hasn't been pulled. Anything else
+// (network errors, malformed responses, real 5xx) is left for the caller to
+// surface — we only auto-recover from the obviously-recoverable case.
+func isOllamaModelMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "status 404") &&
+		strings.Contains(msg, "not found") &&
+		strings.Contains(msg, "try pulling it")
+}
+
+// pull POSTs to /api/pull with stream:false so the call blocks until the
+// download completes (or fails). Uses a fresh client because the per-Embed
+// 60s timeout would kill a multi-GB model pull.
+func (o *Ollama) pull(ctx context.Context) error {
+	body, err := json.Marshal(map[string]any{
+		"name":   o.model,
+		"stream": false,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal pull request: %w", err)
+	}
+
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, ollamaPullTimeout)
+		defer cancel()
+	}
+
+	endpoint := o.url + "/api/pull"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build pull request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: ollamaPullTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("post %s: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("%s: status %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(snippet)))
+	}
+
+	// With stream:false Ollama returns a single JSON object; with stream:true
+	// it returns NDJSON. Drain whatever it gave us so the connection can be
+	// reused, and check the final payload looks like success.
+	var out struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	dec := json.NewDecoder(resp.Body)
+	for {
+		if err := dec.Decode(&out); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("decode pull response: %w", err)
+		}
+		if out.Error != "" {
+			return fmt.Errorf("ollama reported pull error: %s", out.Error)
+		}
+	}
 	return nil
 }
 
