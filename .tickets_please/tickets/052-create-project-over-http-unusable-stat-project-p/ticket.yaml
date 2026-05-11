@@ -2,7 +2,9 @@ id: ef7e0770-45b3-4d8a-b4d7-ef68d7acdb4f
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 52
 title: 'create_project over HTTP unusable: stat(project_path) rejects non-existent paths'
-column: testing
+column: done
 created_by: f88a10f7-e852-48c8-ae66-9840617e88ff
+completed_by: f88a10f7-e852-48c8-ae66-9840617e88ff
+completed_at: 2026-05-11T13:45:01.421352138+01:00
 created_at: 2026-05-11T13:34:28.633877038+01:00
-updated_at: 2026-05-11T13:44:33.666132338+01:00
+updated_at: 2026-05-11T13:45:01.421352138+01:00
