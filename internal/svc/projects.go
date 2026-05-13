@@ -74,10 +74,32 @@ func (s *Service) CreateProjectAt(ctx context.Context, repoPath, slug, name, des
 	if !filepath.IsAbs(repoPath) {
 		return nil, fmt.Errorf("%w: repo_path %q must be absolute", domain.ErrInvalidArgument, repoPath)
 	}
-	if info, err := os.Stat(repoPath); err != nil {
-		return nil, fmt.Errorf("%w: repo_path %s: %v", domain.ErrInvalidArgument, repoPath, err)
-	} else if !info.IsDir() {
-		return nil, fmt.Errorf("%w: repo_path %s is not a directory", domain.ErrInvalidArgument, repoPath)
+	info, statErr := os.Stat(repoPath)
+	switch {
+	case statErr == nil:
+		if !info.IsDir() {
+			return nil, fmt.Errorf("%w: repo_path %s is not a directory", domain.ErrInvalidArgument, repoPath)
+		}
+	case errors.Is(statErr, fs.ErrNotExist):
+		// The bootstrap escape valve for HTTP clients: the caller's
+		// project_path is a string identifier that may name a directory on
+		// the client's machine, not the server's. Materialise it under the
+		// configured RemoteProjectRoot so the path can serve as a stable
+		// project identifier for subsequent register_agent calls. Stdio
+		// callers whose local repo path actually exists never hit this
+		// branch.
+		root := strings.TrimSpace(s.Cfg.RemoteProjectRoot)
+		if root == "" {
+			return nil, fmt.Errorf("%w: repo_path %s: %v", domain.ErrInvalidArgument, repoPath, statErr)
+		}
+		if !pathUnderRoot(repoPath, root) {
+			return nil, fmt.Errorf("%w: repo_path %s does not exist and is not under remote_project_root %s — pass a path under that root, or reconfigure with --remote-project-root", domain.ErrInvalidArgument, repoPath, root)
+		}
+		if err := os.MkdirAll(repoPath, 0o755); err != nil {
+			return nil, fmt.Errorf("mkdir %s: %w", repoPath, err)
+		}
+	default:
+		return nil, fmt.Errorf("%w: repo_path %s: %v", domain.ErrInvalidArgument, repoPath, statErr)
 	}
 
 	dataDir := filepath.Join(repoPath, ".tickets_please")
@@ -718,6 +740,26 @@ func (s *Service) LoadProject(ctx context.Context, idOrSlug string) (LoadProject
 
 // ensureTrailingNewline appends \n to s if it doesn't already end with one.
 // Mirrors the convention store.WriteMarkdown uses for body+summary files.
+// pathUnderRoot reports whether p resolves to a location at or below root.
+// Both inputs are cleaned; non-absolute root disables the check (returns
+// false) since "under" is meaningless for a relative anchor.
+func pathUnderRoot(p, root string) bool {
+	root = strings.TrimSpace(root)
+	p = strings.TrimSpace(p)
+	if root == "" || p == "" {
+		return false
+	}
+	if !filepath.IsAbs(root) || !filepath.IsAbs(p) {
+		return false
+	}
+	root = filepath.Clean(root)
+	p = filepath.Clean(p)
+	if p == root {
+		return true
+	}
+	return strings.HasPrefix(p, root+string(filepath.Separator))
+}
+
 func ensureTrailingNewline(s string) string {
 	if strings.HasSuffix(s, "\n") {
 		return s

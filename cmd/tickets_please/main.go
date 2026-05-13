@@ -192,12 +192,16 @@ func runServe(args []string, cfg config.Config, log *slog.Logger, logRing *tplog
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", ":8765", "HTTP listen address")
 	dataRoot := fs.String("data-root", "", "override central data root (default: cfg.DataRoot)")
+	remoteProjectRoot := fs.String("remote-project-root", "", "override root under which create_project may materialise missing project paths (default: cfg.RemoteProjectRoot)")
 	dev := fs.Bool("dev", false, "developer mode: reparse web templates and static files from disk on every request")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("parse serve flags: %w", err)
 	}
 	if *dataRoot != "" {
 		cfg.DataRoot = *dataRoot
+	}
+	if *remoteProjectRoot != "" {
+		cfg.RemoteProjectRoot = *remoteProjectRoot
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -217,6 +221,7 @@ func runServe(args []string, cfg config.Config, log *slog.Logger, logRing *tplog
 		mcpserver.WithInstructions(mcptools.ServerInstructions),
 	)
 	tools := mcptools.NewTools(s, registry, log)
+	tools.Remote = true
 	tools.RegisterAll(mcpServer)
 
 	httpMCP := mcpserver.NewStreamableHTTPServer(mcpServer)
@@ -239,6 +244,7 @@ func runServe(args []string, cfg config.Config, log *slog.Logger, logRing *tplog
 	log.Info("http mcp server starting",
 		"addr", *addr,
 		"data_root", cfg.DataRoot,
+		"remote_project_root", cfg.RemoteProjectRoot,
 		"tools", totalTools,
 		"web_ui", true,
 		"dev", *dev,
@@ -597,14 +603,17 @@ const dataDirReadme = "# .tickets_please/ — the per-repo data directory\n\n" +
 	"## Cold-starting a fresh repo\n\n" +
 	"If this dir has only `.staging/` and this README, there's no project yet.\n" +
 	"From any MCP client (HTTP or stdio) just call:\n\n" +
-	"1. `create_project` with `slug`, `name`, a substantive `summary` (≥200\n" +
-	"   chars — load-bearing context for future work), and `project_path` set\n" +
-	"   to the absolute path of this repo. The server writes `project.yaml`\n" +
-	"   here and mounts the project. This is the only mutation that doesn't\n" +
-	"   require a registered session — the bootstrap escape valve.\n" +
-	"   `created_by` is left empty for the bootstrap call.\n" +
-	"2. `register_agent` with the same `project_path` to bind your session\n" +
-	"   to the new project. Every subsequent mutation gets attributed.\n\n" +
+	"1. `create_project` with `slug`, `name`, and a substantive `summary`\n" +
+	"   (≥200 chars — load-bearing context for future work). On a remote\n" +
+	"   (HTTP) server, that's all you need: the server stores the project at\n" +
+	"   `<remote_project_root>/<slug>` automatically. Stdio clients also pass\n" +
+	"   `project_path`, the absolute path of this repo, so `project.yaml`\n" +
+	"   lands here. This is the only mutation that doesn't require a\n" +
+	"   registered session — the bootstrap escape valve. `created_by` is\n" +
+	"   left empty for the bootstrap call.\n" +
+	"2. `register_agent` to bind your session. Remote clients pass\n" +
+	"   `project_slug`; stdio clients pass `project_path`. Every subsequent\n" +
+	"   mutation gets attributed.\n\n" +
 	"See `../SPEC.md` (Data layout) for the canonical schema. Repos still on the\n" +
 	"v0.1 `projects/<slug>/` shape can be flattened with `tickets_please migrate`.\n"
 

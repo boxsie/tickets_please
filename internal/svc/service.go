@@ -797,6 +797,18 @@ func (s *Service) cacheWalkAllStores(fn func(*store.Store) error) error {
 	return nil
 }
 
+// MountRepoPathForSlug returns the repo path of the project mounted under
+// slug, or ("", false) when no mount exists. Used by the MCP register_agent
+// handler in remote mode to resolve `project_slug` to its on-disk path
+// without forcing the LLM to know server-side filesystem layout.
+func (s *Service) MountRepoPathForSlug(slug string) (string, bool) {
+	m := s.mountForSlug(slug)
+	if m == nil {
+		return "", false
+	}
+	return m.RepoPath, true
+}
+
 // mountForSlug returns the mount registered under slug, or nil. Read happens
 // under mountsMu so the returned pointer can't be racing eviction (Worker /
 // indexes get nil'd while the lock is held). Callers that follow up with

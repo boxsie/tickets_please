@@ -15,6 +15,13 @@ data_dir: ./.tickets_please
 # mount registry (<data_root>/registry.yaml). Tilde-expanded at load time.
 data_root: ~/.tickets_please
 
+# Root under which `create_project` may materialise a project directory when
+# the caller's `project_path` does not exist on the server (e.g. an HTTP MCP
+# client running on a different host). Existing paths are honoured as-is.
+# Missing paths outside this root are rejected. Set to "" to disable the
+# auto-create behaviour and restore the strict pre-HTTP semantics.
+remote_project_root: ~/.tickets_please/projects
+
 # When true and `data_dir` is inside a git repo, every mutating call produces a commit
 # authored as the calling agent. Set to false to skip the audit-trail commits.
 auto_commit: true

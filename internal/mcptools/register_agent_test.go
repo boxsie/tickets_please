@@ -150,6 +150,31 @@ func TestRegisterAgent_MissingProjectYAML(t *testing.T) {
 	}
 }
 
+// register_agent against a path that doesn't exist on the server returns the
+// same "no project.yaml here, call create_project first" hint that an existing
+// but unprovisioned directory gives. Previously the stat-precondition rejected
+// missing paths with a less actionable error; that check was removed so HTTP
+// clients passing a path that only exists on their machine get a uniform
+// bootstrap message.
+func TestRegisterAgent_NonExistentPathSurfacesBootstrapHint(t *testing.T) {
+	tools, _, _ := freshToolsForRegister(t)
+	missing := filepath.Join(t.TempDir(), "does", "not", "exist")
+	res := callRegister(t, tools, map[string]any{
+		"model":        "claude-opus-4-7",
+		"client_name":  "Claude Code",
+		"project_path": missing,
+	})
+	if !res.IsError {
+		t.Fatalf("expected error for non-existent path, got success: %s", extractText(t, res))
+	}
+	msg := extractText(t, res)
+	for _, want := range []string{"no .tickets_please/project.yaml at ", "create_project", "no session required"} {
+		if !contains(msg, want) {
+			t.Errorf("expected phrase %q in message, got %q", want, msg)
+		}
+	}
+}
+
 func TestRegisterAgent_RelativePathRejected(t *testing.T) {
 	tools, _, _ := freshToolsForRegister(t)
 	res := callRegister(t, tools, map[string]any{

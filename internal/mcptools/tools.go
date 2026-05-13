@@ -28,6 +28,12 @@ type Tools struct {
 	svc      *svc.Service
 	registry *Registry
 	logger   *slog.Logger
+	// Remote toggles server-managed project paths: create_project and
+	// register_agent no longer require an explicit project_path, instead
+	// deriving <remote_project_root>/<slug> automatically. Stdio (false)
+	// keeps the original path-explicit behaviour because the LLM is running
+	// on the same host as its repo and can name the local path.
+	Remote bool
 }
 
 // NewTools constructs a Tools. The caller owns the lifecycle of svc and
@@ -80,10 +86,10 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 	), t.handleListProjects)
 
 	s.AddTool(mcp.NewTool("create_project",
-		mcp.WithDescription("Create a new project. Slug must be unique and URL-safe. **Requires a `summary` field — a markdown document (≥200 chars) describing the project's goals, key components, and constraints.** This summary becomes the load-bearing context any future agent reads before working in this project. Be thorough. Also requires `project_path` — the absolute filesystem path of the repo where the project should live; `<project_path>/.tickets_please/` will be created if it doesn't exist. This is the bootstrap mutation: no session required."),
+		mcp.WithDescription("Create a new project. Slug must be unique and URL-safe. **Requires a `summary` field — a markdown document (≥200 chars) describing the project's goals, key components, and constraints.** This summary becomes the load-bearing context any future agent reads before working in this project. Be thorough. On a remote (HTTP) server, `project_path` is optional and the server stores the project at `<remote_project_root>/<slug>` automatically. Stdio clients must pass `project_path` — the absolute path of the local repo where `<project_path>/.tickets_please/` will be created. This is the bootstrap mutation: no session required."),
 		mcp.WithString("slug", mcp.Required(), mcp.Description("URL-safe unique slug for the project")),
 		mcp.WithString("name", mcp.Required(), mcp.Description("Display name for the project")),
-		mcp.WithString("project_path", mcp.Required(), mcp.Description("Absolute filesystem path of the repo where the project should live. `<project_path>/.tickets_please/` will be created if missing.")),
+		mcp.WithString("project_path", mcp.Description("Absolute filesystem path of the repo where the project should live. Optional on a remote (HTTP) server: omit it and the server stores the project at `<remote_project_root>/<slug>`. Required for stdio clients (their local repo path). When supplied: an existing path is used as-is; a missing path is materialised provided it falls under the server's configured `remote_project_root`. `<project_path>/.tickets_please/` is then written inside.")),
 		mcp.WithString("description", mcp.Description("One-line description")),
 		mcp.WithString("summary", mcp.Required(), mcp.Description("Markdown summary (≥200 chars) — the load-bearing context doc")),
 	), t.handleCreateProject)
@@ -273,12 +279,13 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 	), t.handleWhoAmI)
 
 	s.AddTool(mcp.NewTool("register_agent",
-		mcp.WithDescription("Self-register this MCP session with the server: declare the model, client, and bound project. **HTTP clients should call this once on connection** before any other tool call. Stdio clients pre-register at startup and can skip unless they want to override the defaults. The `project_path` must be the absolute filesystem path to a repo containing `.tickets_please/project.yaml`."),
+		mcp.WithDescription("Self-register this MCP session with the server: declare the model, client, and bound project. **HTTP clients should call this once on connection** before any other tool call. Stdio clients pre-register at startup and can skip unless they want to override the defaults. Bind the project via either `project_slug` (preferred on a remote server — the server already knows where the project lives) or `project_path` (the absolute path of a local repo containing `.tickets_please/project.yaml`, used by stdio clients)."),
 		mcp.WithString("model", mcp.Required(), mcp.Description("Model identifier, e.g. \"claude-opus-4-7\"")),
 		mcp.WithString("model_version", mcp.Description("Optional model version string")),
 		mcp.WithString("client_name", mcp.Required(), mcp.Description("Client name, e.g. \"Claude Code\"")),
 		mcp.WithString("client_version", mcp.Description("Optional client version string")),
-		mcp.WithString("project_path", mcp.Required(), mcp.Description("Absolute path to the repo whose .tickets_please/project.yaml binds this session")),
+		mcp.WithString("project_slug", mcp.Description("Slug of the project to bind this session to. Preferred on a remote (HTTP) server: the server resolves the slug to its on-disk location via the mount registry or `<remote_project_root>/<slug>`. One of project_slug or project_path is required.")),
+		mcp.WithString("project_path", mcp.Description("Absolute path to the repo whose .tickets_please/project.yaml binds this session. Required for stdio clients; remote clients should prefer project_slug.")),
 		mcp.WithString("agent_key", mcp.Description("Optional unique agent key; defaults to <client>:<rand>")),
 		mcp.WithString("agent_name", mcp.Description("Optional display name; defaults to client_name")),
 	), t.handleRegisterAgent)
@@ -317,8 +324,8 @@ func (t *Tools) callWithRetry(ctx context.Context, fn func(ctx context.Context) 
 	sess, ok := t.registry.Get(sessionID)
 	if !ok {
 		return fmt.Errorf("%w: no agent registered for session %q. "+
-			"If this repo has no project yet, call create_project with `project_path` set to the absolute repo path (no session required — it's the bootstrap escape valve), then register_agent. "+
-			"If project.yaml already exists, call register_agent with the absolute project_path.",
+			"If this project does not exist yet, call create_project first (no session required — the bootstrap escape valve; remote clients pass slug+name+summary, stdio clients also pass project_path). "+
+			"Then call register_agent (remote: project_slug; stdio: project_path) to bind this session.",
 			domain.ErrUnauthenticated, sessionID)
 	}
 	err := fn(svc.WithSessionID(ctx, sess.AgentID))
@@ -404,9 +411,16 @@ func (t *Tools) handleCreateProject(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	projectPath, err := req.RequireString("project_path")
-	if err != nil {
-		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	projectPath := strings.TrimSpace(req.GetString("project_path", ""))
+	if projectPath == "" {
+		if !t.Remote {
+			return mcp.NewToolResultError("invalid argument: project_path is required for stdio clients"), nil
+		}
+		root := strings.TrimSpace(t.svc.Cfg.RemoteProjectRoot)
+		if root == "" {
+			return mcp.NewToolResultError("invalid argument: project_path omitted but server has no remote_project_root configured"), nil
+		}
+		projectPath = filepath.Join(root, slug)
 	}
 	description := req.GetString("description", "")
 
@@ -416,8 +430,8 @@ func (t *Tools) handleCreateProject(ctx context.Context, req mcp.CallToolRequest
 	// otherwise the call proceeds with no agent and svc's optionalSession
 	// leaves created_by empty. This breaks the chicken-and-egg (register_agent
 	// needs project.yaml; project.yaml only exists after create_project) —
-	// call create_project with project_path first from any client, then
-	// register_agent for everything else.
+	// call create_project from any client, then register_agent for everything
+	// else.
 	if sess, ok := t.registry.Get(t.sessionIDFromContext(ctx)); ok {
 		ctx = svc.WithSessionID(ctx, sess.AgentID)
 	}
@@ -1229,38 +1243,53 @@ func (t *Tools) handleRegisterAgent(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	projectPath, err := req.RequireString("project_path")
-	if err != nil {
-		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
-	}
+	projectPath := strings.TrimSpace(req.GetString("project_path", ""))
+	projectSlug := strings.TrimSpace(req.GetString("project_slug", ""))
 	model = strings.TrimSpace(model)
 	clientName = strings.TrimSpace(clientName)
-	projectPath = strings.TrimSpace(projectPath)
 	if model == "" {
 		return mcp.NewToolResultError("invalid argument: model required"), nil
 	}
 	if clientName == "" {
 		return mcp.NewToolResultError("invalid argument: client_name required"), nil
 	}
+	if projectPath == "" && projectSlug == "" {
+		return mcp.NewToolResultError("invalid argument: one of project_slug or project_path is required"), nil
+	}
 	if projectPath == "" {
-		return mcp.NewToolResultError("invalid argument: project_path required"), nil
+		// Slug-only path: prefer an already-mounted project (it may live
+		// outside remote_project_root, e.g. a legacy stdio create) and fall
+		// back to the <remote_project_root>/<slug> convention used by
+		// remote-mode create_project.
+		if p, ok := t.svc.MountRepoPathForSlug(projectSlug); ok {
+			projectPath = p
+		} else {
+			root := strings.TrimSpace(t.svc.Cfg.RemoteProjectRoot)
+			if root == "" {
+				return mcp.NewToolResultError("invalid argument: project_slug given but server has no remote_project_root configured; pass project_path instead"), nil
+			}
+			projectPath = filepath.Join(root, projectSlug)
+		}
 	}
 	if !filepath.IsAbs(projectPath) {
 		return mcp.NewToolResultError("invalid argument: project_path must be absolute"), nil
 	}
-	if fi, statErr := os.Stat(projectPath); statErr != nil || !fi.IsDir() {
-		return mcp.NewToolResultError(fmt.Sprintf("invalid argument: project_path %q does not exist or is not a directory", projectPath)), nil
-	}
 
+	// No stat-precondition on projectPath itself: a missing dir is just a
+	// missing project.yaml, handled below with the same "call create_project
+	// first" hint. HTTP clients running on a different host than the server
+	// frequently pass a path that exists on their machine but not the
+	// server's — the bootstrap path through create_project will materialise
+	// it (under remote_project_root). See projects.go:CreateProjectAt.
 	projectYAML := filepath.Join(projectPath, ".tickets_please", "project.yaml")
 	projectRec := &store.ProjectRecord{}
 	if err := store.ReadYAML(projectYAML, projectRec); err != nil {
 		if os.IsNotExist(err) {
 			return mcp.NewToolResultError(fmt.Sprintf(
-				"no .tickets_please/project.yaml at %s — this repo has no project yet. "+
-					"Call create_project first with `project_path=%s` (no session required — it's the bootstrap escape valve); "+
+				"no .tickets_please/project.yaml at %s — this project does not exist yet. "+
+					"Call create_project first (no session required — it's the bootstrap escape valve); "+
 					"once project.yaml exists, register_agent works.",
-				projectPath, projectPath,
+				projectPath,
 			)), nil
 		}
 		return mcp.NewToolResultError("invalid argument: read project.yaml: " + err.Error()), nil

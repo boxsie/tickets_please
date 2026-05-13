@@ -28,7 +28,15 @@ type Config struct {
 	// <DataRoot>/agents/<uuid>.yaml. It is separate from DataDir so a
 	// long-running server can serve multiple repos without each one having its
 	// own copy of the agent registry.
-	DataRoot               string `koanf:"data_root"`
+	DataRoot string `koanf:"data_root"`
+	// RemoteProjectRoot bounds where create_project may materialise a project
+	// directory when the caller's project_path does not exist on the server.
+	// Defaults to <DataRoot>/projects (tilde-expanded). A create_project call
+	// whose project_path is missing AND falls outside this root is rejected;
+	// existing paths are used as-is regardless of root. Empty disables the
+	// "auto-create on missing path" behaviour, restoring the strict stdio
+	// pre-HTTP semantics.
+	RemoteProjectRoot      string `koanf:"remote_project_root"`
 	AutoCommit             bool   `koanf:"auto_commit"`
 	EmbedProvider          string `koanf:"embed_provider"`
 	OllamaURL              string `koanf:"ollama_url"`
@@ -53,6 +61,7 @@ type Config struct {
 var defaults = map[string]any{
 	"data_dir":                  "./.tickets_please",
 	"data_root":                 "~/.tickets_please",
+	"remote_project_root":       "~/.tickets_please/projects",
 	"auto_commit":               true,
 	"embed_provider":            "ollama",
 	"ollama_url":                "http://localhost:11434",
@@ -135,6 +144,7 @@ func Load() (Config, error) {
 
 	// koanf does not tilde-expand paths. Expand DataRoot manually.
 	cfg.DataRoot = expandTilde(cfg.DataRoot)
+	cfg.RemoteProjectRoot = expandTilde(cfg.RemoteProjectRoot)
 
 	return cfg, nil
 }
