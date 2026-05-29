@@ -178,3 +178,7 @@ Filesystem storage instead of a database. No protobuf, no gRPC, no docker. One b
 ## Caveats
 
 This is a personal/exploratory project. Not a product, no SLAs, no support. Built for fun and curiosity. If something here is interesting to you, take it.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
