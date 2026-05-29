@@ -1,31 +1,21 @@
-## tickets_please — meta-project
+## tickets_please — meta-project (dogfood)
 
-This project tracks evolution of the `tickets_please` system itself (dogfood). The system is a single-binary Go MCP server that backs a Trello-shaped, LLM-first ticketing model with semantically-searchable completion learnings.
+This project tracks the evolution of the `tickets_please` system itself. The system is a single-binary Go MCP server backing a Trello-shaped, LLM-first ticketing model: tickets flow `todo → in_progress → testing → done`, every column move needs a comment, `done` is reachable only via `complete_ticket`, done tickets are frozen, and comments are immutable. Completion is structured and sacred — `testing_evidence` + `work_summary` + `learnings`, all embedded and semantically searchable. That searchable-learnings loop is the whole point.
 
-## Architecture today
+## Architecture today (v0.3.0)
 
-- **Single Go binary** at `cmd/tickets_please/main.go`, subcommands `mcp` (stdio MCP server) / `init` / `check`.
-- **MCP library**: `github.com/mark3labs/mcp-go` v0.50.0. Currently stdio-only; the library also ships `StreamableHTTPServer` and `SSEServer` for HTTP transport.
-- **On-disk data** lives under `.tickets_please/` in the cwd of the launching client. Layout: `projects/<slug>/{project.yaml,summary.md,phases/,tickets/,...}`, `agents/<uuid>.yaml`, `.staging/`.
-- **Per-process Identity singleton** in `internal/mcptools/identity.go` — one MCP agent session per binary instance, registered at startup from env (`MCP_AGENT_NAME`, `MCP_AGENT_KEY`).
-- **28 MCP tools** across projects, phases, tickets, comments, search, introspection. 13 of them require `project_id_or_slug` on every call (no "current project" concept server-side).
-- **Embedding** via Ollama (default `nomic-embed-text`) or OpenAI; the HTTP call happens inside the MCP process.
-- **Auto-commit per mutation** when `data_dir` is inside a git repo — every move, create, complete lands as a commit attributed to the calling agent.
+- **Single Go binary** at `cmd/tickets_please/main.go` (go 1.25.x). Subcommands: `mcp` (stdio MCP server, the default), `serve` (long-running HTTP MCP host + browser web UI), `init`, `check`, and `migrate` (flatten a legacy v0.1 `projects/<slug>/` layout to the v0.2 single-project shape). `help` prints usage.
+- **Two transports, one wiring**: stdio via `mcp-go` `ServeStdio`, and HTTP via its `StreamableHTTPServer` mounted at `/mcp` (plus `/healthz` and the web UI under `serve`). MCP library: `github.com/mark3labs/mcp-go` v0.50.0.
+- **31 MCP tools** across Projects (8), Phases (7), Tickets (8), Comments (3), Search (3), Introspection (2). The canonical list + descriptions live in SPEC.md § MCP server and are asserted by `mcptools.expectedTools`.
+- **Per-session identity via `register_agent`** (not a process singleton). Each session declares its model/client and binds a project — stdio passes `project_path`, remote passes `project_slug`. Stdio pre-registers a default session at startup; HTTP clients call `register_agent` once per connection. Sessions auto-refresh on expiry. Agent records live in the central `~/.tickets_please/agents/`.
+- **Per-project embedders.** Each `project.yaml` declares `embed_provider`/`embed_model`; the server default is Ollama **`bge-m3`** (1024-dim, 8192-token context). Each mount probes its provider at attach and sizes its own four vec indexes (summaries/tickets/learnings/comments) to the probed dim. OpenAI is a pluggable alternative. A missing Ollama model is acquired in the **background** — the boot/attach path never blocks on a pull (a slow pull no longer stalls the MCP handshake); the project falls back to the server default, truthfully stamps the model it actually used, and re-embeds when the requested model lands. Sidecars whose stamped provider/model/dim no longer match their mount are treated as stale and rebuilt.
+- **On-disk store.** In-tree per-repo layout is the flattened v0.2 shape: `.tickets_please/{project.yaml, summary.md, tickets/<NNN>-<slug>/{ticket.yaml,body.md,completion.md,comments/}, phases/<NNN>-<slug>/...}` plus `*.embedding.json` sidecars (gitignored, regenerable) and `.staging/`. A central data root (`~/.tickets_please/`, key `data_root`) holds user-scoped agent sessions and the cross-repo mount `registry.yaml`. The central/remote multi-project store nests projects under `<remote_project_root>/<slug>/`. Filesystem is the source of truth — no database.
+- **Auto-commit per mutation** when the data dir is inside a git repo: every create/move/complete lands as a commit attributed to the calling agent.
+- **Cross-process consistency** via `fsnotify` watchers on loaded projects (mtime-polling fallback when `fsnotify_enabled: false`), with an LRU project cache (default 16) and per-project + global advisory file locks (build-tagged: `flock` on Unix, `LockFileEx` on Windows).
 
-## Active pain points motivating current work
+## Constraints / ethos
 
-1. **Codex sandbox can't reach Ollama at localhost:11434.** Each MCP client spawns its own stdio subprocess; the embedding call happens inside that sandboxed subprocess and fails. Centralising the server outside any client's sandbox fixes this — only the central process needs Ollama access.
-2. **Wasteful duplication.** Every spawned subprocess holds resident vector indexes and an LRU cache of up to 16 projects. N agents × N subagents × big indexes is silly.
-3. **Shallow agent metadata.** `MCP_AGENT_NAME=Claude Code` is set once at process startup and that's all attribution captures. The LLM itself knows its model name (Opus 4.7, Sonnet 4.6, etc.); the env var doesn't. Tickets get authored with no model/version trail.
-
-## Direction
-
-Move to a centralised long-running HTTP MCP server (one process, many clients), with project data still living per-repo (`.tickets_please/project.yaml` is the marker the server reads to bind a session to a project). Agents store moves to a central `~/.tickets_please/agents/`. Per-session Identity replaces the process-singleton. New `register_agent` MCP tool lets clients self-report rich metadata (model, version, client name, project path). Stdio mode preserved for backwards compatibility.
-
-Full plan: `/home/dan/.claude/plans/so-break-it-down-enchanted-pixel.md`.
-
-## Constraints
-
-- **Hobby project**, no customers. Lean toward fun tech and clean cuts over backwards-compat noise.
-- Single Go binary, no daemons/databases. Filesystem is the source of truth.
-- `mark3labs/mcp-go` v0.50.0 is the MCP library — its primitives (`StreamableHTTPServer`, per-connection sessions) should be reused rather than rebuilt.
+- **Hobby project**, no customers — favor clean cuts and fun tech over backwards-compat noise.
+- Single Go binary, no daemons or databases; the file tree is human-readable, greppable, and git-tracked.
+- Reuse `mark3labs/mcp-go` primitives (streamable HTTP, per-connection sessions) rather than rebuilding transport.
+- This repo **dogfoods its own development**: its tickets live in the in-tree `.tickets_please/` store (project slug `tickets-please`), driven by a local instance — never the remote instance host.
