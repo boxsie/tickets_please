@@ -1,0 +1,25 @@
+## Testing evidence
+- `GOOS=windows GOARCH=amd64 go build ./...` → succeeds (the headline acceptance). Also wired as `make build-windows` and added as a prerequisite of `make check` so it can't silently regress.
+- `go build ./...` (linux) and full `go test ./...` still green; `go test ./internal/store` (which exercises the shared acquireFlock contract via the concurrency/lock tests) passes.
+- `GOOS=windows go vet ./internal/store ./cmd/...` clean.
+- Audit of the "must verify" list: the flagged path sites (internal/store/stage.go, internal/svc/projects.go) use `filepath.Separator`, not hardcoded "/", so no filesystem-path assumptions. `syscall.SIGTERM` in cmd/main.go compiles for windows (defined there, just never delivered). go.sum already pinned the windows-transitive go-winio checksum, so the cross-build is reproducible from a clean checkout.
+
+NOT verified (no Windows host available to me): running the suite ON Windows, the stdio/serve smoke run, and two real concurrent Windows processes contending on the lock. The Windows lock impl mirrors the unix contract exactly and the cross-build+vet are clean, but a Windows CI runner is still needed to close those acceptance items — called out as follow-up.
+
+## Work summary
+Split the single compile blocker (BSD flock) behind build tags; everything else already used portable APIs.
+
+- `internal/store/lock.go`: dropped the `golang.org/x/sys/unix` import and moved `acquireFlock` out. The portable parts (LockScope, LockGlobal/LockProject, resolve, withLock, WithProjectLock/WithGlobalLock) stay here. Updated the close-releases-lock comment to note both flock and LockFileEx release on handle close.
+- `internal/store/lock_unix.go` (`//go:build !windows`): `acquireFlock` via `unix.Flock(LOCK_EX|LOCK_NB)` in the 50ms poll loop — byte-for-byte the prior behavior.
+- `internal/store/lock_windows.go` (`//go:build windows`): `acquireFlock` via `windows.LockFileEx(LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY)` locking the first byte, same poll/timeout/ctx-cancel loop. Retries on ERROR_LOCK_VIOLATION/ERROR_IO_PENDING; closing the *os.File releases the range.
+- `Makefile`: new `build-windows` target (GOOS=windows cross-compile) added to `.PHONY` and as a prerequisite of `check`.
+- `go.mod`: `go mod tidy` promoted `goldmark` indirect→direct (it's imported directly by internal/web) — incidental hygiene; go.sum unchanged.
+
+No interface abstraction was needed — a single build-tagged free function (`acquireFlock`) is the minimal seam since both impls share the identical poll-loop contract and return *os.File.
+
+## Learnings
+- The flock import was the ONLY compile blocker — a whole-codebase audit found no other GOOS-gated symbol. The store layer already used path/filepath + filepath.Separator everywhere, and `syscall.SIGTERM` is defined on Windows (compiles; just never fires), so signal.NotifyContext in cmd/main.go needs no change.
+- Minimal seam beats an interface here: rather than a LockFile interface with two impls, just build-tag the single `acquireFlock(ctx, path, timeout) (*os.File, error)` free function. Both platforms share withLock's `defer f.Close()` because flock AND LockFileEx both release the lock when the handle/fd closes — so the release path needed zero platform code.
+- Windows lock contract mapping: flock LOCK_EX|LOCK_NB ↔ LockFileEx(LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY); the "would block" signal flock returns as EWOULDBLOCK/EAGAIN is ERROR_LOCK_VIOLATION (and treat ERROR_IO_PENDING as retryable too). Lock a fixed 1-byte region at offset 0 so the lock works on a zero-length .lock file and every process contends on the identical range.
+- `golang.org/x/sys/windows` is the SAME module as `.../unix` (already a dep at v0.43.0), so no new require was needed; the windows subpackage just resolves. The cross-build pulled go-winio transitively (via go-git's windows file ops) but its checksum was already in go.sum, so `GOOS=windows go build` is reproducible.
+- Couldn't fully close the acceptance: running tests / smoke / concurrent-process lock contention ON Windows needs a real Windows runner (no CI config exists in the repo yet). Added `make build-windows` to the `check` gate as the best available regression guard from a unix host; a Windows CI job remains the right long-term follow-up.
