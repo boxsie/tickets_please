@@ -1,0 +1,21 @@
+## Testing evidence
+`TestStaleSidecar_DimMismatch` (internal/svc/embed_fallback_async_test.go) is the focused table test for the dim safety net: with a mount at EmbedDim=1024/model "m"/provider "fake", asserts staleSidecar is — false when provider+model+dim all match; true on dim mismatch (768-len vec vs 1024); true on model mismatch; true on provider mismatch; and importantly NOT stale for an unprobed mount (EmbedDim=0) so hand-built test mounts don't false-positive.
+
+The truthful-stamp half is asserted by `TestMountFallback_DoesNotBlockOnPull_ThenSwaps`: during the fallback window the mount's EmbedModel is "server-default-model" (the model actually used), NOT the requested "bge-m3"; once the real model is pulled the mount swaps to "bge-m3"/1024 and re-embeds. Existing per-project tests (TestPerProjectEmbedAndIndexes etc.) still pass unmodified.
+
+`go test ./internal/svc -race` green; full `go test ./...` green; `go build`/`go vet` clean.
+
+## Work summary
+Implemented recommended (1)+(3) in the SAME fallback branch as 3a138760:
+
+(1) Truth-stamp — `internal/svc/service.go` `attachMountEmbedAssets`: on probe failure the fallback branch now sets `mount.EmbedModel = embedViewFromCfg(s.Cfg, "", "").Model` (the server default's real model) instead of the project's requested model. Sidecars written during the fallback window therefore record their true provenance. (Plus: a model-missing failure now triggers a background pull + swap + re-embed so the lie window self-heals without a restart — see 3a138760.)
+
+(3) Dim safety net — `internal/svc/hydrate.go` `staleSidecar`: re-added `mount.EmbedDim > 0 && len(sc.Vec) != mount.EmbedDim` as a staleness signal alongside the provider/model check. Even if metadata ever lies again, a wrong-dimension vector forces a rebuild instead of loading into a mismatched index.
+
+Did NOT take option (2) (hard-refuse to mount) — the project values "boot stays accessible," and the background-swap path makes refusal unnecessary.
+
+## Learnings
+- The original "221 sidecars stamped bge-m3/dim=768" bug had TWO independent holes: the metadata lie (fallback stamping the requested model) AND the dropped dim-check. Fixing only one leaves a gap — stamp truth so the model-name check works, AND keep the dim check as a belt-and-braces net for any future model-with-different-dim regression.
+- Guard the dim check on `mount.EmbedDim > 0`: lots of tests (and the legacy fallback path) build ProjectMounts by hand without probing, leaving EmbedDim=0; an unconditional `len(sc.Vec) != 0` would mark every sidecar stale and force needless re-embeds. The `> 0` guard is load-bearing — confirmed by the explicit "unprobed mount" case in the test.
+- sc.Dim and len(sc.Vec) are normally equal, but the index only ever uses len(sc.Vec); check the vector length, not the metadata Dim field, since the vector is what actually loads into the (fixed-dim) index.
+- This shares its code path with 3a138760 (startup blocking pull). When two tickets touch the same branch, do them together — the truth-stamp only fully pays off because the background swap then re-embeds the honestly-stamped fallback sidecars under the correct model once it lands.
