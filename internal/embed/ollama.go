@@ -21,6 +21,11 @@ const ollamaTimeout = 60 * time.Second
 // ~1.2GB; on a slow link the pull can take several minutes.
 const ollamaPullTimeout = 15 * time.Minute
 
+// ModelPullTimeout is the exported budget the service layer applies when it
+// acquires a missing model in the background (see svc.ensureMountModelAsync).
+// Mirrors ollamaPullTimeout — a multi-GB embedding model can take minutes.
+const ModelPullTimeout = ollamaPullTimeout
+
 // Ollama is the embed.Provider backed by a local Ollama server. It uses the
 // /api/embeddings HTTP endpoint directly (no SDK).
 type Ollama struct {
@@ -44,25 +49,47 @@ func NewOllama(view EmbedConfig) *Ollama {
 // records the resulting vector length. The Service guarantees Probe runs once
 // before any caller asks for Dim().
 //
-// If the first call fails because the model isn't installed, Probe attempts an
-// /api/pull and retries once. This makes a fresh Ollama deployment usable
-// without an out-of-band `ollama pull` step.
+// Probe deliberately does NOT pull a missing model. Pulling a multi-GB model
+// can take minutes, and Probe runs on the boot/mount-attach path — a
+// synchronous pull there blocked the MCP handshake past its 30s client timeout
+// (ticket 3a138760). Model acquisition is now an explicit, backgroundable step
+// via EnsureModel; a missing model surfaces here as a fast error that
+// IsModelMissing recognizes, letting the service fall back and pull off the
+// hot path.
 func (o *Ollama) Probe(ctx context.Context) error {
 	vec, err := o.Embed(ctx, "ping")
-	if err != nil && isOllamaModelMissing(err) {
-		slog.Default().Info("ollama: model not present; pulling", "model", o.model, "url", o.url)
-		if pullErr := o.pull(ctx); pullErr != nil {
-			return fmt.Errorf("ollama: probe: model %q missing and pull failed: %w", o.model, pullErr)
-		}
-		slog.Default().Info("ollama: pull complete; retrying probe", "model", o.model)
-		vec, err = o.Embed(ctx, "ping")
-	}
 	if err != nil {
 		return fmt.Errorf("ollama: probe: %w", err)
 	}
 	o.dim = len(vec)
 	return nil
 }
+
+// EnsureModel makes o.model available on the Ollama server, pulling it if it
+// isn't already present. It is the explicit, opt-in counterpart to Probe:
+// callers that genuinely want to acquire a model (the service does this from a
+// background goroutine so boot never blocks) call EnsureModel; a healthy model
+// returns immediately without a pull. Safe to call unconditionally.
+func (o *Ollama) EnsureModel(ctx context.Context) error {
+	if _, err := o.Embed(ctx, "ping"); err == nil {
+		return nil // already present and serving
+	} else if !isOllamaModelMissing(err) {
+		return fmt.Errorf("ollama: ensure model %q: %w", o.model, err)
+	}
+	slog.Default().Info("ollama: model not present; pulling", "model", o.model, "url", o.url)
+	if err := o.pull(ctx); err != nil {
+		return fmt.Errorf("ollama: ensure model %q: pull failed: %w", o.model, err)
+	}
+	slog.Default().Info("ollama: pull complete", "model", o.model)
+	return nil
+}
+
+// IsModelMissing reports whether err is the specific "model not pulled" 404
+// from Ollama, as opposed to a network error, a malformed response, or a real
+// 5xx. Exported so the service layer can decide whether a probe failure is the
+// recoverable "just needs a pull" case (→ fall back + background pull) or a
+// hard error to surface.
+func IsModelMissing(err error) bool { return isOllamaModelMissing(err) }
 
 // isOllamaModelMissing detects the specific 404 Ollama returns when an
 // embedding call references a model that hasn't been pulled. Anything else

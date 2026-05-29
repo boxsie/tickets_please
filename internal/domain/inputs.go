@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // Input structs accepted by `svc.Service` methods. Each method takes one of
 // these (or simple positional args for trivial calls). Fields use pointer
 // types when "leave unchanged" needs to be distinguishable from "set to the
@@ -72,6 +74,40 @@ type SearchCommentsInput struct {
 	Kinds    []CommentKind
 	// Limit: 0 = default 10; capped at 50.
 	Limit int
+}
+
+// ListCommentsScopedInput is accepted by Service.ListCommentsScoped. Unlike
+// ListComments (one ticket) and SearchComments (semantic), this lists comments
+// across a whole project/phase/ticket scope with plain structured filters — the
+// "find the operator's feedback on my recent work" workflow, in one call. One
+// of ProjectIDOrSlug (session default allowed) / TicketID must resolve a scope.
+type ListCommentsScopedInput struct {
+	ProjectIDOrSlug string
+	// PhaseIDOrSlug narrows to one phase within the project (id or slug);
+	// "-" means phase-less tickets only. Empty = all phases.
+	PhaseIDOrSlug string
+	// TicketID narrows to a single ticket (orthogonal with the existing
+	// ListComments; accepted here so callers can use one tool).
+	TicketID string
+	// AuthorID / AuthorName keep only comments by that exact author.
+	AuthorID   string
+	AuthorName string
+	// ExcludeAuthorID drops comments by that author ("everything NOT mine").
+	ExcludeAuthorID string
+	// Kinds, when non-empty, keeps only those comment kinds.
+	Kinds []CommentKind
+	// ExcludeSystem drops auto-generated system_move / system_completion
+	// comments. The tool layer defaults this to true.
+	ExcludeSystem bool
+	// Since / Until bound CreatedAt (inclusive). Nil = unbounded.
+	Since *time.Time
+	Until *time.Time
+	// Order: "asc" (default, oldest first) or "desc".
+	Order string
+	// Limit: 0 = default 50; capped at 200.
+	Limit int
+	// Cursor is an opaque pagination token returned as next_cursor.
+	Cursor string
 }
 
 // SearchLearningsInput is accepted by Service.SearchLearnings. Searches over

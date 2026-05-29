@@ -247,7 +247,20 @@ func staleSidecar(sc vecindex.Sidecar, mount *ProjectMount) bool {
 	if mount == nil || mount.Embed == nil {
 		return false
 	}
-	return sc.Provider != mount.Embed.Name() || sc.Model != mount.EmbedModel
+	if sc.Provider != mount.Embed.Name() || sc.Model != mount.EmbedModel {
+		return true
+	}
+	// Dim safety net (ticket de1a552e): even when provider+model match, a
+	// vector whose length differs from the mount's probed dim must be
+	// rebuilt — otherwise a wrongly-sized vector loads into the index and
+	// search returns nonsense. The earlier "provider+model match implies dim
+	// match" assumption broke when the fallback path stamped a model it didn't
+	// actually embed with. Guarded on EmbedDim>0 so hand-built test mounts that
+	// never probed (Dim unknown) don't false-positive.
+	if mount.EmbedDim > 0 && len(sc.Vec) != mount.EmbedDim {
+		return true
+	}
+	return false
 }
 
 // expectedIdentity formats the mount's expected (Provider, Model) pair for

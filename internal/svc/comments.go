@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -196,6 +197,176 @@ func (s *Service) ListComments(ctx context.Context, ticketID string) ([]*domain.
 	return out, nil
 }
 
+// ScopedComment is a comment plus the title of the ticket it belongs to —
+// returned by ListCommentsScoped so callers don't have to join ticket id →
+// title themselves. The ticket id is already on Comment.TicketID.
+type ScopedComment struct {
+	Comment     *domain.Comment
+	TicketTitle string
+}
+
+const (
+	listCommentsScopedDefaultLimit = 50
+	listCommentsScopedMaxLimit     = 200
+)
+
+// ListCommentsScoped lists comments across a project (optionally narrowed to a
+// phase or a single ticket) with plain structured filters: author, system-vs-
+// user, kind, and a created-at window. Results are ordered by CreatedAt
+// (ascending by default; "desc" to flip), tie-broken by id, and paginated via
+// the same opaque cursor scheme as ListTickets. It complements ListComments
+// (one ticket) and SearchComments (semantic) with the "list operator feedback
+// across my recent work" workflow in a single round-trip.
+func (s *Service) ListCommentsScoped(ctx context.Context, in domain.ListCommentsScopedInput) ([]ScopedComment, string, error) {
+	ctx, _, err := s.requireSession(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	scope := strings.TrimSpace(in.ProjectIDOrSlug)
+	if scope == "" {
+		return nil, "", fmt.Errorf("%w: project_id_or_slug required (no project bound to session)", domain.ErrInvalidArgument)
+	}
+
+	lp, _, err := s.Cache.Get(ctx, scope)
+	if err != nil {
+		return nil, "", err
+	}
+
+	limit := in.Limit
+	if limit <= 0 {
+		limit = listCommentsScopedDefaultLimit
+	}
+	if limit > listCommentsScopedMaxLimit {
+		limit = listCommentsScopedMaxLimit
+	}
+
+	var afterCreated time.Time
+	var afterID string
+	if in.Cursor != "" {
+		c, id, derr := decodeCursor(in.Cursor)
+		if derr != nil {
+			return nil, "", derr
+		}
+		afterCreated, afterID = c, id
+	}
+
+	var phaseFilter *string
+	if in.PhaseIDOrSlug != "" {
+		pf := in.PhaseIDOrSlug
+		phaseFilter = &pf
+	}
+
+	lp.Lock.RLock()
+	defer lp.Lock.RUnlock()
+
+	if in.TicketID != "" {
+		if _, ok := lp.Tickets[in.TicketID]; !ok {
+			return nil, "", fmt.Errorf("%w: ticket %q", domain.ErrNotFound, in.TicketID)
+		}
+	}
+
+	out := make([]ScopedComment, 0)
+	for tid, t := range lp.Tickets {
+		if in.TicketID != "" && tid != in.TicketID {
+			continue
+		}
+		if !phaseFilterMatches(t, phaseFilter, lp) {
+			continue
+		}
+		for _, c := range lp.Comments[tid] {
+			if !commentMatchesScopedFilter(c, in) {
+				continue
+			}
+			// Copy so callers can't mutate the cached slice without the lock.
+			cp := *c
+			if cp.Author != nil && cp.Author.Name == "" && cp.Author.ID != "" {
+				if r := hydrateAgentRef(s.AgentStore, cp.Author.ID, ""); r != nil {
+					cp.Author = r
+				}
+			}
+			out = append(out, ScopedComment{Comment: &cp, TicketTitle: t.Title})
+		}
+	}
+
+	desc := strings.EqualFold(in.Order, "desc")
+	sort.Slice(out, func(i, j int) bool {
+		ci, cj := out[i].Comment, out[j].Comment
+		if !ci.CreatedAt.Equal(cj.CreatedAt) {
+			if desc {
+				return ci.CreatedAt.After(cj.CreatedAt)
+			}
+			return ci.CreatedAt.Before(cj.CreatedAt)
+		}
+		if desc {
+			return ci.ID > cj.ID
+		}
+		return ci.ID < cj.ID
+	})
+
+	// Apply cursor: drop entries up to and including the anchor.
+	if !afterCreated.IsZero() || afterID != "" {
+		idx := 0
+		for ; idx < len(out); idx++ {
+			if out[idx].Comment.CreatedAt.Equal(afterCreated) && out[idx].Comment.ID == afterID {
+				idx++
+				break
+			}
+		}
+		out = out[idx:]
+	}
+
+	nextCursor := ""
+	if len(out) > limit {
+		last := out[limit-1].Comment
+		nextCursor = encodeCursor(last.CreatedAt, last.ID)
+		out = out[:limit]
+	}
+	return out, nextCursor, nil
+}
+
+// commentMatchesScopedFilter applies the non-scope filters of
+// ListCommentsScopedInput (system/kind/author/time) to a single comment.
+func commentMatchesScopedFilter(c *domain.Comment, in domain.ListCommentsScopedInput) bool {
+	if c == nil {
+		return false
+	}
+	if in.ExcludeSystem && c.Kind != domain.CommentKindUser {
+		return false
+	}
+	if len(in.Kinds) > 0 {
+		match := false
+		for _, k := range in.Kinds {
+			if c.Kind == k {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return false
+		}
+	}
+	var authorID, authorName string
+	if c.Author != nil {
+		authorID, authorName = c.Author.ID, c.Author.Name
+	}
+	if in.AuthorID != "" && authorID != in.AuthorID {
+		return false
+	}
+	if in.AuthorName != "" && authorName != in.AuthorName {
+		return false
+	}
+	if in.ExcludeAuthorID != "" && authorID == in.ExcludeAuthorID {
+		return false
+	}
+	if in.Since != nil && c.CreatedAt.Before(*in.Since) {
+		return false
+	}
+	if in.Until != nil && c.CreatedAt.After(*in.Until) {
+		return false
+	}
+	return true
+}
+
 // findTicketDirAndNumber returns the ticket's directory path relative to the
 // store's root plus the project-level ticket number. Used both to build the
 // StageOp.Write relative path and the auto-commit caption. The supplied store
@@ -252,4 +423,3 @@ func hydrateAgentRef(as *store.AgentStore, id, fallbackName string) *domain.Agen
 	}
 	return &domain.AgentRef{ID: rec.ID, Name: rec.Name}
 }
-

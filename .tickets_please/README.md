@@ -10,7 +10,7 @@ Agent sessions and the cross-repo mount registry live in a separate **central** 
 .tickets_please/
 ├── project.yaml                         # id, slug, name, description, attribution, timestamps
 ├── summary.md                           # required ≥200-char markdown context doc
-├── summary.embedding.json               # 768-float JSON array
+├── summary.embedding.json               # embedding sidecar {provider,model,dim,vec} (1024-dim for bge-m3); gitignored, regenerable
 ├── tickets/                             # phase-less tickets sit here
 │   └── <NNN>-<slug>/
 │       ├── ticket.yaml
@@ -28,7 +28,7 @@ Agent sessions and the cross-repo mount registry live in a separate **central** 
 │       ├── summary.embedding.json
 │       └── tickets/
 │           └── ...
-├── .lock                                # per-data-dir flock (gitignored)
+├── .lock                                # per-data-dir advisory lock — flock on Unix, LockFileEx on Windows (gitignored)
 └── .staging/                            # transient atomicity scratch (gitignored)
 ```
 

@@ -28,6 +28,18 @@ type Provider interface {
 	Name() string
 }
 
+// ModelEnsurer is the optional capability of a Provider that can acquire a
+// missing model on demand (Ollama, via /api/pull). Providers that have nothing
+// to fetch — OpenAI's models are server-side — simply don't implement it, and
+// the service treats a probe failure as permanent rather than backgrounding a
+// pointless pull. Kept separate from Provider so Probe can stay pull-free and
+// fast on the boot path (ticket 3a138760).
+type ModelEnsurer interface {
+	// EnsureModel makes the provider's model available, pulling it if absent.
+	// A no-op (fast return) when the model is already present.
+	EnsureModel(ctx context.Context) error
+}
+
 // EmbedConfig is the small projection of config that an embedding provider
 // needs. Per-project mounts merge their project.yaml's (provider, model) over
 // the server's defaults and pass the resulting view here. Decouples the

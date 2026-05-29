@@ -20,7 +20,7 @@ import (
 )
 
 // Tools wraps the in-process svc.Service plus the per-session Registry into a
-// single struct that registers all 30 tools against an *mcpserver.MCPServer.
+// single struct that registers all 31 tools against an *mcpserver.MCPServer.
 //
 // One Tools per process — the MCP binary builds it once, calls RegisterAll,
 // and hands the server off to ServeStdio.
@@ -249,6 +249,23 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
 	), t.handleListComments)
 
+	s.AddTool(mcp.NewTool("list_comments_scoped",
+		mcp.WithDescription("List comments across a whole project (optionally narrowed to a phase or one ticket) with plain filters — author, system-vs-user, kind, time window. The direct way to surface operator feedback on your recent work: e.g. `exclude_author_id`=<your agent id> + `since`=<when you filed the tickets> returns just the human's notes in one call, no semantic guessing. By default system move/completion comments are excluded; pass `exclude_system=false` to include them. Sorted oldest-first; paginate via `cursor`."),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
+		mcp.WithString("phase_id_or_slug", mcp.Description("Narrow to a phase (id or slug); \"-\" = phase-less tickets only")),
+		mcp.WithString("ticket_id", mcp.Description("Narrow to a single ticket")),
+		mcp.WithString("author_id", mcp.Description("Keep only comments by this exact author id")),
+		mcp.WithString("author_name", mcp.Description("Keep only comments by this exact author display name")),
+		mcp.WithString("exclude_author_id", mcp.Description("Drop comments by this author id (\"everything NOT mine\")")),
+		mcp.WithArray("kinds", mcp.Description("Keep only these comment kinds: user, system_move, system_completion"), mcp.WithStringItems()),
+		mcp.WithBoolean("exclude_system", mcp.Description("Drop auto-generated system_move/system_completion comments (default true)")),
+		mcp.WithString("since", mcp.Description("Only comments created at/after this RFC3339 timestamp")),
+		mcp.WithString("until", mcp.Description("Only comments created at/before this RFC3339 timestamp")),
+		mcp.WithString("order", mcp.Description("Sort order by created_at: asc (default) or desc")),
+		mcp.WithNumber("limit", mcp.Description("Page size, default 50, max 200")),
+		mcp.WithString("cursor", mcp.Description("Opaque pagination cursor")),
+	), t.handleListCommentsScoped)
+
 	// Search (3)
 	s.AddTool(mcp.NewTool("search_tickets",
 		mcp.WithDescription("Semantic search over ticket titles and bodies in a project. Use when looking for related work."),
@@ -374,6 +391,57 @@ func (t *Tools) refreshSession(ctx context.Context, sessionID string, prev *Sess
 // errorResult builds an MCP error result from a domain-mapped error message.
 func errorResult(err error) *mcp.CallToolResult {
 	return mcp.NewToolResultError(formatError(err))
+}
+
+// requireStringArgs extracts the named string arguments from req in an
+// encoding-robust way, returning an accurate error when any are missing or of
+// the wrong type.
+//
+// Why this exists: mcp-go's CallToolRequest.RequireString reads arguments only
+// via GetArguments(), which type-asserts req.Params.Arguments to a
+// map[string]any and returns nil for any other shape. Most transports deliver
+// a decoded map, but some envelopes hand the field over as json.RawMessage (or
+// another non-map form). When that happens GetArguments() is nil and
+// RequireString reports *every* field as `required argument %q not found` —
+// even though the field is present, just not pre-decoded into a map. That's the
+// misleading "work_summary not found" reported on long/rich completions: the
+// payload is fine, the envelope shape isn't what RequireString assumed.
+//
+// requireStringArgs falls back to BindArguments (which marshals whatever
+// Arguments holds back to JSON and re-decodes it) so a non-map envelope still
+// resolves, and it reports all missing fields at once with an accurate message
+// rather than a single misleading "not found". There is deliberately no length
+// or formatting cap — long, richly-formatted markdown is exactly what the
+// completion fields are meant to carry.
+func requireStringArgs(req mcp.CallToolRequest, keys ...string) (map[string]string, error) {
+	raw := req.GetArguments()
+	if raw == nil {
+		// Arguments arrived in a non-map form (e.g. json.RawMessage). Recover
+		// it via BindArguments rather than emitting a misleading "not found".
+		recovered := map[string]any{}
+		if err := req.BindArguments(&recovered); err != nil {
+			return nil, fmt.Errorf("could not decode tool arguments: %v", err)
+		}
+		raw = recovered
+	}
+	out := make(map[string]string, len(keys))
+	var missing []string
+	for _, k := range keys {
+		v, ok := raw[k]
+		if !ok || v == nil {
+			missing = append(missing, k)
+			continue
+		}
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("argument %q must be a string, got %T", k, v)
+		}
+		out[k] = s
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("required argument(s) not found: %s", strings.Join(missing, ", "))
+	}
+	return out, nil
 }
 
 // ---- Projects ----
@@ -944,22 +1012,15 @@ func (t *Tools) handleMoveTicket(ctx context.Context, req mcp.CallToolRequest) (
 }
 
 func (t *Tools) handleCompleteTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("ticket_id")
+	// Decode all four fields through requireStringArgs so a non-map argument
+	// envelope (json.RawMessage etc.) still resolves and the error names every
+	// missing field accurately — RequireString would mis-report present-but-
+	// non-map fields as "required argument not found". See requireStringArgs.
+	args, err := requireStringArgs(req, "ticket_id", "testing_evidence", "work_summary", "learnings")
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	te, err := req.RequireString("testing_evidence")
-	if err != nil {
-		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
-	}
-	ws, err := req.RequireString("work_summary")
-	if err != nil {
-		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
-	}
-	ln, err := req.RequireString("learnings")
-	if err != nil {
-		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
-	}
+	id, te, ws, ln := args["ticket_id"], args["testing_evidence"], args["work_summary"], args["learnings"]
 	var tk *domain.Ticket
 	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
 		out, err := t.svc.CompleteTicket(ctx, id, te, ws, ln)
@@ -1066,6 +1127,79 @@ func (t *Tools) handleListComments(ctx context.Context, req mcp.CallToolRequest)
 		out = append(out, formatComment(c))
 	}
 	return jsonResult(map[string]any{"comments": out})
+}
+
+func (t *Tools) handleListCommentsScoped(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := req.GetArguments()
+	ticketID := strings.TrimSpace(req.GetString("ticket_id", ""))
+
+	// Project scope: explicit param → session default. A single-ticket scope
+	// still needs the project (comments live under a project mount); fall back
+	// to the session binding when project_id_or_slug is omitted.
+	pid, err := t.resolveProjectSlug(ctx, req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+
+	in := domain.ListCommentsScopedInput{
+		ProjectIDOrSlug: pid,
+		PhaseIDOrSlug:   strings.TrimSpace(req.GetString("phase_id_or_slug", "")),
+		TicketID:        ticketID,
+		AuthorID:        strings.TrimSpace(req.GetString("author_id", "")),
+		AuthorName:      strings.TrimSpace(req.GetString("author_name", "")),
+		ExcludeAuthorID: strings.TrimSpace(req.GetString("exclude_author_id", "")),
+		Order:           strings.TrimSpace(req.GetString("order", "")),
+		Cursor:          strings.TrimSpace(req.GetString("cursor", "")),
+		ExcludeSystem:   true, // default; overridden below if explicitly set
+	}
+	if v, ok := args["exclude_system"].(bool); ok {
+		in.ExcludeSystem = v
+	}
+	if v, ok := args["limit"]; ok {
+		if f, fok := v.(float64); fok {
+			in.Limit = int(f)
+		}
+	}
+	for _, k := range stringSliceFromAny(args["kinds"]) {
+		in.Kinds = append(in.Kinds, domain.CommentKind(k))
+	}
+	if v := strings.TrimSpace(req.GetString("since", "")); v != "" {
+		ts, perr := time.Parse(time.RFC3339, v)
+		if perr != nil {
+			return mcp.NewToolResultError("invalid argument: since must be an RFC3339 timestamp: " + perr.Error()), nil
+		}
+		in.Since = &ts
+	}
+	if v := strings.TrimSpace(req.GetString("until", "")); v != "" {
+		ts, perr := time.Parse(time.RFC3339, v)
+		if perr != nil {
+			return mcp.NewToolResultError("invalid argument: until must be an RFC3339 timestamp: " + perr.Error()), nil
+		}
+		in.Until = &ts
+	}
+
+	var (
+		scoped     []svc.ScopedComment
+		nextCursor string
+	)
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		out, nc, err := t.svc.ListCommentsScoped(ctx, in)
+		if err != nil {
+			return err
+		}
+		scoped, nextCursor = out, nc
+		return nil
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	out := make([]map[string]any, 0, len(scoped))
+	for _, sc := range scoped {
+		m := formatComment(sc.Comment)
+		m["ticket_title"] = sc.TicketTitle
+		out = append(out, m)
+	}
+	return jsonResult(map[string]any{"comments": out, "next_cursor": nextCursor})
 }
 
 // ---- Search ----

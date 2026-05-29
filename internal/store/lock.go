@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 // LockScope identifies which flock a StageOp.Commit acquires. Use
@@ -78,44 +76,15 @@ func (s *Store) withLock(ctx context.Context, scope LockScope, fn func() error) 
 		return err
 	}
 	defer func() {
-		// Closing the fd releases the flock per POSIX semantics.
+		// Closing the fd releases the lock — POSIX flock and Windows
+		// LockFileEx both release on handle close.
 		_ = f.Close()
 	}()
 	return fn()
 }
 
-// acquireFlock opens path (creating it if missing) and tries LOCK_EX|LOCK_NB
-// in a 50ms poll loop until it succeeds, the context is canceled, or timeout
-// elapses.
-func acquireFlock(ctx context.Context, path string, timeout time.Duration) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("mkdir lock dir: %w", err)
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("open lock %s: %w", path, err)
-	}
-
-	deadline := time.Now().Add(timeout)
-	for {
-		err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		if err == nil {
-			return f, nil
-		}
-		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
-			_ = f.Close()
-			return nil, fmt.Errorf("flock %s: %w", path, err)
-		}
-		// Contention — wait and retry.
-		if time.Now().After(deadline) {
-			_ = f.Close()
-			return nil, fmt.Errorf("lock contention on %s (held > %s)", path, timeout)
-		}
-		select {
-		case <-ctx.Done():
-			_ = f.Close()
-			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
-}
+// acquireFlock opens path (creating it if missing) and tries to take an
+// exclusive advisory lock, non-blocking, in a 50ms poll loop until it
+// succeeds, the context is canceled, or timeout elapses. The platform
+// implementation lives in lock_unix.go (flock) / lock_windows.go (LockFileEx);
+// both release the lock when the returned *os.File is closed.

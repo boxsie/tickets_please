@@ -13,6 +13,7 @@ require (
 	github.com/knadh/koanf/v2 v2.3.4
 	github.com/mark3labs/mcp-go v0.50.0
 	github.com/sashabaranov/go-openai v1.41.2
+	github.com/yuin/goldmark v1.8.2
 	golang.org/x/sys v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -41,7 +42,6 @@ require (
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	github.com/yuin/goldmark v1.8.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.3 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/net v0.47.0 // indirect

@@ -108,6 +108,13 @@ type Service struct {
 	// backfillCancel stops the boot backfill goroutine.
 	backfillCancel context.CancelFunc
 
+	// bgCtx is the background context (shared with the boot backfill) handed to
+	// async embed-model acquisition goroutines so Close cancels them. bgWG
+	// tracks those goroutines so Close blocks until they unwind before workers
+	// are stopped. See startEnsureMountModel / ensureMountModelAsync.
+	bgCtx context.Context
+	bgWG  sync.WaitGroup
+
 	// Agent debounce state. touchOnce tracks the last time we rewrote
 	// LastSeenAt for a given agent id; touchMu guards the map.
 	touchOnce map[string]time.Time
@@ -191,7 +198,24 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancelProbe()
 	if err := provider.Probe(probeCtx); err != nil {
-		return nil, fmt.Errorf("svc: probe embed provider %q: %w", provider.Name(), err)
+		// Probe no longer pulls (ticket 3a138760), so a missing model surfaces
+		// here. The server default is the one model we must have to embed
+		// anything at all, so for a genuinely fresh deploy we acquire it once,
+		// synchronously — this is the documented one-time install cost, not the
+		// per-project regression that blocked the handshake. A non-pullable
+		// provider (OpenAI) or any non-missing error is fatal as before.
+		ensurer, canPull := provider.(embed.ModelEnsurer)
+		if !canPull || !embed.IsModelMissing(err) {
+			return nil, fmt.Errorf("svc: probe embed provider %q: %w", provider.Name(), err)
+		}
+		slog.Default().Info("svc: server-default embed model missing; pulling (one-time, blocks boot)",
+			"provider", provider.Name())
+		if perr := ensurer.EnsureModel(probeCtx); perr != nil {
+			return nil, fmt.Errorf("svc: acquire server-default embed model: %w", perr)
+		}
+		if err := provider.Probe(probeCtx); err != nil {
+			return nil, fmt.Errorf("svc: probe embed provider %q after pull: %w", provider.Name(), err)
+		}
 	}
 	embedDim := provider.Dim()
 
@@ -234,6 +258,7 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 		defaultIndexes: indexes,
 		cacheCancel:    cancelCache,
 		backfillCancel: cancelBackfill,
+		bgCtx:          backfillCtx,
 		touchOnce:      make(map[string]time.Time),
 		projectMounts:  make(map[string]*ProjectMount),
 	}
@@ -331,6 +356,11 @@ func (s *Service) Close() {
 		s.backfillCancel()
 		s.backfillCancel = nil
 	}
+	// Wait for background embed-model acquisition goroutines to unwind before
+	// stopping workers — they may be mid-rebuild/hydrate against a mount's
+	// worker, and bgCtx is already cancelled (via backfillCancel) so any
+	// in-flight pull returns promptly.
+	s.bgWG.Wait()
 	// Snapshot + Stop every per-mount worker. Use a generous shutdown budget
 	// so a slow real provider doesn't trip a goroutine leak in tests.
 	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -479,13 +509,34 @@ func (s *Service) attachMountEmbedAssets(mount *ProjectMount, rec *store.Project
 				s.Logger.Warn("svc: per-mount embed build failed; falling back to server default",
 					"slug", rec.Slug, "embed_provider", rec.EmbedProvider, "embed_model", rec.EmbedModel, "err", err)
 			}
-			provider = s.Embed
-			dim = s.EmbedDim
+			mount.Embed = s.Embed
+			mount.EmbedDim = s.EmbedDim
+			// Truth, not intent (ticket de1a552e): stamp the model we ACTUALLY
+			// embed with — the server default — not the project's requested
+			// model. The old code stamped the requested model here, so sidecars
+			// written during the fallback window lied about their provenance
+			// and the staleness check couldn't tell they needed rebuilding once
+			// the requested model arrived.
+			mount.EmbedModel = embedViewFromCfg(s.Cfg, "", "").Model
+			// If the only problem is that the requested model isn't pulled yet,
+			// acquire it in the background and swap the mount over (re-embedding
+			// under the real model) when it lands — never block this attach
+			// path on the pull (ticket 3a138760). Other failures (unknown
+			// provider, missing OpenAI key) are permanent: stay on the fallback.
+			if embed.IsModelMissing(err) {
+				s.startEnsureMountModel(&store.ProjectRecord{
+					ID:            rec.ID,
+					Slug:          rec.Slug,
+					EmbedProvider: rec.EmbedProvider,
+					EmbedModel:    rec.EmbedModel,
+				})
+			}
+		} else {
+			mount.Embed = provider
+			mount.EmbedDim = dim
+			view := embedViewFromCfg(s.Cfg, rec.EmbedProvider, rec.EmbedModel)
+			mount.EmbedModel = view.Model
 		}
-		mount.Embed = provider
-		mount.EmbedDim = dim
-		view := embedViewFromCfg(s.Cfg, rec.EmbedProvider, rec.EmbedModel)
-		mount.EmbedModel = view.Model
 	}
 	s.allocMountIndexesAndWorker(mount)
 	return nil
@@ -572,6 +623,97 @@ func (s *Service) buildMountProvider(provider, model string) (embed.Provider, in
 		return nil, 0, fmt.Errorf("probe embed provider %q: %w", p.Name(), err)
 	}
 	return p, p.Dim(), nil
+}
+
+// startEnsureMountModel launches the background acquisition of a mount's
+// requested-but-missing embed model. Non-blocking by design: the boot /
+// mount-attach path returns immediately on the server-default fallback, and
+// this goroutine swaps the real provider in once the model lands. Tracked by
+// bgWG so Close waits for it before tearing workers down.
+//
+// rec must be a caller-owned copy (the attach path passes a fresh
+// ProjectRecord) so the goroutine never races a mutation of the original.
+func (s *Service) startEnsureMountModel(rec *store.ProjectRecord) {
+	s.bgWG.Add(1)
+	go func() {
+		defer s.bgWG.Done()
+		s.ensureMountModelAsync(rec)
+	}()
+}
+
+// ensureMountModelAsync pulls rec's embed model, then (on success) swaps the
+// mount off the server-default fallback onto a real provider for that model
+// and re-embeds the project so its sidecars carry truthful, correctly-
+// dimensioned vectors. Every failure mode degrades to "stay on the fallback"
+// with a warning — a project must never become unreachable because a model
+// pull failed.
+func (s *Service) ensureMountModelAsync(rec *store.ProjectRecord) {
+	log := s.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+	ctx := s.bgCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	slug := rec.Slug
+
+	factory := s.EmbedNew
+	if factory == nil {
+		factory = embed.New
+	}
+	view := embedViewFromCfg(s.Cfg, rec.EmbedProvider, rec.EmbedModel)
+	p, err := factory(view)
+	if err != nil {
+		log.Warn("svc: background embed-model ensure: build provider failed; staying on fallback",
+			"slug", slug, "embed_model", view.Model, "err", err)
+		return
+	}
+	ensurer, ok := p.(embed.ModelEnsurer)
+	if !ok {
+		// Nothing to self-acquire (e.g. OpenAI) — fallback is permanent.
+		return
+	}
+
+	log.Info("svc: per-project embed model missing; acquiring in background",
+		"slug", slug, "embed_model", view.Model)
+	pullCtx, cancel := context.WithTimeout(ctx, embed.ModelPullTimeout)
+	defer cancel()
+	if err := ensurer.EnsureModel(pullCtx); err != nil {
+		log.Warn("svc: background embed-model pull failed; staying on server-default fallback",
+			"slug", slug, "embed_model", view.Model, "err", err)
+		return
+	}
+
+	mount := s.mountForSlug(slug)
+	if mount == nil {
+		return // unmounted / evicted while we pulled — nothing to swap
+	}
+	s.mountsMu.Lock()
+	swapErr := s.rebuildMountEmbedAssets(mount, rec)
+	s.mountsMu.Unlock()
+	if swapErr != nil {
+		log.Warn("svc: background embed swap failed after pull; staying on fallback",
+			"slug", slug, "embed_model", view.Model, "err", swapErr)
+		return
+	}
+
+	// Wipe the fallback-stamped sidecars and re-embed under the real model so
+	// search stops returning server-default-dimensioned vectors. Mirrors the
+	// flush → wipe → hydrate sequence ReembedProject uses.
+	if mount.Worker != nil {
+		mount.Worker.Flush(ctx)
+	}
+	if st := mount.Store; st != nil {
+		if err := st.WithProjectLock(ctx, slug, func() error {
+			return s.removeAllSidecars(slug, st)
+		}); err != nil {
+			log.Warn("svc: background re-embed sidecar wipe failed", "slug", slug, "err", err)
+		}
+	}
+	s.hydrateMount(slug, mount)
+	log.Info("svc: per-project embed model ready; re-embedded under correct model",
+		"slug", slug, "embed_model", view.Model)
 }
 
 // persistMountRegistry writes the add/remove to <DataRoot>/registry.yaml so

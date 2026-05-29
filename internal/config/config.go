@@ -65,7 +65,7 @@ var defaults = map[string]any{
 	"auto_commit":               true,
 	"embed_provider":            "ollama",
 	"ollama_url":                "http://localhost:11434",
-	"ollama_model":              "nomic-embed-text",
+	"ollama_model":              "bge-m3",
 	"openai_api_key":            "",
 	"mcp_agent_key":             "", // empty = generated at startup
 	"mcp_agent_name":            "tickets_please_mcp",

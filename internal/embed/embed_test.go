@@ -204,7 +204,11 @@ func TestOllamaEmbedNon2xxError(t *testing.T) {
 	}
 }
 
-func TestOllamaProbeAutoPullsMissingModel(t *testing.T) {
+// TestOllamaProbeDoesNotPull_EnsureModelDoes pins the post-3a138760 contract:
+// Probe never pulls (a missing model is a fast, recognizable error), and
+// EnsureModel is the explicit step that pulls and makes a subsequent Probe
+// succeed.
+func TestOllamaProbeDoesNotPull_EnsureModelDoes(t *testing.T) {
 	var (
 		embedHits int
 		pulled    bool
@@ -239,24 +243,43 @@ func TestOllamaProbeAutoPullsMissingModel(t *testing.T) {
 	defer srv.Close()
 
 	o := NewOllama(EmbedConfig{Provider: "ollama", OllamaURL: srv.URL, Model: "bge-m3"})
-	if err := o.Probe(context.Background()); err != nil {
-		t.Fatalf("Probe: %v", err)
+
+	// Probe must NOT pull — it returns a fast, model-missing error.
+	err := o.Probe(context.Background())
+	if err == nil {
+		t.Fatal("Probe: expected model-missing error, got nil")
+	}
+	if !IsModelMissing(err) {
+		t.Fatalf("Probe error not recognized as model-missing: %v", err)
+	}
+	if pulled {
+		t.Fatal("Probe pulled a model — it must never pull (boot path stays fast)")
+	}
+
+	// EnsureModel is the explicit acquisition step.
+	if err := o.EnsureModel(context.Background()); err != nil {
+		t.Fatalf("EnsureModel: %v", err)
 	}
 	if !pulled {
-		t.Fatal("expected /api/pull to be called")
+		t.Fatal("EnsureModel did not call /api/pull")
 	}
 	if pullModel != "bge-m3" {
 		t.Errorf("pull model = %q, want bge-m3", pullModel)
 	}
-	if embedHits != 2 {
-		t.Errorf("embed hits = %d, want 2 (initial 404 + retry)", embedHits)
+
+	// Now Probe succeeds and records the dim.
+	if err := o.Probe(context.Background()); err != nil {
+		t.Fatalf("Probe after EnsureModel: %v", err)
 	}
 	if got := o.Dim(); got != 1024 {
 		t.Errorf("Dim() = %d, want 1024", got)
 	}
 }
 
-func TestOllamaProbeUnrelated404DoesNotPull(t *testing.T) {
+// TestOllamaEnsureModelUnrelated404DoesNotPull confirms EnsureModel only pulls
+// on the specific "model not found, try pulling it" signal — a generic 404
+// (wrong endpoint, gateway) surfaces as an error without a pointless pull.
+func TestOllamaEnsureModelUnrelated404DoesNotPull(t *testing.T) {
 	var pulled bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/pull" {
@@ -270,11 +293,11 @@ func TestOllamaProbeUnrelated404DoesNotPull(t *testing.T) {
 	defer srv.Close()
 
 	o := NewOllama(EmbedConfig{Provider: "ollama", OllamaURL: srv.URL, Model: "bge-m3"})
-	if err := o.Probe(context.Background()); err == nil {
-		t.Fatal("Probe: expected error, got nil")
+	if err := o.EnsureModel(context.Background()); err == nil {
+		t.Fatal("EnsureModel: expected error, got nil")
 	}
 	if pulled {
-		t.Error("/api/pull was called for an unrelated 404 — should only auto-pull on 'not found, try pulling it' message")
+		t.Error("/api/pull was called for an unrelated 404 — should only pull on 'not found, try pulling it' message")
 	}
 }
 

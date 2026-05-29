@@ -23,10 +23,10 @@ The system feeds itself: each completed ticket leaves machine-readable wisdom fo
 | Atomicity | Stage to `.tickets_please/.staging/<op-id>/`, then rename into place |
 | Concurrency | Per-project `flock` for mutations + `fsnotify` cache invalidation across processes |
 | Audit trail | Git commits per mutation (opt-out), authored as the calling agent |
-| MCP SDK | `github.com/mark3labs/mcp-go` (stdio transport) |
+| MCP SDK | `github.com/mark3labs/mcp-go` (stdio + streamable-HTTP transports) |
 | File watching | `github.com/fsnotify/fsnotify` |
-| File locking | `golang.org/x/sys/unix` flock (Linux/macOS) — Windows path-locking left as a future concern |
-| Embeddings | Ollama + `nomic-embed-text` (768-dim, local, default) — pluggable for OpenAI |
+| File locking | build-tagged advisory locks: `golang.org/x/sys/unix` flock on Unix, `LockFileEx` (`golang.org/x/sys/windows`) on Windows |
+| Embeddings | Ollama + `bge-m3` (1024-dim, 8192-ctx, local, default) — per-project, pluggable for OpenAI |
 | Logging | `log/slog` |
 | Config | `github.com/knadh/koanf/v2` — YAML file at `~/.tickets_please/config.yaml`, env-var overrides |
 | YAML codec | `gopkg.in/yaml.v3` |
@@ -151,7 +151,7 @@ The `LoadedProject` struct gains a `Stale atomic.Bool` field; reads check it bef
 
 ## Design decisions
 
-- **Embedding default**: Ollama + `nomic-embed-text` (768-dim). Provider is an interface; OpenAI impl ships alongside, switchable via the `embed_provider` config key (or `EMBED_PROVIDER` env var). Dim mismatch vs. schema fails loud at startup.
+- **Embedding default**: Ollama + `bge-m3` (1024-dim, 8192-token context). Embedders are **per-project** — each `project.yaml` declares its own `embed_provider`/`embed_model`, falling back to the server default; a mount probes its provider at attach and sizes its vec indexes to the probed dim. Provider is an interface; OpenAI impl ships alongside, switchable via the `embed_provider` config key. A missing Ollama model is acquired in the background (the boot/attach path never blocks on a pull) and the project re-embeds when it lands; a sidecar whose stamped provider/model/dim no longer matches its mount is treated as stale and rebuilt.
 - **Comments are immutable.** No `UpdateComment` or `DeleteComment` RPCs. Typos get a follow-up comment. Audit trail stays clean.
 - **No reopen.** Once `CompleteTicket` runs, the ticket is frozen in `done`. If work resurfaces, create a new ticket — past learnings still surface via `SearchLearnings`. Keeps the completion contract meaningful.
 - **Every mutation is attributed.** Agents introduce themselves before doing anything that changes state. Identity is self-asserted (no auth, this is a hobby project — the trust model is "we trust agents to be honest about who they are"); the value is observability, not access control.
@@ -250,7 +250,7 @@ The directory `~/.tickets_please/` is created on first run if missing. A sample 
 | `auto_commit` | `AUTO_COMMIT` | `true` | If true and `data_dir` is inside a git repo, every mutation produces a commit authored as the calling agent. |
 | `embed_provider` | `EMBED_PROVIDER` | `ollama` | `ollama` or `openai`. |
 | `ollama_url` | `OLLAMA_URL` | `http://localhost:11434` | Used when `embed_provider=ollama`. |
-| `ollama_model` | `OLLAMA_MODEL` | `nomic-embed-text` | Used when `embed_provider=ollama`. |
+| `ollama_model` | `OLLAMA_MODEL` | `bge-m3` | Server-default model used when `embed_provider=ollama` and a project doesn't override it. |
 | `openai_api_key` | `OPENAI_API_KEY` | *(empty)* | Required when `embed_provider=openai`. |
 | `mcp_agent_key` | `MCP_AGENT_KEY` | *(generated)* | Self-asserted identity for the MCP process; defaults to `tickets_please_mcp:<random>`. |
 | `mcp_agent_name` | `MCP_AGENT_NAME` | `tickets_please_mcp` | Display name the MCP registers as. |
@@ -311,7 +311,7 @@ tickets_please/
 │   │   ├── agents.go
 │   │   └── validation.go
 │   ├── mcptools/                  # mark3labs/mcp-go tool wrappers around svc
-│   │   ├── tools.go               # all 29 tool registrations + handlers
+│   │   ├── tools.go               # all 31 tool registrations + handlers
 │   │   ├── format.go              # domain → LLM-friendly JSON
 │   │   ├── instructions.go        # the cross-tool workflow reflexes string
 │   │   └── identity.go            # stdio self-registration helpers
@@ -928,7 +928,7 @@ There are two index instances:
 - **Per-project** (lives inside `LoadedProject.Vectors`) — built when the project is loaded; freed on eviction. Used by `SearchTickets` and `SearchComments` when scoped to a project.
 - **Global resident** — `learnings_index` and `projects_summary_index`. Always loaded at startup (the working sets are small) and updated incrementally on completion / project mutation. Used by `SearchLearnings` and `SearchProjects`.
 
-Cosine similarity assumes vectors are L2-normalized. Both Ollama (`nomic-embed-text`) and OpenAI (`text-embedding-3-*`) return normalized vectors, so we don't normalize again.
+Cosine similarity assumes vectors are L2-normalized. Both Ollama (`bge-m3`) and OpenAI (`text-embedding-3-*`) return normalized vectors, so we don't normalize again.
 
 ## MCP server
 
@@ -936,9 +936,9 @@ When the LLM client spawns `tickets_please mcp` (the default subcommand of the s
 
 HTTP clients (centralised mode) connect via `/mcp` and **must** call `register_agent` once per connection to declare their identity and bind a `project_path`. After that, every `project_id_or_slug` parameter on subsequent tools becomes optional and falls back to the bound project. The one exception is `create_project`, which is auth-soft: an HTTP client with no project yet calls `create_project` first (passing `project_path`), then `register_agent` against the freshly-created project. Stdio clients pre-register at startup; they can still call `register_agent` to override the defaults.
 
-Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **30 tools** across projects, phases, tickets, comments, search, and introspection.
+Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **31 tools** across projects, phases, tickets, comments, search, and introspection.
 
-### Projects (7)
+### Projects (8)
 
 | Tool | Description |
 |---|---|
@@ -949,6 +949,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `load_project` | Pre-warm a project into the server's in-memory cache. Useful before doing many operations against the same project. Optional — calls auto-load if needed. |
 | `update_project` | Edit a project's name, description, or summary. Summary edits trigger re-embedding. |
 | `delete_project` | **Irreversibly delete** a project and everything in it — every phase, every ticket (active or done), every comment, every embedding. The data dir survives but its project content is wiped, the project is unmounted, and it's removed from the persistent registry. Per-ticket completion immutability is a per-ticket rule; the project-level delete bypasses it. |
+| `reembed_project` | Delete all `*.embedding.json` sidecars in a project and enqueue an async re-embed using the project's currently configured embedder. Use after switching `embed_provider`/`embed_model` in `project.yaml`, or to recover from corrupted sidecars. |
 
 ### Phases (7)
 
@@ -975,18 +976,18 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `assign_ticket_to_phase` | Move a ticket between phases (or to no phase). Requires a comment explaining why — same audit-trail rule as `move_ticket`. |
 | `delete_ticket` | **Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once finished, a ticket stays finished). Any other tickets that reference this one in `depends_on` or `parallelizable_with` are auto-updated to drop the reference, atomically with the delete — no dangling refs. For finished work that you regret, file a new ticket instead. |
 
-### Comments (2)
+### Comments (3)
 
 | Tool | Description |
 |---|---|
 | `add_comment` | Add a free-form comment to a ticket. Comments are immutable once created. |
 | `list_comments` | List all comments on a ticket, including system-generated move and completion entries, with author attribution. |
+| `list_comments_scoped` | List comments across a whole project (optionally narrowed to a phase or one ticket) with plain structured filters — author / `exclude_author_id`, `exclude_system` (default true), `kinds`, and a `since`/`until` created-at window — ordered by `created_at` and paginated via `cursor`. Each result carries `ticket_id` + `ticket_title`. The one-call way to surface operator feedback on recent work; complements `list_comments` (one ticket) and `search_comments` (semantic). |
 
-### Search (4)
+### Search (3)
 
 | Tool | Description |
 |---|---|
-| `search_projects` | Semantic search over project summaries. Use when picking a project to work in or finding related projects. |
 | `search_tickets` | Semantic search over ticket titles and bodies in a project. Use when looking for related work. |
 | `search_learnings` | Semantic search over completion learnings from past finished tickets. **Run this before starting non-trivial work — past you may have left notes.** |
 | `search_comments` | Semantic search across comments. |
