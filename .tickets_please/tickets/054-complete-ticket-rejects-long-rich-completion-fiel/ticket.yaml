@@ -1,0 +1,8 @@
+id: 5688ace3-37cc-40bb-827d-fa0c8fd3d1d3
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+number: 54
+title: complete_ticket rejects long/rich completion fields with misleading "required argument work_summary not found"
+column: in_progress
+created_by: 1d9de123-3477-4003-9a8c-5f7d8f55dda4
+created_at: 2026-05-29T14:25:16.935151+01:00
+updated_at: 2026-05-29T15:50:51.577080121+01:00
