@@ -2,7 +2,7 @@ id: 453e38fa-3786-4613-a715-de6e7a204e30
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 56
 title: 'Make tickets_please build and run on Windows (currently unix-only: flock via golang.org/x/sys/unix)'
-column: todo
+column: in_progress
 created_by: 84a9726d-af30-4d85-a078-57f9ccf6c629
 created_at: 2026-05-29T15:35:24.306191163+01:00
-updated_at: 2026-05-29T15:35:24.306191163+01:00
+updated_at: 2026-05-29T16:16:13.491773365+01:00
