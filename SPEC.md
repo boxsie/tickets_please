@@ -41,8 +41,10 @@ The system is **not** a long-running service. It's a single binary that runs in 
 Subcommand dispatch on `cmd/tickets_please/main.go`:
 - `tickets_please mcp` *(default)* — stdio MCP server. The main mode.
 - `tickets_please serve` — long-running HTTP MCP server (StreamableHTTP transport) for centralised mode. See "Centralised mode" below.
-- `tickets_please check` — run integrity check + exit.
 - `tickets_please init` — create `.tickets_please/` skeleton.
+- `tickets_please migrate <repo-path> [--dry-run] [--data-root <path>]` — flatten a v0.1 `projects/<slug>/` layout to the v0.2 root shape and hoist legacy per-repo `agents/*.yaml` into the central `data_root`.
+- `tickets_please check` — *(stub)* logs "not implemented yet"; the integrity walk currently runs only on startup (see **Integrity check**), not as a standalone command.
+- `tickets_please help` (`-h`/`--help`) — usage.
 
 ### Centralised mode
 
@@ -114,19 +116,19 @@ Every mutation goes through `StageOp` (write to `.staging/<op-id>/`, then rename
 
 ### Layer 2 — Per-project `flock` for mutations
 
-Mutations acquire an OS-level exclusive lock on a per-project lock file before writing:
+Mutations acquire an OS-level exclusive lock on the data dir's lock file before writing:
 
-- **Project-scoped mutation** (CreateTicket, MoveTicket, CreateComment, etc.) → `flock(.tickets_please/projects/<slug>/.lock, LOCK_EX)` for the duration of `StageOp.Commit`.
-- **Cross-project mutation** (CreateProject, DeleteProject, anything touching the project list) → `flock(.tickets_please/.lock, LOCK_EX)` briefly.
+- **Project-scoped mutation** (CreateTicket, MoveTicket, CreateComment, etc.) → `flock(<data_dir>/.lock, LOCK_EX)` for the duration of `StageOp.Commit`. Post-flatten there's one project per data dir, so the per-project lock resolves to the data dir root (`Store.projectDir` ignores the slug and returns `Store.Root`).
+- **Cross-data-root mutation** (anything touching the central agent registry under `<data_root>/`) → `flock(<data_root>/.lock, LOCK_EX)` briefly via the central `AgentStore`.
 - **Reads do not lock.** They rely on atomic-write semantics for consistency.
 
-Implementation: thin wrapper `internal/store/lock.go` using `golang.org/x/sys/unix.Flock`. Locks release automatically on file close (or process death — the kernel reclaims). Acquisition has a configurable timeout (default 10s) to surface deadlocks rather than hang.
+Implementation: thin wrapper `internal/store/lock.go` dispatching to build-tagged backends — `lock_unix.go` (`golang.org/x/sys/unix.Flock`) and `lock_windows.go` (`golang.org/x/sys/windows.LockFileEx`), both polling at 50ms until the timeout. Locks release automatically on file close (or process death — the kernel reclaims). Acquisition has a configurable timeout (default 10s) to surface deadlocks rather than hang.
 
-Two MCPs working on **different projects**: zero contention. Two MCPs racing on the **same project**: serialized at the lock; correct semantics. Linux/macOS handle this natively; Windows is a future concern (the project's hobby/play scope makes that fine).
+Two MCPs against **different data dirs**: zero contention. Two MCPs racing on the **same data dir**: serialized at the lock; correct semantics. Implemented on both POSIX (Linux/macOS) and Windows.
 
 ### Layer 3 — `fsnotify` cache invalidation
 
-Cross-process consistency without polling. When a process loads a project into its in-memory cache, it sets up an `fsnotify` watcher on `projects/<slug>/`. Any change (from any process) emits an event; the cache:
+Cross-process consistency without polling. When a process loads a project into its in-memory cache, it sets up an `fsnotify` watcher on the project's data dir (`.tickets_please/`). Any change (from any process) emits an event; the cache:
 
 1. Marks the project as "stale" (a flag, not an immediate evict).
 2. The next call into that project reloads from disk.
@@ -140,7 +142,8 @@ The `LoadedProject` struct gains a `Stale atomic.Bool` field; reads check it bef
 
 - **Cross-machine sync.** Syncing `.tickets_please/` via Dropbox/Syncthing while two machines are simultaneously writing is out of scope. That's an OS-level FS coherence problem, not a data-store problem.
 - **A misbehaving process holding the project lock indefinitely.** Surfaces as a "lock acquisition timed out after 10s" log line; the user can `kill` the bad process. Kernel releases the lock on death.
-- **Windows.** The flock primitive used (`syscall.Flock` / `unix.Flock`) is POSIX. Windows path-locking is different and deferred — works fine on macOS and Linux, which is plenty for the hobby scope.
+
+Windows is **not** a gap: `lock_windows.go` implements the same acquire/release contract via `LockFileEx`, and `build-windows` is a first-class Makefile target.
 
 ### Configuration
 
@@ -183,9 +186,9 @@ Each active or expired session is a yaml file at `.tickets_please/agents/<sessio
 
 Attribution refs on other entities are nullable string fields in their yaml:
 
-- `projects/<slug>/project.yaml` → `created_by: <agent-uuid>` (or `null`)
-- `projects/<slug>/tickets/<NNN>-…/ticket.yaml` → `created_by`, `completed_by` (each nullable)
-- `projects/<slug>/phases/<NNN>-…/phase.yaml` → `created_by` (nullable)
+- `project.yaml` → `created_by: <agent-uuid>` (or `null`)
+- `tickets/<NNN>-…/ticket.yaml` → `created_by`, `completed_by` (each nullable)
+- `phases/<NNN>-…/phase.yaml` → `created_by` (nullable)
 - comment frontmatter → `author_id: <agent-uuid>` (or `null`)
 
 These ref fields are nullable so projects/tickets/comments can be created or hand-edited before T15's middleware is enforcing. Once T15 lands and the middleware runs, every newly-created row populates its attribution. Pre-existing entities keep `null` — no backfill, since there's no identity to backfill *to*. The integrity check (T02) warns on dangling refs (an `agent_id` that doesn't resolve to a file in `agents/`) but doesn't fail boot.
@@ -247,6 +250,7 @@ The directory `~/.tickets_please/` is created on first run if missing. A sample 
 |---|---|---|---|
 | `data_dir` | `DATA_DIR` | `./.tickets_please` | Per-repo project data dir (one project's `project.yaml`, `phases/`, `tickets/` live here). Defaults to a directory in the cwd. |
 | `data_root` | `DATA_ROOT` | `~/.tickets_please` | Central data root shared across all repos this server hosts. Holds the agent registry (`agents/<uuid>.yaml`) and the mount registry (`registry.yaml`). Tilde-expanded at load time. |
+| `remote_project_root` | `REMOTE_PROJECT_ROOT` | `~/.tickets_please/projects` | Bounds where `create_project` may materialise a new project dir when the caller's `project_path` doesn't yet exist on the server. A missing path outside this root is rejected; existing paths are used as-is. Empty disables auto-create (strict stdio semantics). |
 | `auto_commit` | `AUTO_COMMIT` | `true` | If true and `data_dir` is inside a git repo, every mutation produces a commit authored as the calling agent. |
 | `embed_provider` | `EMBED_PROVIDER` | `ollama` | `ollama` or `openai`. |
 | `ollama_url` | `OLLAMA_URL` | `http://localhost:11434` | Used when `embed_provider=ollama`. |
@@ -267,7 +271,7 @@ The directory `~/.tickets_please/` is created on first run if missing. A sample 
 ```
 tickets_please/
 ├── go.mod
-├── Makefile                       # build, run, test, init-config, init-data, check
+├── Makefile                       # build, build-windows, run, test, init-config, init-data, check
 ├── SPEC.md                        # this file
 ├── examples/config.yaml           # sample config users copy to ~/.tickets_please/
 ├── .tickets_please/               # this repo's own data dir (committed)
@@ -298,14 +302,18 @@ tickets_please/
 │   │   ├── provider.go
 │   │   ├── ollama.go
 │   │   └── openai.go
-│   ├── worker/                    # async embedding worker
+│   ├── worker/                    # async embedding worker (per mount)
+│   ├── log/                       # in-memory ring-buffer log handler (web UI log view)
 │   ├── svc/                       # business logic — methods on Service{}
 │   │   ├── service.go             # Service struct, New(), per-mount registry
 │   │   ├── registry.go            # persistent mount registry (registry.yaml)
 │   │   ├── middleware.go          # session-validating in-process middleware
+│   │   ├── hydrate.go             # assembles store records + sibling files into domain types
 │   │   ├── projects.go            # CreateProject + CreateProjectAt
 │   │   ├── phases.go
+│   │   ├── waves.go               # ListWaves
 │   │   ├── tickets.go
+│   │   ├── tickets_phase.go       # AssignTicketToPhase
 │   │   ├── comments.go
 │   │   ├── search.go
 │   │   ├── agents.go
@@ -437,7 +445,7 @@ The two summary-reading tool descriptions (`get_project_summary` and `get_phase_
 A project is more than a name. Every project carries a **summary**: a required markdown document (min ~200 characters) that an LLM can context-load before doing any work in that project. The summary describes goals, constraints, key components, and anything else the planning agent thinks matters.
 
 - Required at `CreateProject` time. Server rejects summaries shorter than 200 characters after trim.
-- Stored on the `projects` row in the `summary` column (text) and embedded into `summary_embedding` (vector(768)) so future projects can semantically discover related work.
+- Stored as `summary.md` alongside `project.yaml` and embedded into a `summary.embedding.json` sidecar (bge-m3, 1024-dim by default) so related work is semantically discoverable. The embedding dim is whatever the project's configured provider returns — probed at attach, not hardcoded.
 - Exposed on the `Project` message so it travels with every read.
 - MCP has a dedicated `get_project_summary` tool whose description tells the LLM: *"Read this before starting work in a project — it's the project's design context."*
 - Editable via `UpdateProject(summary?)` — re-embedding is triggered on change. Edits don't carry forward through git-style history; the latest summary wins. (Comments form the audit trail; the summary is intentional living documentation.)
@@ -451,7 +459,7 @@ Data is split between two roots: a per-repo `data_dir` (default `./.tickets_plea
 ├── README.md                                # short orientation for anyone browsing the repo
 ├── project.yaml                             # id, slug, name, description, created_by, created_at, updated_at
 ├── summary.md                               # the required markdown summary (≥ 200 chars)
-├── summary.embedding.json                   # 768-float JSON array
+├── summary.embedding.json                   # embedding sidecar: {provider, model, dim, vec}
 ├── tickets/                                 # phase-less tickets sit here
 │   └── <NNN>-<slugified-title>/
 │       ├── ticket.yaml                      # id, title, column, body_path, created_by, completed_by, completed_at, created_at, updated_at
@@ -488,6 +496,8 @@ id: 7e2f4a4d-9c4b-4a1e-9b2f-2c5e9a3b6d11
 slug: tickets_please
 name: tickets_please
 description: A Trello-like ticketing system designed for LLM agents.
+embed_provider: ollama                              # per-project embedder (falls back to server default)
+embed_model: bge-m3                                 # sidecar identity stamp; a mismatch triggers a rebuild
 created_by: 8a51c2c0-22ad-4e7c-92d1-f9d6e7a17b50    # agent.id
 created_at: 2026-05-02T13:42:11.123Z
 updated_at: 2026-05-02T13:42:11.123Z
@@ -497,7 +507,7 @@ updated_at: 2026-05-02T13:42:11.123Z
 
 ```yaml
 id: c0a55d8c-3d63-4f6a-b3a7-9e8a1d8c2f44
-project_slug: tickets_please
+project_id: 7e2f4a4d-9c4b-4a1e-9b2f-2c5e9a3b6d11   # the project UUID, not the slug
 number: 7
 title: Implement MoveTicket transactional flow
 column: in_progress           # one of: todo, in_progress, testing, done
@@ -506,6 +516,8 @@ completed_by: null
 completed_at: null
 created_at: 2026-05-02T13:50:01.000Z
 updated_at: 2026-05-02T14:11:09.000Z
+# phased tickets also carry:  phase_id: <uuid>  and  wave: <int>
+# dependency fields when set:  depends_on: [<id>, …]   parallelizable_with: [<id>, …]
 ```
 
 `body.md` is the ticket description. `completion.md` (only when `column: done`) is structured:
@@ -542,10 +554,11 @@ Comment file content has a small frontmatter block followed by markdown body:
 ```markdown
 ---
 id: 8d3a4f1e-2b6c-4d8e-9a2f-1c5e9a3b6d22
+ticket_id: c0a55d8c-3d63-4f6a-b3a7-9e8a1d8c2f44
 kind: system_move
 author_id: 8a51c2c0-22ad-4e7c-92d1-f9d6e7a17b50
-from_column: todo
-to_column: in_progress
+from_column: todo                                  # system_move only; absent on user/system_completion
+to_column: in_progress                             # system_move only
 created_at: 2026-05-02T14:11:09.000Z
 ---
 Picked this up after read-through; starting on the validation layer first.
@@ -644,19 +657,19 @@ Walking the tree and parsing yamls on every call would be wasteful when an agent
 ```go
 type LoadedProject struct {
     Project       *domain.Project              // parsed project.yaml + summary.md
-    Phases        map[string]*domain.Phase     // populated when phases exist (T16)
+    Phases        map[string]*domain.Phase     // id → phase
+    PhasesBySlug  map[string]*domain.Phase     // slug → phase
     Tickets       map[string]*domain.Ticket    // ticket id → ticket (yaml + body.md + completion.md if done)
     Comments      map[string][]*domain.Comment // ticket id → ordered comment list
     LoadedAt      time.Time
     LastAccessAt  time.Time
     Stale         atomic.Bool                  // flipped by fsnotify when files change cross-process
     Lock          sync.RWMutex
-    // Per-project vector index attaches here later — owned by T11 (search). Excluded from T04
-    // so the cache compiles before vecindex/embed/worker packages exist.
+    // (plus unexported fsnotify watcher + stopWatch channel, closed on eviction)
 }
 ```
 
-The cross-project `SearchLearnings` and `SearchProjects` indexes are always-resident (their working sets are small and their utility is global). Per-project indexes (when added by T11) are partitioned so eviction frees their memory cleanly.
+Vector indexes do **not** live on `LoadedProject` — they're owned by the `ProjectMount` (four indexes + a worker per mount; see **Vector search index**), so a mount's vectors are freed when it's evicted. There is no always-resident global index; the only resident structure is `Service.defaultIndexes`, the empty-registry fallback.
 
 ### `LoadProject` method
 
@@ -753,18 +766,25 @@ Every mutating method requires an agent identity attached to its `context.Contex
 
 ```go
 type Service struct {
-    Store    *store.Store
-    Cache    *cache.ProjectCache
-    Embed    embed.Provider
-    Worker   *worker.Worker
-    LearningsIdx *vecindex.Index   // resident
-    SummaryIdx   *vecindex.Index   // resident
-    Logger   *slog.Logger
-    Cfg      config.Config
+    Store      *store.Store        // "default" store for stdio mode; the mount registry is canonical in HTTP mode
+    AgentStore *store.AgentStore   // central agent-session store under <data_root>/agents/
+    Cache      *cache.ProjectCache
+    Embed      embed.Provider      // server-default provider; per-mount providers shadow it
+    EmbedDim   int                 // dim of the server-default Embed
+    EmbedNew   func(embed.EmbedConfig) (embed.Provider, error)  // per-mount provider factory (tests inject fakes)
+    Logger     *slog.Logger
+    Cfg        config.Config
+    // defaultIndexes — resident fallback consulted only when the mount registry is empty.
+    // projectMounts (guarded by mountsMu) is the per-project registry; each mount owns its
+    // own Store, embed provider, four vec indexes, and embedding worker.
+    // (plus unexported background-goroutine cancels/waitgroup and agent-touch debounce state)
 }
 
 func New(cfg config.Config) (*Service, error)
+func NewWithEmbed(cfg config.Config, provider embed.Provider) (*Service, error)  // tests inject a deterministic provider
 ```
+
+Note the architecture shift: the embedding `Worker` and the vec indexes are **not** Service-level singletons — they moved onto each `ProjectMount` so a server can host many projects with independent per-project embedders. `ProjectMount` carries `Store`, `RepoPath`, `Embed`, `EmbedDim`, `EmbedModel`, the four indexes (`SummaryIdx`, `TicketsIdx`, `LearningsIdx`, `CommentsIdx`), and its own `Worker`.
 
 ### Agents
 - `RegisterAgent(ctx, key, name, metadata, requestedTTL time.Duration) (sessionID string, expiresAt time.Time, err error)`
@@ -778,7 +798,7 @@ func New(cfg config.Config) (*Service, error)
 - `ListProjects(ctx) ([]*domain.Project, error)` — across every mounted project.
 - `UpdateProject(ctx, idOrSlug string, p UpdateProjectInput) (*domain.Project, error)`
 - `DeleteProject(ctx, idOrSlug string) error` — unconditional. Removes every phase, ticket (active or done), comment, and embedding sidecar; unmounts the project; drops it from `<data_root>/registry.yaml`. Per-ticket "completion is sacred" is a per-ticket rule; project-level delete bypasses it.
-- `LoadProject(ctx, idOrSlug string) (*cache.LoadedProject, error)` — explicit cache pre-warm
+- `LoadProject(ctx, idOrSlug string) (LoadProjectResult, error)` — explicit cache pre-warm; returns the project plus a diagnostic handle, expiry, and ticket counts (see the `LoadProjectResult` struct above)
 - `RegisterProjectMount(ctx, repoPath string) (slug string, err error)` — read `<repoPath>/.tickets_please/project.yaml` and add a slug-keyed entry to the in-memory mount registry. Idempotent for the same `(repoPath, project UUID)` pair; LRU-evicts past `cfg.MaxLoadedProjects`. Persists the new path to `<data_root>/registry.yaml` so it survives a restart.
 - `ResolveProjectStore(ctx, slug string) (*store.Store, error)` — return the live `*store.Store` for `slug`, lazy-re-mounting from the registry if the entry was LRU-evicted.
 
@@ -803,12 +823,14 @@ func New(cfg config.Config) (*Service, error)
 ### Comments
 - `CreateComment(ctx, ticketID, body string) (*domain.Comment, error)` — always `kind=user`
 - `ListComments(ctx, ticketID string) ([]*domain.Comment, error)` — includes `system_move` and `system_completion`
+- `ListCommentsScoped(ctx, in ListCommentsScopedInput) ([]ScopedComment, string, error)` — project-wide (optionally narrowed to a phase or one ticket) with plain filters (author / `exclude_author_id`, `exclude_system`, `kinds`, `since`/`until`), ordered by `created_at`, cursor-paginated. Each result carries `ticket_id` + `ticket_title`.
 
 ### Search
-- `SearchProjects(ctx, query string, limit int) ([]ProjectHit, error)`
 - `SearchTickets(ctx, in SearchTicketsInput) ([]TicketHit, error)` — requires project filter in v1
 - `SearchComments(ctx, in SearchCommentsInput) ([]CommentHit, error)`
 - `SearchLearnings(ctx, in SearchLearningsInput) ([]LearningHit, error)` — over completed tickets only
+
+There is no `SearchProjects` RPC or `search_projects` tool — project summaries are embedded (each mount's `SummaryIdx`), but cross-project summary search isn't exposed in v1.
 
 ### Domain types
 
@@ -866,13 +888,15 @@ Failure mid-apply is detected by the integrity check (residual `.staging/<op-id>
 2. Writes the resulting `[]float32` to the appropriate `*.embedding.json` sidecar file (atomic write — temp file + rename).
 3. Updates the in-memory `vecindex` so search reflects the change immediately.
 
-Sidecar paths:
-- `projects/<slug>/summary.embedding.json` — for `summary.md`
-- `projects/<slug>/tickets/<NNN>-…/body.embedding.json` — for `body.md`
-- `projects/<slug>/tickets/<NNN>-…/learnings.embedding.json` — for the Learnings section of `completion.md`
-- `projects/<slug>/tickets/<NNN>-…/comments/<filename>.embedding.json` — per comment
+Sidecar paths (relative to the data dir root — post-flatten there's one project per `.tickets_please/`):
+- `summary.embedding.json` — for `summary.md`
+- `tickets/<NNN>-…/body.embedding.json` — for `body.md`
+- `tickets/<NNN>-…/learnings.embedding.json` — for the Learnings section of `completion.md`
+- `tickets/<NNN>-…/comments/<filename>.embedding.json` — per comment
 
-JSON format is a flat array, no metadata: `[0.123, -0.456, ...]`. The dim is implicit (768).
+(Phase-scoped tickets sit under `phases/<NNN>-…/tickets/<NNN>-…/` and their sidecars sit beside them.)
+
+The sidecar is a small JSON object that pairs the vector with the embedder identity, so a metadata-only read can answer "wrong embedder?" without parsing the float array: `{"provider": "ollama", "model": "bge-m3", "dim": 1024, "vec": [0.123, -0.456, ...]}`. `dim` is always `len(vec)` but persisted explicitly. There is intentionally no back-compat reader for the older flat-array shape — a cold clone rebuilds sidecars from source.
 
 **Backfill**: on project load (or on full server start for resident indexes), the loader scans for source files without their sidecar:
 
@@ -894,7 +918,7 @@ type Provider interface {
 }
 ```
 
-Default: Ollama. The vec index is dim-agnostic per project but the **server** asserts `provider.Dim() == 768` at startup so loaded sidecars match. Switching providers with a different dim requires deleting old `*.embedding.json` files and letting the worker re-embed.
+Default: Ollama + `bge-m3` (1024-dim). The dim is **not hardcoded**: each provider is probed at attach (`Probe()` embeds a token and records `len(vec)`), and every mount sizes its vec indexes to its provider's probed dim. A sidecar whose stamped `provider`/`model`/`dim` no longer matches its mount is treated as stale and rebuilt; `reembed_project` (or deleting `*.embedding.json` and letting the worker re-embed) is how you switch providers cleanly.
 
 **What gets embedded**:
 - Project: `summary.md` → `summary.embedding.json`. Re-embed on `UpdateProject(summary)`.
@@ -904,29 +928,28 @@ Default: Ollama. The vec index is dim-agnostic per project but the **server** as
 
 ## Vector search index
 
-`internal/vecindex` keeps embeddings in memory for fast top-k cosine search. Brute-force is fine for our scale (thousands of vectors at 768-dim). Pluggable for HNSW later.
+`internal/vecindex` keeps embeddings in memory for fast top-k cosine search. Brute-force is fine for our scale (thousands of 768/1024-dim vectors). Pluggable for HNSW later. The package is a stdlib-only leaf — no project imports.
 
 ```go
 type Entry struct {
-    ID    string             // source row id
-    Kind  Kind               // project | ticket | learning | comment
-    Owner string             // project slug; for cross-project indexes
-    Vec   []float32          // 768
+    ID    string             // source row id (project_id / ticket_id / comment_id)
+    Kind  Kind               // the domain of the source row
+    Owner string             // project slug; empty for global indexes
+    Vec   []float32          // length = the provider's probed dim
 }
 
 type Index struct {
-    entries map[string]Entry  // id → entry
     mu      sync.RWMutex
+    entries map[string]Entry  // id → entry
 }
 
 func (i *Index) Upsert(e Entry)
 func (i *Index) Delete(id string)
-func (i *Index) Search(query []float32, kind Kind, project string, limit int) []Hit
+func (i *Index) RemoveByOwner(owner string) int
+func (i *Index) Search(query []float32, kind Kind, ownerFilter string, limit int) []Hit
 ```
 
-There are two index instances:
-- **Per-project** (lives inside `LoadedProject.Vectors`) — built when the project is loaded; freed on eviction. Used by `SearchTickets` and `SearchComments` when scoped to a project.
-- **Global resident** — `learnings_index` and `projects_summary_index`. Always loaded at startup (the working sets are small) and updated incrementally on completion / project mutation. Used by `SearchLearnings` and `SearchProjects`.
+Indexes are owned **per mount**, not globally resident. Each `ProjectMount` carries four `*vecindex.Index` instances — `SummaryIdx`, `TicketsIdx`, `LearningsIdx`, `CommentsIdx` — plus its own embedding worker that writes only into them. They're built when the mount attaches and freed (`RemoveByOwner` / drop) when it's LRU-evicted. `Service.defaultIndexes` is a resident fallback consulted only when the mount registry is empty (the stdio-with-no-mounts degenerate case) so unscoped search RPCs don't crash on nil indexes.
 
 Cosine similarity assumes vectors are L2-normalized. Both Ollama (`bge-m3`) and OpenAI (`text-embedding-3-*`) return normalized vectors, so we don't normalize again.
 
