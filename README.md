@@ -2,7 +2,7 @@
 
 A ticketing system designed for LLMs first, humans second. Trello-shaped, but every move requires a comment, every completion requires structured testing evidence and learnings, and every word of context is semantically searchable.
 
-> **Status: v1 shipped.** Single binary, 29 MCP tools, filesystem-backed. Hobby project — clone, build, run, point an MCP client at it. See [`SPEC.md`](SPEC.md) for design notes and [`planning/`](planning/) for the work queue (mostly DONE now).
+> **Status: v1 shipped.** Single binary, 31 MCP tools, filesystem-backed. Hobby project — clone, build, run, point an MCP client at it. See [`SPEC.md`](SPEC.md) for design notes and [`planning/`](planning/) for the work queue (mostly DONE now).
 
 ## What makes this different
 
@@ -15,7 +15,17 @@ The system feeds itself: each completed ticket leaves machine-readable wisdom fo
 
 ## Architecture in one breath
 
-A single Go binary that runs as an MCP server (stdio by default, optional HTTP `serve` for a long-running multi-repo host). Data lives as a plain directory tree (`<repo>/.tickets_please/` per project, `~/.tickets_please/` for the central agent + mount registry) you can `cat`, `grep`, and `git diff`. Embeddings are JSON sidecar files. Every mutation can produce a git commit attributed to the calling agent. No database, no docker, no service to keep alive when running stdio — when the LLM client stops, the binary stops.
+A single Go binary that runs as an MCP server (stdio by default, optional HTTP `serve` for a long-running multi-repo host). Data lives as a plain directory tree you can `cat`, `grep`, and `git diff`. Embeddings are JSON sidecar files. Every mutation can produce a git commit attributed to the calling agent. No database, no docker, no service to keep alive when running stdio — when the LLM client stops, the binary stops.
+
+## Two ways to run it — and where the tickets live
+
+The same binary supports two storage models. Pick by how you want a project's ticket history to travel:
+
+- **Local service, tickets in the repo.** Run `tickets_please mcp` (stdio) — or `serve` with a `project_path` — and a project's tickets live in **that repo's** `<repo>/.tickets_please/` tree, committed to git. Clone the repo and its full ticket history comes with it; `git diff` shows ticket moves next to the code change that motivated them. This is the default for stdio clients and for anyone who passes `project_path` to `create_project` / `register_agent`. Best when tickets belong to one codebase. (This repo dogfoods exactly this — its own tickets live in `./.tickets_please/`.)
+
+- **Remote service, tickets stored centrally.** Run one long-lived `tickets_please serve` host and bind/create projects by **slug alone** (no `project_path`). The server stores each project under `<remote_project_root>/<slug>` — default `~/.tickets_please/projects/<slug>` **on the server's host**, not in any repo. Ticket history lives with the server, decoupled from any checkout. Best for a shared box serving many repos/people (point several clients at one `serve`). A `serve` client can still pass `project_path` to fall back to in-repo storage for a given project.
+
+Either way, `~/.tickets_please/` also holds user-scoped **agent sessions** and the **mount registry** (which repos the server has seen). Within an in-repo store, only `.staging/` and the `*.embedding.json` sidecars are gitignored.
 
 ## Quickstart (5 steps, ~5 minutes)
 
@@ -64,6 +74,26 @@ claude mcp add --transport http tickets_please http://localhost:8765/mcp
 After connecting, the client must call `register_agent` (an MCP tool) with the absolute `project_path` of the repo it wants to work in; subsequent tool calls then accept `project_id_or_slug` as optional and fall back to that bound project. If the repo has no project yet, call `create_project` first (it's the bootstrap escape valve — no session required) with `project_path` set to the repo root, then `register_agent`.
 
 `/healthz` returns `ok` for liveness probes.
+
+### Install as a background service
+
+To keep the HTTP server (above) running persistently instead of launching it by hand, use the install scripts. Both build the binary, seed `~/.tickets_please/`, register a **per-user** service that runs `serve --addr 127.0.0.1:8765`, health-check it, and print the `claude mcp add` line to wire a client. Re-run any time to update; pass the uninstall flag to remove (your data under `~/.tickets_please/` is left in place).
+
+**Linux / macOS (systemd `--user` service):**
+
+```sh
+./install.sh              # install + start
+./install.sh --uninstall  # remove
+```
+
+**Windows (per-user Scheduled Task, no admin):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1             # install + start
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall  # remove
+```
+
+Both launch the server windowless and restart it on failure. The Linux service enables systemd *lingering* so it survives logout; the Windows task is triggered at logon. This is the **remote/central** storage model — projects you create against this server land under `~/.tickets_please/projects/<slug>` on the host unless a client binds a specific repo via `project_path`.
 
 ### Web UI
 
