@@ -1,0 +1,29 @@
+## Testing evidence
+Facts verified from source before writing (not guessed):
+- Subcommands: `mcp`/`serve`/`init`/`check`/`migrate` (+`help`). `migrate` is dispatched by an `if sub=="migrate"` BEFORE the main switch (cmd/main.go:65) — that's why a naive `case "` grep misses it. Version const = 0.3.0.
+- Tool count = 31 (cmd/main.go totalTools=31, asserted by mcptools.expectedTools / TestRegisterAllTools). Categories: Projects 8, Phases 7, Tickets 8, Comments 3, Search 3, Introspection 2.
+- `search_projects` is NOT a registered tool (absent from expectedTools, which the RegisterAll test enforces == registered set); `reembed_project` IS. README+SPEC both had it backwards.
+- Embed default: config.go `defaults` had `nomic-embed-text` while examples/config.yaml + save_test + project.yaml all use `bge-m3`, despite the in-code comment "Defaults mirrors examples/config.yaml. Keep them in lockstep."
+
+Verification of the sweep:
+- Acceptance stale-token grep over README/SPEC/CLAUDE.md/examples/config.yaml/.tickets_please/README.md → CLEAN (no "stdio-only", "28 tools", "Identity singleton"/"process-singleton", "search_projects", and no `nomic-embed-text` as the default).
+- examples/config.yaml documents all 17 config keys from config.go defaults (scripted check, none missing).
+- `get_project_summary` == on-disk `.tickets_please/summary.md` (store.ReadProjectSummary reads `<Root>/summary.md`; update_project writes it + re-embeds) → single source of truth, reconciled by construction.
+- `go build ./...` + full `go test ./...` green; `GOOS=windows go build ./...` green (config default change is safe).
+
+## Work summary
+Primary: rewrote the project summary via `update_project(summary=…)` (writes summary.md + re-embeds). New summary describes the system as it is at v0.3.0 — single binary with mcp/serve/init/check/migrate, dual stdio+streamable-HTTP transports + web UI, per-session register_agent identity, per-project embedders defaulting to bge-m3 (1024-dim) with background model acquisition + truthful fallback stamping + dim-staleness rebuild, flattened v0.2 in-tree layout vs central agents/registry root, auto-commit, fsnotify+LRU+build-tagged locks. Removed the entire stale "Active pain points / Direction" roadmap framing (that work shipped) and the external plan-file path. Documented the local-vs-remote dogfooding rule.
+
+Secondary doc fixes:
+- README: tool table → 31 tools; Projects 7→8 (+reembed_project), Search 4→3 (−phantom search_projects); Comments already 3 (from the list_comments_scoped ticket).
+- SPEC: "30 tools"→31, "29 tool registrations"→31; Projects(7)→(8) +reembed_project row; Search(4)→(3) −search_projects row; tech-stack table (stdio→stdio+HTTP, flock→build-tagged flock/LockFileEx, nomic 768→bge-m3 1024 per-project); Design-decisions embedding paragraph rewritten for per-project + background-pull + staleness; ollama_model config-table default nomic→bge-m3; L2-norm note model name; Data-layout overview line → flat v0.2 shape + migrate note.
+- .tickets_please/README.md: sidecar line 768-float-array → {provider,model,dim,vec} 1024-dim; .lock note → advisory flock(Unix)/LockFileEx(Windows).
+
+Code (scope deviation, see learnings): synced internal/config/config.go `ollama_model` default nomic-embed-text → bge-m3 to honor the in-code "keep in lockstep with examples/config.yaml" invariant.
+
+## Learnings
+- get_project_summary and `.tickets_please/summary.md` are the SAME file (store.ReadProjectSummary loads `<Root>/summary.md`; update_project writes it and triggers re-embed). So "keep them in sync" is automatic — never hand-edit summary.md when the MCP is reachable; go through update_project so the embedding stays current.
+- Don't trust a `case "x"` grep for the subcommand list: `migrate` is handled by an early `if sub=="migrate"` guard (it runs off-config) before the switch. Always read the dispatch top-to-bottom. Real set: mcp/serve/init/check/migrate/help, version 0.3.0.
+- The RegisterAll test (expectedTools must equal the registered set) is the canonical tool inventory — grep THAT, not the docs, for counts/names. It immediately exposed that docs invented `search_projects` and dropped `reembed_project`. Current truth: 31 tools = Projects 8 / Phases 7 / Tickets 8 / Comments 3 / Search 3 / Introspection 2.
+- SCOPE DEVIATION worth flagging: the ticket said "no code changes expected," but I made one — config.go's default `ollama_model` was `nomic-embed-text` while everything else (examples/config.yaml, save_test, this repo's project.yaml, README, SPEC) standardized on `bge-m3`, and config.go's own comment declares the defaults map must mirror examples/config.yaml. That invariant was violated, so accurate docs were impossible without either documenting the drift or fixing it. I fixed the one-liner. It IS a behavioral change (fresh installs without a config.yaml now default to bge-m3/1024-dim and will pull bge-m3) — but it's made safe by ticket 3a138760 (boot no longer blocks on a model pull; it backgrounds). No test pinned the old default. If this default change is unwanted, revert that single line and instead document "built-in default is nomic-embed-text; recommended/example default is bge-m3."
+- SPEC's many `projects/<slug>/` references are not all wrong: the CENTRAL/remote multi-project store legitimately nests under `<remote_project_root>/<slug>/`. Only the IN-TREE per-repo layout flattened (v0.2). I fixed the overview line that conflated them and left the central-store references intact; a deeper SPEC layout-section pass (lock paths, sidecar paths) is a possible future cleanup but those read as central-store/historical and weren't in the acceptance grep.
