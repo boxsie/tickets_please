@@ -1,0 +1,36 @@
+package tickets
+
+import "tickets_please/internal/domain"
+
+// MoveForm renders the move-ticket form that lives inside the move modal.
+// `done` is intentionally omitted from the target column dropdown — the
+// service rejects that move and the handler maps it to a 422 pointing at
+// Complete. 1:1 port of templates/partials/move_form.tmpl.
+templ MoveForm(props DetailProps) {
+	{{ t := props.Ticket }}
+	<form
+		method="post"
+		action={ templ.SafeURL(moveHref(t.ID, props.ProjectSlug)) }
+		class="stack"
+	>
+		<label for="target_column">Target column</label>
+		<select id="target_column" name="target_column" required>
+			if t.Column != domain.ColumnTodo {
+				<option value="todo">todo</option>
+			}
+			if t.Column != domain.ColumnInProgress {
+				<option value="in_progress">in_progress</option>
+			}
+			if t.Column != domain.ColumnTesting {
+				<option value="testing">testing</option>
+			}
+		</select>
+		<label for="move-comment">Comment <span class="muted">(required)</span></label>
+		<textarea id="move-comment" name="comment" rows="2" required minlength="1" placeholder="Why are you moving this?"></textarea>
+		<input type="hidden" name="_csrf" value={ props.CSRF }/>
+		<div class="form-actions">
+			<button type="submit">Move</button>
+		</div>
+		<p class="hint m-0">Use <strong>Complete</strong> below to mark done — that's the only path.</p>
+	</form>
+}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"tickets_please/internal/domain"
+	pgtickets "tickets_please/internal/web/components/pages/tickets"
 )
 
 // Comments handlers — the immutable audit trail UI on the ticket detail
@@ -45,13 +46,13 @@ func (a *app) handleCommentsList(w http.ResponseWriter, r *http.Request) {
 		a.renderer.Error(w, r, classifyServiceError(err), err)
 		return
 	}
-	body := commentsThreadData{
+	body := pgtickets.CommentsThreadProps{
 		TicketID:    id,
 		ProjectSlug: r.URL.Query().Get("slug"),
 		CSRF:        a.summaryCSRF(r),
-		Rows:        commentRows(comments),
+		Rows:        commentRowsTempl(comments),
 	}
-	a.renderer.Partial(w, r, "comments_thread", body)
+	a.renderer.RenderTemplPartial(w, r, pgtickets.CommentsThread(body))
 }
 
 // handleCommentCreate: POST /tickets/{id}/comments — append.
@@ -74,7 +75,7 @@ func (a *app) handleCommentCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("HX-Request") == "true" {
 		// Render the single new comment so htmx can append it; the form
 		// resets client-side via hx-on::after-request.
-		a.renderer.Partial(w, r, "comment", row)
+		a.renderer.RenderTemplPartial(w, r, pgtickets.CommentRow(toTemplRow(row)))
 		return
 	}
 	slug := r.URL.Query().Get("slug")
@@ -109,6 +110,28 @@ func buildCommentRow(c *domain.Comment) commentRowData {
 		Comment:     c,
 		IsSystem:    c.Kind != domain.CommentKindUser,
 		AuthorLabel: label,
+	}
+}
+
+// commentRowsTempl converts the chronologically-ordered comments into the
+// templ-shaped row props the new tickets package consumes. Mirrors
+// commentRows but emits pgtickets.CommentRowProps.
+func commentRowsTempl(comments []*domain.Comment) []pgtickets.CommentRowProps {
+	out := make([]pgtickets.CommentRowProps, 0, len(comments))
+	for _, c := range comments {
+		out = append(out, toTemplRow(buildCommentRow(c)))
+	}
+	return out
+}
+
+// toTemplRow converts the legacy commentRowData (used by the html/template
+// renderer + still useful for the cookie-cutter buildCommentRow helper) into
+// the templ-shaped pgtickets.CommentRowProps.
+func toTemplRow(row commentRowData) pgtickets.CommentRowProps {
+	return pgtickets.CommentRowProps{
+		Comment:     row.Comment,
+		IsSystem:    row.IsSystem,
+		AuthorLabel: row.AuthorLabel,
 	}
 }
 

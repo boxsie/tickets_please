@@ -1,0 +1,152 @@
+package tickets
+
+import (
+	"tickets_please/internal/web/components/md"
+	"tickets_please/internal/web/components/ui"
+)
+
+// Detail renders the ticket detail page: header with breadcrumb + action
+// buttons, body card, optional dependencies card, optional completion card
+// (when done), comments thread, and four modals (move/complete/assign-phase
+// /delete) that only appear when the ticket is non-done.
+//
+// 1:1 port of templates/pages/tickets/detail.tmpl. Phase 2 will rework the
+// metadata block — Wave 1 keeps it identical.
+templ Detail(props DetailProps) {
+	{{ t := props.Ticket }}
+	{{ proj := props.Project }}
+	<section class="ticket-detail">
+		<header class="page-header">
+			<h1>{ t.Title }</h1>
+			<p class="ticket-meta">
+				<a href={ templ.SafeURL(boardHref(proj.Slug)) }>{ proj.Name }</a>
+				<span class="breadcrumb-sep"></span>
+				if props.Phase != nil {
+					<a href={ templ.SafeURL(phaseHref(proj.Slug, props.Phase.Slug)) }>{ props.Phase.Name }</a>
+				} else {
+					<span class="muted">no phase</span>
+				}
+				<span class="breadcrumb-sep"></span>
+				<span class={ "badge", "badge-" + columnString(t.Column) }>{ columnString(t.Column) }</span>
+				if t.Wave != 0 {
+					<span class="breadcrumb-sep"></span>
+					wave { formatWave(t.Wave) }
+				}
+				<span class="breadcrumb-sep"></span>
+				<span class="id-pill" title={ t.ID }>{ shortID(t.ID) }</span>
+			</p>
+			<div class="page-actions">
+				if props.IsDone {
+					@FrozenActions()
+				} else {
+					<button type="button" class="btn btn-primary" data-dialog="dlg-complete">Complete</button>
+					<button type="button" class="btn" data-dialog="dlg-move">Move</button>
+					if len(props.Phases) > 0 {
+						<button type="button" class="btn" data-dialog="dlg-assign-phase">Reassign phase</button>
+					}
+					<a class="btn" href={ templ.SafeURL(editHref(t.ID, proj.Slug)) }>Edit ticket</a>
+					<button type="button" class="btn btn-danger" data-dialog="dlg-delete">Delete</button>
+				}
+			</div>
+		</header>
+		<div class="ticket-main">
+			<section class="card">
+				<h2>Body</h2>
+				if t.Body != "" {
+					<div class="markdown">
+						@md.MD(t.Body)
+					</div>
+				} else {
+					<p class="hint">No body.</p>
+				}
+			</section>
+			if len(t.DependsOn) > 0 || len(props.Blocks) > 0 {
+				<section class="card">
+					<h2>Dependencies</h2>
+					if len(props.Depends) > 0 {
+						<p><strong>Depends on</strong></p>
+						<ul class="bare-list">
+							for _, d := range props.Depends {
+								<li>
+									<a href={ templ.SafeURL(ticketDetailHref(d.ID, proj.Slug)) }>{ d.Title }</a>
+									<span class={ "badge", "badge-" + columnString(d.Column) }>{ columnString(d.Column) }</span>
+								</li>
+							}
+						</ul>
+					}
+					if len(props.Blocks) > 0 {
+						<p><strong>Blocks</strong></p>
+						<ul class="bare-list">
+							for _, b := range props.Blocks {
+								<li>
+									<a href={ templ.SafeURL(ticketDetailHref(b.ID, proj.Slug)) }>{ b.Title }</a>
+									<span class={ "badge", "badge-" + columnString(b.Column) }>{ columnString(b.Column) }</span>
+								</li>
+							}
+						</ul>
+					}
+				</section>
+			}
+			if props.IsDone {
+				<section class="card frozen-card">
+					<h2>Completion</h2>
+					if t.TestingEvidence != nil && *t.TestingEvidence != "" {
+						<details open>
+							<summary>Testing evidence</summary>
+							<div class="markdown">
+								@md.MD(*t.TestingEvidence)
+							</div>
+						</details>
+					}
+					if t.WorkSummary != nil && *t.WorkSummary != "" {
+						<details>
+							<summary>Work summary</summary>
+							<div class="markdown">
+								@md.MD(*t.WorkSummary)
+							</div>
+						</details>
+					}
+					if t.Learnings != nil && *t.Learnings != "" {
+						<details>
+							<summary>Learnings</summary>
+							<div class="markdown">
+								@md.MD(*t.Learnings)
+							</div>
+						</details>
+					}
+				</section>
+			}
+			@CommentsThread(props.Comments)
+		</div>
+		if !props.IsDone {
+			@ui.Modal(ui.ModalProps{ID: "dlg-move", Title: "Move ticket"}) {
+				@MoveForm(props)
+			}
+			@ui.Modal(ui.ModalProps{ID: "dlg-complete", Title: "Complete ticket", Wide: true}) {
+				@CompleteForm(props)
+			}
+			if len(props.Phases) > 0 {
+				@ui.Modal(ui.ModalProps{ID: "dlg-assign-phase", Title: "Reassign phase"}) {
+					@AssignPhaseForm(AssignPhaseProps{
+						TicketID:         t.ID,
+						ProjectSlug:      proj.Slug,
+						CurrentPhaseSlug: phaseSlugFor(t, props.Phases),
+						Phases:           props.Phases,
+						CSRF:             props.CSRF,
+					})
+				}
+			}
+			@ui.Modal(ui.ModalProps{ID: "dlg-delete", Title: "Delete ticket"}) {
+				<p>This will <strong>permanently remove</strong> &ldquo;{ t.Title }&rdquo;, including its body, comments, and embeddings. This cannot be undone.</p>
+				<p class="hint">Any other tickets that reference this one in <code>depends_on</code> or <code>parallelizable_with</code> will be auto-updated to drop the reference. Tickets in <code>done</code> can never be deleted (completion is sacred).</p>
+				<form method="post" action={ templ.SafeURL(deleteHref(t.ID, proj.Slug)) } class="stack">
+					<input type="hidden" name="_csrf" value={ props.CSRF }/>
+					<div class="form-actions">
+						<button type="submit" class="btn-danger">Delete forever</button>
+						<button type="button" class="btn" data-dialog-close="dlg-delete">Cancel</button>
+					</div>
+				</form>
+			}
+		}
+	</section>
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"tickets_please/internal/domain"
+	pgtickets "tickets_please/internal/web/components/pages/tickets"
 )
 
 // Tickets handlers — board, create form/post, detail, edit form/post, move,
@@ -90,16 +91,19 @@ func (a *app) handleBoard(w http.ResponseWriter, r *http.Request) {
 			cols[i].Tickets = append(cols[i].Tickets, t)
 		}
 	}
-	a.renderer.Page(w, r, "tickets/board", PageOpts{
+	bcols := make([]pgtickets.BoardColumn, len(cols))
+	for i, c := range cols {
+		bcols[i] = pgtickets.BoardColumn{Column: c.Column, Title: c.Title, Tickets: c.Tickets}
+	}
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       "Board · " + proj.Name,
 		CurrentSlug: slug,
-		Body: boardData{
-			Project:   proj,
-			PhaseSlug: phaseSlug,
-			Phases:    phases,
-			Columns:   cols,
-		},
-	})
+	}, pgtickets.Board(pgtickets.BoardProps{
+		Project:   proj,
+		PhaseSlug: phaseSlug,
+		Phases:    phases,
+		Columns:   bcols,
+	}))
 }
 
 // --- create form / post ----------------------------------------------------
@@ -134,15 +138,15 @@ func (a *app) handleTicketNewForm(w http.ResponseWriter, r *http.Request) {
 		a.deps.Logger.Warn("ticket new: list phases", "err", err)
 		phases = nil
 	}
-	a.renderer.Page(w, r, "tickets/new", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       "New ticket · " + proj.Name,
 		CurrentSlug: slug,
-		Body: ticketFormData{
-			Mode:    "new",
-			Project: proj,
-			Phases:  phases,
-		},
-	})
+	}, pgtickets.New(pgtickets.FormProps{
+		Mode:    "new",
+		Project: proj,
+		Phases:  phases,
+		CSRF:    a.summaryCSRF(r),
+	}))
 }
 
 func (a *app) handleTicketCreate(w http.ResponseWriter, r *http.Request) {
@@ -169,17 +173,24 @@ func (a *app) handleTicketCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		phases, _ := a.deps.Service.ListPhases(r.Context(), slug)
 		w.WriteHeader(classifyServiceError(err))
-		a.renderer.Page(w, r, "tickets/new", PageOpts{
+		a.renderer.RenderTempl(w, r, PageOpts{
 			Title:       "New ticket · " + proj.Name,
 			CurrentSlug: slug,
-			Body: ticketFormData{
-				Mode:      "new",
-				Project:   proj,
-				Phases:    phases,
-				FormError: err.Error(),
-				Submitted: in,
+		}, pgtickets.New(pgtickets.FormProps{
+			Mode:      "new",
+			Project:   proj,
+			Phases:    phases,
+			FormError: err.Error(),
+			Submitted: pgtickets.FormSubmitted{
+				Title:          in.Title,
+				Body:           in.Body,
+				PhaseSlug:      in.PhaseSlug,
+				Wave:           in.Wave,
+				DependsOn:      in.DependsOn,
+				Parallelizable: in.Parallelizable,
 			},
-		})
+			CSRF: a.summaryCSRF(r),
+		}))
 		return
 	}
 	SetFlash(w, r, "success", "Ticket created.")
@@ -286,29 +297,28 @@ func (a *app) handleTicketDetail(w http.ResponseWriter, r *http.Request) {
 		a.deps.Logger.Warn("ticket detail: list comments", "err", err)
 		threadComments = nil
 	}
-	thread := commentsThreadData{
+	thread := pgtickets.CommentsThreadProps{
 		TicketID:    tkt.ID,
 		ProjectSlug: proj.Slug,
 		CSRF:        csrf,
-		Rows:        commentRows(threadComments),
+		Rows:        commentRowsTempl(threadComments),
 	}
 
-	a.renderer.Page(w, r, "tickets/detail", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       tkt.Title + " · " + proj.Name,
 		CurrentSlug: proj.Slug,
-		Body: ticketDetailData{
-			Project:     proj,
-			Phases:      phases,
-			Phase:       phase,
-			Ticket:      tkt,
-			Depends:     depends,
-			Blocks:      blocks,
-			ProjectSlug: proj.Slug,
-			CSRF:        csrf,
-			IsDone:      tkt.Column == domain.ColumnDone,
-			Comments:    thread,
-		},
-	})
+	}, pgtickets.Detail(pgtickets.DetailProps{
+		Project:     proj,
+		Phases:      phases,
+		Phase:       phase,
+		Ticket:      tkt,
+		Depends:     depends,
+		Blocks:      blocks,
+		ProjectSlug: proj.Slug,
+		CSRF:        csrf,
+		IsDone:      tkt.Column == domain.ColumnDone,
+		Comments:    thread,
+	}))
 }
 
 // dependencyLinks returns the ticket pointers for the rows in tkt.DependsOn
@@ -371,23 +381,23 @@ func (a *app) handleTicketEditForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	phases, _ := a.deps.Service.ListPhases(r.Context(), proj.Slug)
-	a.renderer.Page(w, r, "tickets/edit", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       "Edit " + tkt.Title + " · " + proj.Name,
 		CurrentSlug: proj.Slug,
-		Body: ticketFormData{
-			Mode:    "edit",
-			Project: proj,
-			Phases:  phases,
-			Ticket:  tkt,
-			Submitted: ticketFormSubmitted{
-				Title:          tkt.Title,
-				Body:           tkt.Body,
-				Wave:           tkt.Wave,
-				DependsOn:      tkt.DependsOn,
-				Parallelizable: tkt.ParallelizableWith,
-			},
+	}, pgtickets.Edit(pgtickets.FormProps{
+		Mode:    "edit",
+		Project: proj,
+		Phases:  phases,
+		Ticket:  tkt,
+		Submitted: pgtickets.FormSubmitted{
+			Title:          tkt.Title,
+			Body:           tkt.Body,
+			Wave:           tkt.Wave,
+			DependsOn:      tkt.DependsOn,
+			Parallelizable: tkt.ParallelizableWith,
 		},
-	})
+		CSRF: a.summaryCSRF(r),
+	}))
 }
 
 func (a *app) handleTicketUpdate(w http.ResponseWriter, r *http.Request) {
