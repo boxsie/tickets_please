@@ -26,13 +26,18 @@ var expectedTools = []string{
 	// Phases (7)
 	"list_phases", "create_phase", "get_phase", "get_phase_summary",
 	"update_phase", "delete_phase", "list_waves",
-	// Tickets (8)
+	// Tickets (10)
 	"list_tickets", "create_ticket", "get_ticket", "update_ticket",
 	"move_ticket", "complete_ticket", "assign_ticket_to_phase", "delete_ticket",
+	"archive_ticket", "unarchive_ticket",
+	// Archive policy (1)
+	"apply_archive_policy",
 	// Comments (3)
 	"add_comment", "list_comments", "list_comments_scoped",
 	// Search (3)
 	"search_tickets", "search_learnings", "search_comments",
+	// Feedback (1)
+	"rate_search_result",
 	// Introspection (2)
 	"who_am_i", "register_agent",
 }

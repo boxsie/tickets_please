@@ -249,6 +249,9 @@ func (s *Service) ListTickets(ctx context.Context, in domain.ListTicketsInput) (
 
 	out := make([]*domain.Ticket, 0)
 	for _, t := range lp.Tickets {
+		if t.Archived && !in.IncludeArchived {
+			continue
+		}
 		if in.Column != nil && t.Column != *in.Column {
 			continue
 		}
@@ -909,6 +912,10 @@ func (s *Service) DeleteTicket(ctx context.Context, id string) error {
 	s.mountsMu.Lock()
 	mount := s.projectMounts[hostSlug]
 	s.mountsMu.Unlock()
+	feedbackKeys := []domain.EntryKey{
+		domain.TicketEntryKey(id),
+		domain.LearningEntryKey(id),
+	}
 	for _, c := range lp.Comments[id] {
 		if mount != nil && mount.CommentsIdx != nil {
 			mount.CommentsIdx.Delete(c.ID)
@@ -916,6 +923,7 @@ func (s *Service) DeleteTicket(ctx context.Context, id string) error {
 		if s.defaultIndexes.Comments != nil {
 			s.defaultIndexes.Comments.Delete(c.ID)
 		}
+		feedbackKeys = append(feedbackKeys, domain.CommentEntryKey(c.ID))
 	}
 	delete(lp.Tickets, id)
 	delete(lp.Comments, id)
@@ -932,6 +940,16 @@ func (s *Service) DeleteTicket(ctx context.Context, id string) error {
 	}
 	if s.defaultIndexes.Learnings != nil {
 		s.defaultIndexes.Learnings.Delete(id)
+	}
+	// Drop the doomed ticket's feedback entries (ticket + learning + every
+	// comment) in one write. Failure is logged-but-non-fatal: a leftover
+	// feedback row pointing at a deleted id is harmless beyond a tiny bit of
+	// disk noise; the lookup just misses on next access.
+	if mount != nil && mount.Feedback != nil {
+		if err := mount.Feedback.DeleteMany(ctx, feedbackKeys); err != nil && s.Logger != nil {
+			s.Logger.Warn("svc: delete ticket feedback cascade failed",
+				"slug", hostSlug, "ticket_id", id, "err", err)
+		}
 	}
 	return nil
 }

@@ -59,6 +59,29 @@ type ProjectMount struct {
 	// pending sidecar write doesn't race a RemovePath. Reads of this field
 	// must hold mountsMu — same contract as the index pointers.
 	Worker *worker.Worker
+
+	// Feedback is the per-project likes/dislikes/retrievals aggregate store
+	// backing the W1 search-feedback loop. Nil on a mount whose Store hasn't
+	// been built yet (LRU-evicted entries); RegisterProjectMount and the
+	// re-mount path in ResolveProjectStore both rebuild it.
+	Feedback *store.FeedbackStore
+
+	// QualityParams is the per-project tuning of the W2 search-ranking
+	// multiplier (α, β, min_multiplier, enabled). Sourced from project.yaml's
+	// `feedback` block at mount-attach time; defaults to α=β=2, min=0.5,
+	// enabled=true when the block is absent.
+	QualityParams QualityParams
+
+	// ArchivePolicy is the per-project tuning of the W3 archive sweep.
+	// Sourced from project.yaml's `archive` block at mount-attach time;
+	// defaults to enabled=false (opt-in) with the canonical thresholds.
+	ArchivePolicy ArchivePolicy
+
+	// sweepInFlight coalesces concurrent ApplyArchivePolicy auto-sweeps on
+	// this mount: a second background sweep started before the first
+	// finishes is a no-op-with-warning. Manual `apply_archive_policy` calls
+	// don't take this — they're explicit user actions.
+	sweepInFlight sync.Mutex
 }
 
 // Service is the in-process API surface. T15 declared the foundational
@@ -452,6 +475,7 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 			}
 			existing.Store = st
 			existing.LastTouchedAt = time.Now()
+			s.attachMountFeedback(existing, rec.Slug)
 			s.maybeEvictLocked(rec.Slug)
 			// Re-hydrate the resident indexes for this slug; eviction earlier
 			// may have dropped its entries.
@@ -475,6 +499,7 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 	if err := s.attachMountEmbedAssets(mount, rec); err != nil {
 		return "", err
 	}
+	s.attachMountFeedback(mount, rec.Slug)
 	s.projectMounts[rec.Slug] = mount
 	s.maybeEvictLocked(rec.Slug)
 	// Populate resident indexes from this project's on-disk sidecars (and
@@ -483,7 +508,133 @@ func (s *Service) RegisterProjectMount(_ context.Context, repoPath string) (stri
 	// queue, neither of which loops back into mountsMu.
 	s.hydrateMount(rec.Slug, mount)
 	s.persistMountRegistry(repoPath, true)
+	s.maybeStartAutoSweep(rec.Slug, mount)
 	return rec.Slug, nil
+}
+
+// maybeStartAutoSweep fires the W3 archive sweep in the background after a
+// fresh mount if the project's `archive.auto_sweep_on_mount: true` is set
+// AND `archive.enabled: true`. Both flags are opt-in — auto-sweep is
+// silently skipped otherwise. Sweep runs through ApplyArchivePolicy with
+// commit=true; result is structured-logged with counts.
+//
+// The per-mount sweepInFlight mutex coalesces overlapping triggers: a second
+// trigger arriving before the first finishes is a no-op-with-warning, not a
+// stampede. ctx uses s.bgCtx so process shutdown cancels in-flight sweeps.
+func (s *Service) maybeStartAutoSweep(slug string, mount *ProjectMount) {
+	if mount == nil || !mount.ArchivePolicy.Enabled || !mount.ArchivePolicy.AutoSweepOnMount {
+		return
+	}
+	s.bgWG.Add(1)
+	go func() {
+		defer s.bgWG.Done()
+		if !mount.sweepInFlight.TryLock() {
+			if s.Logger != nil {
+				s.Logger.Warn("svc: auto-sweep already in flight; skipping duplicate trigger",
+					"slug", slug)
+			}
+			return
+		}
+		defer mount.sweepInFlight.Unlock()
+
+		ctx := s.bgCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		// Auto-sweep doesn't have an authenticated agent session in the
+		// traditional sense (no MCP client triggered it). We synthesize one
+		// using the project's registered agents via the existing requireSession
+		// path — but ApplyArchivePolicy and its downstream ArchiveTicket calls
+		// expect a session. The cleanest path: skip the auto-sweep when no
+		// session is bindable, log, and let the next manual `apply_archive_policy`
+		// run instead. (Hobby-scale: in practice the LLM-driven mount path
+		// always has a session.)
+		if s.AgentStore == nil {
+			if s.Logger != nil {
+				s.Logger.Info("svc: auto-sweep skipped — no AgentStore for session attribution",
+					"slug", slug)
+			}
+			return
+		}
+
+		started := time.Now()
+		report, err := s.ApplyArchivePolicy(ctx, ApplyPolicyInput{
+			ProjectIDOrSlug: slug,
+			Commit:          true,
+		})
+		took := time.Since(started)
+		if err != nil {
+			if s.Logger != nil {
+				s.Logger.Warn("svc: auto-sweep failed", "slug", slug, "err", err, "took", took)
+			}
+			return
+		}
+		if s.Logger != nil {
+			s.Logger.Info("svc: auto-sweep complete",
+				"slug", slug,
+				"considered", report.Considered,
+				"archived", len(report.Archived),
+				"skipped", len(report.Skipped),
+				"took", took)
+		}
+	}()
+}
+
+// attachMountFeedback (re)loads the per-project feedback store onto mount and
+// resolves the QualityParams from project.yaml's optional `feedback` block.
+// Logs and clears Feedback on error — a corrupt feedback.yaml shouldn't lock
+// the user out of their tickets; mutations through RateSearchResult will
+// no-op gracefully when Feedback is nil, and search scoring falls back to
+// pure cosine when QualityParams.Enabled ends up false.
+func (s *Service) attachMountFeedback(mount *ProjectMount, slug string) {
+	if mount == nil || mount.Store == nil || slug == "" {
+		return
+	}
+	fb, err := store.LoadFeedback(mount.Store, slug)
+	if err != nil {
+		if s.Logger != nil {
+			s.Logger.Warn("svc: load feedback store failed; feedback disabled for this mount",
+				"slug", slug, "err", err)
+		}
+		mount.Feedback = nil
+	} else {
+		mount.Feedback = fb
+	}
+	// QualityParams + ArchivePolicy: default + per-project override from
+	// project.yaml's `feedback` and `archive` blocks. Missing project.yaml
+	// or missing blocks → defaults.
+	params := defaultQualityParams()
+	policy := defaultArchivePolicy()
+	rec := &store.ProjectRecord{}
+	if err := store.ReadYAML(filepath.Join(mount.Store.Root, "project.yaml"), rec); err == nil {
+		params = resolveQualityParams(rec.Feedback)
+		policy = resolveArchivePolicy(rec.Archive)
+	}
+	mount.QualityParams = params
+	mount.ArchivePolicy = policy
+}
+
+// resolveQualityParams merges a per-project FeedbackConfigRecord onto the
+// canonical defaults. Any nil field inherits the default value, so a project
+// that only overrides `enabled: false` (kill switch) keeps α=β=2, min=0.5.
+func resolveQualityParams(rec *store.FeedbackConfigRecord) QualityParams {
+	out := defaultQualityParams()
+	if rec == nil {
+		return out
+	}
+	if rec.Alpha != nil {
+		out.Alpha = *rec.Alpha
+	}
+	if rec.Beta != nil {
+		out.Beta = *rec.Beta
+	}
+	if rec.MinMultiplier != nil {
+		out.MinMultiplier = *rec.MinMultiplier
+	}
+	if rec.Enabled != nil {
+		out.Enabled = *rec.Enabled
+	}
+	return out
 }
 
 // attachMountEmbedAssets builds (or reuses) the mount's embed.Provider, the
@@ -769,6 +920,7 @@ func (s *Service) ResolveProjectStore(_ context.Context, slug string) (*store.St
 					if err := s.attachMountEmbedAssets(m, rec); err != nil {
 						return nil, err
 					}
+					s.attachMountFeedback(m, slug)
 					s.projectMounts[slug] = m
 					return s.Store, nil
 				}
@@ -800,6 +952,9 @@ func (s *Service) ResolveProjectStore(_ context.Context, slug string) (*store.St
 	mount.LastTouchedAt = time.Now()
 	s.maybeEvictLocked(slug)
 	if rehydrated {
+		// Eviction dropped the feedback store along with the resident indexes;
+		// rebuild both so post-eviction reads see the on-disk state.
+		s.attachMountFeedback(mount, slug)
 		// Eviction nuked the resident-index entries for this slug; refill
 		// them from disk so search results return for this project again.
 		s.hydrateMount(slug, mount)
@@ -887,6 +1042,7 @@ func (s *Service) maybeEvictLocked(keep string) {
 			m.Worker = nil
 		}
 		m.Store = nil
+		m.Feedback = nil
 		s.dropMountFromIndexes(resident[i].slug)
 		over--
 	}

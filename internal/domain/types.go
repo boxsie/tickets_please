@@ -24,9 +24,11 @@ const (
 type CommentKind string
 
 const (
-	CommentKindUser             CommentKind = "user"
-	CommentKindSystemMove       CommentKind = "system_move"
-	CommentKindSystemCompletion CommentKind = "system_completion"
+	CommentKindUser              CommentKind = "user"
+	CommentKindSystemMove        CommentKind = "system_move"
+	CommentKindSystemCompletion  CommentKind = "system_completion"
+	CommentKindSystemArchive     CommentKind = "system_archive"
+	CommentKindSystemUnarchive   CommentKind = "system_unarchive"
 )
 
 // AgentRef is the flat attribution summary attached to entities that were
@@ -106,6 +108,14 @@ type Ticket struct {
 	BlockedBy []string
 	PhaseID   *string
 	Wave      int
+	// Archived is independent of Column. A `done` ticket can be archived
+	// (the common case) while staying frozen for completion-field edits;
+	// flipping the flag is its own audited action, not a freeze violation.
+	// Archived tickets are excluded from search_*/list_tickets by default;
+	// `include_archived: true` brings them back. get_ticket returns archived
+	// tickets unconditionally — direct lookup by id is always allowed.
+	Archived   bool
+	ArchivedAt *time.Time
 }
 
 // WaveSummary describes a single wave inside a phase or the phase-less area

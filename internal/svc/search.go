@@ -81,26 +81,36 @@ const (
 	searchMaxLimit     = 50
 )
 
-// TicketHit is one result from SearchTickets.
+// TicketHit is one result from SearchTickets. EntryKey is the stable
+// `ticket:<id>` form callers feed back to rate_search_result. Score is the
+// FINAL adjusted score (cosine × W2 feedback multiplier); RawScore is the
+// pre-multiplier cosine value, surfaced for debugging the delta.
 type TicketHit struct {
-	Ticket *domain.Ticket
-	Score  float32
+	Ticket   *domain.Ticket
+	Score    float32
+	RawScore float32
+	EntryKey domain.EntryKey
 }
 
 // CommentHit is one result from SearchComments. TicketTitle is the parent
 // ticket's title, denormalized so callers don't have to chase another lookup
-// to render a "Re: <title>" line.
+// to render a "Re: <title>" line. EntryKey is the stable `comment:<id>` form.
+// Score is the adjusted final score; RawScore is the pre-multiplier cosine.
 type CommentHit struct {
 	Comment     *domain.Comment
 	Score       float32
+	RawScore    float32
 	TicketTitle string
+	EntryKey    domain.EntryKey
 }
 
 // LearningHit is one result from SearchLearnings. Carries enough context to
 // render a result line ("[<project>/<title>]: <learnings excerpt>") without
 // re-fetching the ticket. Learnings is the raw section text from
 // `completion.md`. ProjectSlug carries the cross-project provenance the
-// resident index was tagged with at hydrate / upsert time.
+// resident index was tagged with at hydrate / upsert time. EntryKey is the
+// stable `learning:<ticket-id>` form (learnings are 1:1 with the parent
+// ticket). Score / RawScore split as on TicketHit.
 type LearningHit struct {
 	TicketID    string
 	ProjectID   string
@@ -108,7 +118,30 @@ type LearningHit struct {
 	Title       string
 	Learnings   string
 	Score       float32
+	RawScore    float32
 	CompletedAt time.Time
+	EntryKey    domain.EntryKey
+}
+
+// recordSearchRetrievals batches RecordRetrieval calls per mount: one write per
+// project's feedback store, regardless of how many hits came from it.
+// Failures are logged but never propagated — the search result is the user-
+// facing artifact and we'd rather degrade the W3 archive signal than fail the
+// search.
+func (s *Service) recordSearchRetrievals(ctx context.Context, perSlug map[string][]domain.EntryKey) {
+	for slug, keys := range perSlug {
+		if len(keys) == 0 {
+			continue
+		}
+		mount := s.mountForSlug(slug)
+		if mount == nil || mount.Feedback == nil {
+			continue
+		}
+		if err := mount.Feedback.RecordRetrieval(ctx, keys); err != nil && s.Logger != nil {
+			s.Logger.Warn("svc: record retrieval failed (search result still returned)",
+				"slug", slug, "n_keys", len(keys), "err", err)
+		}
+	}
 }
 
 // SearchTickets runs semantic search over the resident TicketsIdx, scoped to
@@ -139,47 +172,76 @@ func (s *Service) SearchTickets(ctx context.Context, in domain.SearchTicketsInpu
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
-	// Over-fetch when Columns post-filter is active so we still return ~limit.
-	rawLimit := limit
+	// Over-fetch on TWO axes:
+	//   (a) Columns post-filter — fetch limit*4 so the filter still leaves k.
+	//   (b) Quality multiplier (W2) — fetch min(2k, 50) so a high-multiplier
+	//       near-miss can be promoted into top-k after rescore.
+	// Take the max of (a) and (b) so both reorderings can land without losing
+	// candidates.
+	rawLimit := expandedRawLimit(limit)
 	if len(in.Columns) > 0 {
-		rawLimit = limit * 4
-		if rawLimit > searchMaxLimit*4 {
-			rawLimit = searchMaxLimit * 4
+		colExp := limit * 4
+		if colExp > searchMaxLimit*4 {
+			colExp = searchMaxLimit * 4
+		}
+		if colExp > rawLimit {
+			rawLimit = colExp
 		}
 	}
+	mount := s.mountForSlug(slug)
 	hits := idx.Search(vec, vecindex.KindTicketBody, slug, rawLimit)
 	if len(hits) == 0 {
 		return []TicketHit{}, nil
 	}
+	hits, rawScores := applyQualityMultiplier(hits, vecindex.KindTicketBody, mount, mountQualityParams(mount))
 
 	colSet := map[domain.Column]struct{}{}
 	for _, c := range in.Columns {
 		colSet[c] = struct{}{}
 	}
 
-	lp.Lock.RLock()
-	defer lp.Lock.RUnlock()
-
-	out := make([]TicketHit, 0, limit)
-	for _, h := range hits {
-		if len(out) >= limit {
-			break
-		}
-		t, ok := lp.Tickets[h.ID]
-		if !ok {
-			// Ticket deleted between embed and search; skip.
-			continue
-		}
-		if len(colSet) > 0 {
-			if _, allow := colSet[t.Column]; !allow {
+	out := func() []TicketHit {
+		lp.Lock.RLock()
+		defer lp.Lock.RUnlock()
+		built := make([]TicketHit, 0, limit)
+		for _, h := range hits {
+			if len(built) >= limit {
+				break
+			}
+			t, ok := lp.Tickets[h.ID]
+			if !ok {
+				continue // Ticket deleted between embed and search.
+			}
+			if t.Archived && !in.IncludeArchived {
 				continue
 			}
+			if len(colSet) > 0 {
+				if _, allow := colSet[t.Column]; !allow {
+					continue
+				}
+			}
+			// Recompute BlockedBy on the cloned copy so callers see fresh
+			// state without mutating the cache entry under a read lock.
+			cp := cloneTicket(t)
+			cp.BlockedBy = computeBlockedBy(cp.DependsOn, lp.Tickets)
+			built = append(built, TicketHit{
+				Ticket:   cp,
+				Score:    h.Score,
+				RawScore: rawScores[h.ID],
+				EntryKey: domain.TicketEntryKey(cp.ID),
+			})
 		}
-		// Recompute BlockedBy on the cloned copy so callers see fresh state
-		// without mutating the cache entry under a read lock.
-		cp := cloneTicket(t)
-		cp.BlockedBy = computeBlockedBy(cp.DependsOn, lp.Tickets)
-		out = append(out, TicketHit{Ticket: cp, Score: h.Score})
+		return built
+	}()
+	// Feedback writes after the cache lock is released — RecordRetrieval
+	// takes the per-project flock, and holding lp.Lock across it would invite
+	// deadlocks if any flock path ever reaches back into the cache lock.
+	if len(out) > 0 {
+		keys := make([]domain.EntryKey, 0, len(out))
+		for _, h := range out {
+			keys = append(keys, h.EntryKey)
+		}
+		s.recordSearchRetrievals(ctx, map[string][]domain.EntryKey{slug: keys})
 	}
 	return out, nil
 }
@@ -198,12 +260,16 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 	}
 	limit := clampSearchLimit(in.Limit)
 
-	// Over-fetch when post-filtering by ticket id.
-	rawLimit := limit
+	// Over-fetch on TWO axes: ticket-id post-filter (×4) AND quality multiplier
+	// rescore (×2). Use the larger so both reorderings fit.
+	rawLimit := expandedRawLimit(limit)
 	if strings.TrimSpace(in.TicketID) != "" {
-		rawLimit = limit * 4
-		if rawLimit > searchMaxLimit*4 {
-			rawLimit = searchMaxLimit * 4
+		tExp := limit * 4
+		if tExp > searchMaxLimit*4 {
+			tExp = searchMaxLimit * 4
+		}
+		if tExp > rawLimit {
+			rawLimit = tExp
 		}
 	}
 
@@ -214,22 +280,33 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 			return nil, err
 		}
 		slug := lp.Project.Slug
+		mount := s.mountForSlug(slug)
 		provider, idx := s.mountProviderAndIndex(slug, indexKindComments)
 		vec, err := provider.Embed(ctx, q)
 		if err != nil {
 			return nil, fmt.Errorf("embed query: %w", err)
 		}
 		hits := idx.Search(vec, vecindex.KindComment, slug, rawLimit)
+		hits, rawScores := applyQualityMultiplier(hits, vecindex.KindComment, mount, mountQualityParams(mount))
 		out := make([]CommentHit, 0, limit)
 		for _, h := range hits {
 			if len(out) >= limit {
 				break
 			}
-			hit, ok := s.hydrateCommentHit(ctx, slug, h, in.TicketID)
+			hit, ok := s.hydrateCommentHit(ctx, slug, h, in.TicketID, in.IncludeArchived)
 			if !ok {
 				continue
 			}
+			hit.EntryKey = domain.CommentEntryKey(hit.Comment.ID)
+			hit.RawScore = rawScores[h.ID]
 			out = append(out, hit)
+		}
+		if len(out) > 0 {
+			keys := make([]domain.EntryKey, 0, len(out))
+			for _, h := range out {
+				keys = append(keys, h.EntryKey)
+			}
+			s.recordSearchRetrievals(ctx, map[string][]domain.EntryKey{slug: keys})
 		}
 		return out, nil
 	}
@@ -260,6 +337,7 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 	type scored struct {
 		hit  vecindex.Hit
 		slug string
+		raw  float32 // pre-multiplier cosine score
 	}
 	var pool []scored
 	for _, sr := range sources {
@@ -267,13 +345,13 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 		if err != nil {
 			return nil, fmt.Errorf("embed query (slug=%s): %w", sr.slug, err)
 		}
-		// In the registry-empty stdio path, sr.slug is "" and the index entry
-		// Owner carries the slug, so don't filter by owner. When sr.slug is
-		// set, scope the search to that mount's slug as a defence against
-		// crossed entries (per-mount index should only hold its own slug).
 		hits := sr.idx.Search(vec, vecindex.KindComment, sr.slug, rawLimit)
+		// Per-mount multiplier: each mount has its own QualityParams +
+		// Feedback store, so rescore inside the loop before merging.
+		mount := s.mountForSlug(sr.slug)
+		hits, rawScores := applyQualityMultiplier(hits, vecindex.KindComment, mount, mountQualityParams(mount))
 		for _, h := range hits {
-			pool = append(pool, scored{hit: h, slug: sr.slug})
+			pool = append(pool, scored{hit: h, slug: sr.slug, raw: rawScores[h.ID]})
 		}
 	}
 	if len(pool) == 0 {
@@ -293,6 +371,7 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 		}
 	}
 	out := make([]CommentHit, 0, limit)
+	perSlug := map[string][]domain.EntryKey{}
 	for _, sh := range pool {
 		if len(out) >= limit {
 			break
@@ -304,20 +383,24 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 		if slug == "" {
 			continue
 		}
-		hit, ok := s.hydrateCommentHit(ctx, slug, sh.hit, in.TicketID)
+		hit, ok := s.hydrateCommentHit(ctx, slug, sh.hit, in.TicketID, in.IncludeArchived)
 		if !ok {
 			continue
 		}
+		hit.EntryKey = domain.CommentEntryKey(hit.Comment.ID)
+		hit.RawScore = sh.raw
 		out = append(out, hit)
+		perSlug[slug] = append(perSlug[slug], hit.EntryKey)
 	}
+	s.recordSearchRetrievals(ctx, perSlug)
 	return out, nil
 }
 
 // hydrateCommentHit loads the parent project (cached) and returns a CommentHit
-// for the given vec hit. Returns ok=false when the comment / project is gone
-// or when the optional ticketIDFilter excludes it. Caller does not need to
-// hold any lock.
-func (s *Service) hydrateCommentHit(ctx context.Context, slug string, h vecindex.Hit, ticketIDFilter string) (CommentHit, bool) {
+// for the given vec hit. Returns ok=false when the comment / project is gone,
+// when the optional ticketIDFilter excludes it, or when the parent ticket is
+// archived and includeArchived is false. Caller does not need to hold any lock.
+func (s *Service) hydrateCommentHit(ctx context.Context, slug string, h vecindex.Hit, ticketIDFilter string, includeArchived bool) (CommentHit, bool) {
 	lp, _, err := s.Cache.Get(ctx, slug)
 	if err != nil {
 		return CommentHit{}, false
@@ -338,6 +421,9 @@ func (s *Service) hydrateCommentHit(ctx context.Context, slug string, h vecindex
 			}
 			t, ok := lp.Tickets[ticketID]
 			if !ok {
+				return CommentHit{}, false
+			}
+			if t.Archived && !includeArchived {
 				return CommentHit{}, false
 			}
 			cp := *c
@@ -363,10 +449,9 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 		return nil, fmt.Errorf("%w: query required", domain.ErrInvalidArgument)
 	}
 	limit := clampSearchLimit(in.Limit)
-	rawLimit := limit
-	if rawLimit > searchMaxLimit*4 {
-		rawLimit = searchMaxLimit * 4
-	}
+	// Over-fetch for the W2 multiplier rescore. Learnings has no other
+	// post-filter axis, so this single expansion suffices.
+	rawLimit := expandedRawLimit(limit)
 
 	var scopedSlug string
 	if strings.TrimSpace(in.ProjectIDOrSlug) != "" {
@@ -407,6 +492,7 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 	type scored struct {
 		hit  vecindex.Hit
 		slug string
+		raw  float32 // pre-multiplier cosine score
 	}
 	var pool []scored
 	for _, sr := range sources {
@@ -414,12 +500,11 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 		if err != nil {
 			return nil, fmt.Errorf("embed query (slug=%s): %w", sr.slug, err)
 		}
-		// Per-mount index already only holds this slug's entries; passing
-		// owner=sr.slug is defence-in-depth. The stdio fallback path uses
-		// owner="" (snapshot lookup below recovers slug from Owner field).
 		hits := sr.idx.Search(vec, vecindex.KindTicketLearnings, sr.slug, rawLimit)
+		mount := s.mountForSlug(sr.slug)
+		hits, rawScores := applyQualityMultiplier(hits, vecindex.KindTicketLearnings, mount, mountQualityParams(mount))
 		for _, h := range hits {
-			pool = append(pool, scored{hit: h, slug: sr.slug})
+			pool = append(pool, scored{hit: h, slug: sr.slug, raw: rawScores[h.ID]})
 		}
 	}
 	if len(pool) == 0 {
@@ -439,6 +524,7 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 		}
 	}
 	out := make([]LearningHit, 0, limit)
+	perSlug := map[string][]domain.EntryKey{}
 	for _, sh := range pool {
 		if len(out) >= limit {
 			break
@@ -450,12 +536,16 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 		if slug == "" {
 			continue
 		}
-		hit, ok := s.hydrateLearningHit(ctx, slug, sh.hit)
+		hit, ok := s.hydrateLearningHit(ctx, slug, sh.hit, in.IncludeArchived)
 		if !ok {
 			continue
 		}
+		hit.EntryKey = domain.LearningEntryKey(hit.TicketID)
+		hit.RawScore = sh.raw
 		out = append(out, hit)
+		perSlug[slug] = append(perSlug[slug], hit.EntryKey)
 	}
+	s.recordSearchRetrievals(ctx, perSlug)
 	return out, nil
 }
 
@@ -464,7 +554,7 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 // longer exists, or when the ticket isn't actually completed (defensive — the
 // learnings index should only carry completed-ticket entries, but a stale
 // in-memory entry from before a delete is possible).
-func (s *Service) hydrateLearningHit(ctx context.Context, slug string, h vecindex.Hit) (LearningHit, bool) {
+func (s *Service) hydrateLearningHit(ctx context.Context, slug string, h vecindex.Hit, includeArchived bool) (LearningHit, bool) {
 	lp, _, err := s.Cache.Get(ctx, slug)
 	if err != nil {
 		return LearningHit{}, false
@@ -474,6 +564,9 @@ func (s *Service) hydrateLearningHit(ctx context.Context, slug string, h vecinde
 
 	t, ok := lp.Tickets[h.ID]
 	if !ok {
+		return LearningHit{}, false
+	}
+	if t.Archived && !includeArchived {
 		return LearningHit{}, false
 	}
 	if t.Learnings == nil {

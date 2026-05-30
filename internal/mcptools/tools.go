@@ -176,12 +176,13 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	// Tickets (7)
 	s.AddTool(mcp.NewTool("list_tickets",
-		mcp.WithDescription("List tickets in a project, optionally filtered by column or phase. Use `ready_only=true` to surface only unblocked tickets."),
+		mcp.WithDescription("List tickets in a project, optionally filtered by column or phase. Use `ready_only=true` to surface only unblocked tickets. Archived tickets are excluded by default; pass `include_archived=true` to include them."),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("column", mcp.Description("Filter by column: todo | in_progress | testing | done")),
 		mcp.WithString("phase_id_or_slug", mcp.Description("Filter by phase id/slug; pass \"-\" for phase-less only")),
 		mcp.WithNumber("wave", mcp.Description("Filter by wave (0 = unassigned)")),
 		mcp.WithBoolean("ready_only", mcp.Description("If true, only return unblocked tickets in todo/in_progress")),
+		mcp.WithBoolean("include_archived", mcp.Description("If true, include archived tickets (default false)")),
 		mcp.WithNumber("limit", mcp.Description("Page size, default 50, max 200")),
 		mcp.WithString("cursor", mcp.Description("Opaque pagination cursor")),
 	), t.handleListTickets)
@@ -237,6 +238,25 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
 	), t.handleDeleteTicket)
 
+	s.AddTool(mcp.NewTool("archive_ticket",
+		mcp.WithDescription("Archive a ticket — flips a separate `archived` flag without changing the column. Done tickets are explicitly allowed: completion fields stay frozen but the archived flag can flip. Archived tickets are excluded from `search_*` and `list_tickets` by default; pass `include_archived: true` to bring them back, or use `get_ticket` for direct id lookup (which always succeeds). Comment is required and is written as a `system_archive` audit comment. Vec index entries stay in place so `unarchive_ticket` is free."),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("comment", mcp.Required(), mcp.Description("Reason for archiving; becomes a system_archive comment")),
+	), t.handleArchiveTicket)
+
+	s.AddTool(mcp.NewTool("unarchive_ticket",
+		mcp.WithDescription("Unarchive a previously-archived ticket. Comment is required (becomes a `system_unarchive` audit comment). The ticket re-enters default search and list surfaces immediately."),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("comment", mcp.Required(), mcp.Description("Reason for unarchiving; becomes a system_unarchive comment")),
+	), t.handleUnarchiveTicket)
+
+	s.AddTool(mcp.NewTool("apply_archive_policy",
+		mcp.WithDescription("Walk a project's tickets, evaluate each against the per-project `archive` policy (set in `project.yaml`), and report what would be archived. **Dry-run by default**; pass `commit: true` to actually flip the flags. Refuses when the project's `archive.enabled` is false (opt-in gate). The report includes the resolved policy config so you can see exactly what thresholds were used."),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
+		mcp.WithBoolean("commit", mcp.Description("If true, actually archive the matching tickets (writes system_archive comments). Default false = dry-run report only.")),
+		mcp.WithNumber("limit", mcp.Description("Cap how many tickets to archive in one call. Default 500, max 5000.")),
+	), t.handleApplyArchivePolicy)
+
 	// Comments (2)
 	s.AddTool(mcp.NewTool("add_comment",
 		mcp.WithDescription("Add a free-form comment to a ticket. Comments are immutable once created."),
@@ -268,27 +288,38 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	// Search (3)
 	s.AddTool(mcp.NewTool("search_tickets",
-		mcp.WithDescription("Semantic search over ticket titles and bodies in a project. Use when looking for related work."),
+		mcp.WithDescription("Semantic search over ticket titles and bodies in a project. Use when looking for related work. Archived tickets are excluded by default."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug to search inside; optional if register_agent has bound a project to the session")),
 		mcp.WithArray("columns", mcp.Description("Optional column filter"), mcp.WithStringItems()),
+		mcp.WithBoolean("include_archived", mcp.Description("If true, include archived tickets (default false)")),
 		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
 	), t.handleSearchTickets)
 
 	s.AddTool(mcp.NewTool("search_learnings",
-		mcp.WithDescription("Semantic search over completion learnings from past finished tickets. **Run this before starting non-trivial work — past you may have left notes.**"),
+		mcp.WithDescription("Semantic search over completion learnings from past finished tickets. **Run this before starting non-trivial work — past you may have left notes.** Archived tickets' learnings are excluded by default."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
 		mcp.WithString("project_id_or_slug", mcp.Description("Optional project id/slug to scope the search")),
+		mcp.WithBoolean("include_archived", mcp.Description("If true, include learnings from archived tickets (default false)")),
 		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
 	), t.handleSearchLearnings)
 
 	s.AddTool(mcp.NewTool("search_comments",
-		mcp.WithDescription("Semantic search across comments."),
+		mcp.WithDescription("Semantic search across comments. Comments on archived tickets are excluded by default."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
 		mcp.WithString("project_id_or_slug", mcp.Description("Optional project id/slug to scope the search")),
 		mcp.WithString("ticket_id", mcp.Description("Optional ticket id to scope to one ticket's comments")),
+		mcp.WithBoolean("include_archived", mcp.Description("If true, include comments on archived tickets (default false)")),
 		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
 	), t.handleSearchComments)
+
+	s.AddTool(mcp.NewTool("rate_search_result",
+		mcp.WithDescription("Give thumbs-up / thumbs-down feedback on one or more search results. **Use this after every non-trivial search** — your ratings tune future ranking so good content surfaces first and rotten content sinks. `entry_keys` are the `<kind>:<id>` strings returned in each search hit's `entry_key` field. One call applies the same rating to every key; mixed ratings need separate calls. Partial success: a malformed or unknown key fails just that key, not the whole call."),
+		mcp.WithArray("entry_keys", mcp.Required(), mcp.Description("Entry keys to rate (1..50). Each key is the `<kind>:<id>` string from a search hit's `entry_key` field."), mcp.WithStringItems()),
+		mcp.WithString("rating", mcp.Required(), mcp.Description("'like' or 'dislike' — applied to every key in this call.")),
+		mcp.WithString("reason", mcp.Description("Optional free-text justification (≤500 chars, truncated if longer). Stored for human review; not currently fed back into ranking.")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session.")),
+	), t.handleRateSearchResult)
 
 	// Introspection (2)
 	s.AddTool(mcp.NewTool("who_am_i",
@@ -855,6 +886,9 @@ func (t *Tools) handleListTickets(ctx context.Context, req mcp.CallToolRequest) 
 	if v, ok := args["ready_only"].(bool); ok {
 		in.ReadyOnly = v
 	}
+	if v, ok := args["include_archived"].(bool); ok {
+		in.IncludeArchived = v
+	}
 	if v, ok := args["limit"]; ok {
 		if f, fok := v.(float64); fok {
 			in.Limit = int(f)
@@ -1065,6 +1099,100 @@ func (t *Tools) handleAssignTicketToPhase(ctx context.Context, req mcp.CallToolR
 	return jsonResult(formatTicket(tk))
 }
 
+func (t *Tools) handleApplyArchivePolicy(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	pid, err := t.resolveProjectSlug(ctx, req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	args := req.GetArguments()
+	in := svc.ApplyPolicyInput{ProjectIDOrSlug: pid}
+	if v, ok := args["commit"].(bool); ok {
+		in.Commit = v
+	}
+	if v, ok := args["limit"]; ok {
+		if f, fok := v.(float64); fok {
+			in.Limit = int(f)
+		}
+	}
+
+	var report *svc.ApplyPolicyReport
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		out, err := t.svc.ApplyArchivePolicy(ctx, in)
+		if err != nil {
+			return err
+		}
+		report = out
+		return nil
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	return jsonResult(map[string]any{
+		"considered":    report.Considered,
+		"would_archive": entriesToMaps(report.WouldArchive),
+		"archived":      entriesToMaps(report.Archived),
+		"skipped":       entriesToMaps(report.Skipped),
+		"config": map[string]any{
+			"enabled":                report.Config.Enabled,
+			"min_age_days":           report.Config.MinAgeDays,
+			"min_retrievals":         report.Config.MinRetrievals,
+			"dislike_ratio":          report.Config.DislikeRatio,
+			"early_archive_age_days": report.Config.EarlyArchiveAgeDays,
+			"auto_sweep_on_mount":    report.Config.AutoSweepOnMount,
+		},
+	})
+}
+
+// entriesToMaps renders the per-row report entries as JSON-shaped maps.
+func entriesToMaps(entries []svc.ApplyPolicyEntry) []map[string]any {
+	out := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, map[string]any{
+			"ticket_id": e.TicketID,
+			"title":     e.Title,
+			"reason":    e.Reason,
+		})
+	}
+	return out
+}
+
+func (t *Tools) handleArchiveTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return t.archiveFlipHandler(ctx, req, true)
+}
+
+func (t *Tools) handleUnarchiveTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return t.archiveFlipHandler(ctx, req, false)
+}
+
+// archiveFlipHandler is the shared body for archive_ticket / unarchive_ticket
+// — both take {ticket_id, comment} and route to ArchiveTicket / UnarchiveTicket
+// on the service.
+func (t *Tools) archiveFlipHandler(ctx context.Context, req mcp.CallToolRequest, wantArchived bool) (*mcp.CallToolResult, error) {
+	args, err := requireStringArgs(req, "ticket_id", "comment")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	var tk *domain.Ticket
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		var out *domain.Ticket
+		var err error
+		if wantArchived {
+			out, err = t.svc.ArchiveTicket(ctx, args["ticket_id"], args["comment"])
+		} else {
+			out, err = t.svc.UnarchiveTicket(ctx, args["ticket_id"], args["comment"])
+		}
+		if err != nil {
+			return err
+		}
+		tk = out
+		return nil
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	return jsonResult(formatTicket(tk))
+}
+
 func (t *Tools) handleDeleteTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := req.RequireString("ticket_id")
 	if err != nil {
@@ -1204,6 +1332,81 @@ func (t *Tools) handleListCommentsScoped(ctx context.Context, req mcp.CallToolRe
 
 // ---- Search ----
 
+func (t *Tools) handleRateSearchResult(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Same defensive arg-decode pattern as complete_ticket: the array field
+	// must round-trip whether Arguments arrives as map[string]any or a
+	// pre-encoded RawMessage. GetArguments() handles the map case; BindArguments
+	// recovers the rest.
+	args := req.GetArguments()
+	if args == nil {
+		recovered := map[string]any{}
+		if err := req.BindArguments(&recovered); err != nil {
+			return mcp.NewToolResultError("invalid argument: could not decode tool arguments: " + err.Error()), nil
+		}
+		args = recovered
+	}
+
+	rating, _ := args["rating"].(string)
+	if rating == "" {
+		return mcp.NewToolResultError("invalid argument: rating is required ('like' or 'dislike')"), nil
+	}
+	reason, _ := args["reason"].(string)
+
+	rawKeys := stringSliceFromAny(args["entry_keys"])
+	if len(rawKeys) == 0 {
+		return mcp.NewToolResultError("invalid argument: entry_keys must be a non-empty array of strings"), nil
+	}
+	keys := make([]domain.EntryKey, 0, len(rawKeys))
+	for _, k := range rawKeys {
+		keys = append(keys, domain.EntryKey(k))
+	}
+
+	pid, err := t.resolveProjectSlug(ctx, req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+
+	in := svc.RateInput{
+		ProjectIDOrSlug: pid,
+		EntryKeys:       keys,
+		Rating:          domain.Rating(rating),
+		Reason:          reason,
+	}
+
+	var out svc.RateOutput
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		o, err := t.svc.RateSearchResult(ctx, in)
+		if err != nil {
+			return err
+		}
+		out = o
+		return nil
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+
+	updated := make([]map[string]any, 0, len(out.Updated))
+	for _, u := range out.Updated {
+		updated = append(updated, map[string]any{
+			"entry_key": string(u.EntryKey),
+			"likes":     u.Likes,
+			"dislikes":  u.Dislikes,
+		})
+	}
+	rejected := make([]map[string]any, 0, len(out.Rejected))
+	for _, r := range out.Rejected {
+		rejected = append(rejected, map[string]any{
+			"entry_key": string(r.EntryKey),
+			"error":     r.Error,
+		})
+	}
+	return jsonResult(map[string]any{
+		"updated":  updated,
+		"rejected": rejected,
+	})
+}
+
 func (t *Tools) handleSearchTickets(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	q, err := req.RequireString("query")
 	if err != nil {
@@ -1219,6 +1422,9 @@ func (t *Tools) handleSearchTickets(ctx context.Context, req mcp.CallToolRequest
 		if f, fok := v.(float64); fok {
 			in.Limit = int(f)
 		}
+	}
+	if v, ok := args["include_archived"].(bool); ok {
+		in.IncludeArchived = v
 	}
 	for _, s := range stringSliceFromAny(args["columns"]) {
 		in.Columns = append(in.Columns, domain.Column(s))
@@ -1236,10 +1442,16 @@ func (t *Tools) handleSearchTickets(ctx context.Context, req mcp.CallToolRequest
 		return errorResult(cerr), nil
 	}
 	resp := make([]map[string]any, 0, len(hits))
+	keys := make([]string, 0, len(hits))
 	for _, h := range hits {
 		resp = append(resp, formatTicketHit(h))
+		keys = append(keys, string(h.EntryKey))
 	}
-	return jsonResult(map[string]any{"hits": resp})
+	body := map[string]any{"hits": resp}
+	if hint := feedbackHint(keys); hint != nil {
+		body["feedback_hint"] = hint
+	}
+	return jsonResult(body)
 }
 
 func (t *Tools) handleSearchLearnings(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1251,6 +1463,9 @@ func (t *Tools) handleSearchLearnings(ctx context.Context, req mcp.CallToolReque
 	in := domain.SearchLearningsInput{Query: q}
 	if v, ok := args["project_id_or_slug"].(string); ok {
 		in.ProjectIDOrSlug = v
+	}
+	if v, ok := args["include_archived"].(bool); ok {
+		in.IncludeArchived = v
 	}
 	if v, ok := args["limit"]; ok {
 		if f, fok := v.(float64); fok {
@@ -1270,10 +1485,16 @@ func (t *Tools) handleSearchLearnings(ctx context.Context, req mcp.CallToolReque
 		return errorResult(cerr), nil
 	}
 	resp := make([]map[string]any, 0, len(hits))
+	keys := make([]string, 0, len(hits))
 	for _, h := range hits {
 		resp = append(resp, formatLearningHit(h))
+		keys = append(keys, string(h.EntryKey))
 	}
-	return jsonResult(map[string]any{"hits": resp})
+	body := map[string]any{"hits": resp}
+	if hint := feedbackHint(keys); hint != nil {
+		body["feedback_hint"] = hint
+	}
+	return jsonResult(body)
 }
 
 func (t *Tools) handleSearchComments(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1288,6 +1509,9 @@ func (t *Tools) handleSearchComments(ctx context.Context, req mcp.CallToolReques
 	}
 	if v, ok := args["ticket_id"].(string); ok {
 		in.TicketID = v
+	}
+	if v, ok := args["include_archived"].(bool); ok {
+		in.IncludeArchived = v
 	}
 	if v, ok := args["limit"]; ok {
 		if f, fok := v.(float64); fok {
@@ -1307,10 +1531,16 @@ func (t *Tools) handleSearchComments(ctx context.Context, req mcp.CallToolReques
 		return errorResult(cerr), nil
 	}
 	resp := make([]map[string]any, 0, len(hits))
+	keys := make([]string, 0, len(hits))
 	for _, h := range hits {
 		resp = append(resp, formatCommentHit(h))
+		keys = append(keys, string(h.EntryKey))
 	}
-	return jsonResult(map[string]any{"hits": resp})
+	body := map[string]any{"hits": resp}
+	if hint := feedbackHint(keys); hint != nil {
+		body["feedback_hint"] = hint
+	}
+	return jsonResult(body)
 }
 
 // ---- Introspection ----

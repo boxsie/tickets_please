@@ -50,6 +50,9 @@ type ListTicketsInput struct {
 	PhaseIDOrSlug   *string
 	Wave            *int
 	ReadyOnly       bool
+	// IncludeArchived: false by default — archived tickets are dropped
+	// from list results. Set true to include them (debugging, audit).
+	IncludeArchived bool
 	// Limit: 0 = default 50; capped at 200.
 	Limit  int
 	Cursor string
@@ -61,6 +64,10 @@ type SearchTicketsInput struct {
 	Query           string
 	ProjectIDOrSlug string
 	Columns         []Column
+	// IncludeArchived: false by default — archived tickets are dropped via
+	// post-filter. Set true to include them (vec entries stay in place so
+	// this is a cheap toggle, not a re-embed).
+	IncludeArchived bool
 	// Limit: 0 = default 10; capped at 50.
 	Limit int
 }
@@ -72,6 +79,9 @@ type SearchCommentsInput struct {
 	// TicketID optionally narrows search to a single ticket's comments.
 	TicketID string
 	Kinds    []CommentKind
+	// IncludeArchived: false by default — comments whose parent ticket is
+	// archived are dropped.
+	IncludeArchived bool
 	// Limit: 0 = default 10; capped at 50.
 	Limit int
 }
@@ -118,6 +128,9 @@ type SearchLearningsInput struct {
 	// Empty means search across all projects (the learnings index is
 	// resident, so this is cheap).
 	ProjectIDOrSlug string
+	// IncludeArchived: false by default — learnings on archived tickets
+	// are dropped.
+	IncludeArchived bool
 	// Limit: 0 = default 10; capped at 50.
 	Limit int
 }

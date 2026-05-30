@@ -15,15 +15,41 @@ import (
 // ProjectRecord is what's stored in `projects/<slug>/project.yaml`. The
 // human-readable summary lives in the sibling `summary.md` file.
 type ProjectRecord struct {
-	ID               string    `yaml:"id"`
-	Slug             string    `yaml:"slug"`
-	Name             string    `yaml:"name"`
-	Description      string    `yaml:"description,omitempty"`
-	EmbedProvider    string    `yaml:"embed_provider,omitempty"`
-	EmbedModel       string    `yaml:"embed_model,omitempty"`
-	CreatedByAgentID *string   `yaml:"created_by,omitempty"`
-	CreatedAt        time.Time `yaml:"created_at"`
-	UpdatedAt        time.Time `yaml:"updated_at"`
+	ID               string                 `yaml:"id"`
+	Slug             string                 `yaml:"slug"`
+	Name             string                 `yaml:"name"`
+	Description      string                 `yaml:"description,omitempty"`
+	EmbedProvider    string                 `yaml:"embed_provider,omitempty"`
+	EmbedModel       string                 `yaml:"embed_model,omitempty"`
+	Feedback         *FeedbackConfigRecord  `yaml:"feedback,omitempty"`
+	Archive          *ArchiveConfigRecord   `yaml:"archive,omitempty"`
+	CreatedByAgentID *string                `yaml:"created_by,omitempty"`
+	CreatedAt        time.Time              `yaml:"created_at"`
+	UpdatedAt        time.Time              `yaml:"updated_at"`
+}
+
+// ArchiveConfigRecord is the per-project tuning of the W3 archive policy.
+// Pointer fields so a missing block round-trips cleanly. The W3 sweep
+// (`apply_archive_policy`) requires `Enabled: true` to do anything.
+type ArchiveConfigRecord struct {
+	Enabled             *bool    `yaml:"enabled,omitempty"`
+	MinAgeDays          *int     `yaml:"min_age_days,omitempty"`
+	MinRetrievals       *int     `yaml:"min_retrievals,omitempty"`
+	DislikeRatio        *float64 `yaml:"dislike_ratio,omitempty"`
+	EarlyArchiveAgeDays *int     `yaml:"early_archive_age_days,omitempty"`
+	AutoSweepOnMount    *bool    `yaml:"auto_sweep_on_mount,omitempty"`
+}
+
+// FeedbackConfigRecord is the per-project tuning of the W2 quality multiplier.
+// All fields optional; missing values fall back to canonical defaults
+// (α = β = 2, min_multiplier = 0.5, enabled = true). Pointer field on
+// ProjectRecord so a missing block round-trips cleanly without writing
+// `feedback: {}` into every project.yaml.
+type FeedbackConfigRecord struct {
+	Alpha         *float64 `yaml:"alpha,omitempty"`
+	Beta          *float64 `yaml:"beta,omitempty"`
+	MinMultiplier *float64 `yaml:"min_multiplier,omitempty"`
+	Enabled       *bool    `yaml:"enabled,omitempty"`
 }
 
 // PhaseRecord is what's stored in `projects/<slug>/phases/<NNN>-<slug>/phase.yaml`.
@@ -55,6 +81,8 @@ type TicketRecord struct {
 	CreatedByAgentID   *string       `yaml:"created_by,omitempty"`
 	CompletedByAgentID *string       `yaml:"completed_by,omitempty"`
 	CompletedAt        *time.Time    `yaml:"completed_at,omitempty"`
+	Archived           bool          `yaml:"archived,omitempty"`
+	ArchivedAt         *time.Time    `yaml:"archived_at,omitempty"`
 	CreatedAt          time.Time     `yaml:"created_at"`
 	UpdatedAt          time.Time     `yaml:"updated_at"`
 }

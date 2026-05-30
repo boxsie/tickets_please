@@ -319,7 +319,7 @@ tickets_please/
 │   │   ├── agents.go
 │   │   └── validation.go
 │   ├── mcptools/                  # mark3labs/mcp-go tool wrappers around svc
-│   │   ├── tools.go               # all 31 tool registrations + handlers
+│   │   ├── tools.go               # all 35 tool registrations + handlers
 │   │   ├── format.go              # domain → LLM-friendly JSON
 │   │   ├── instructions.go        # the cross-tool workflow reflexes string
 │   │   └── identity.go            # stdio self-registration helpers
@@ -959,7 +959,7 @@ When the LLM client spawns `tickets_please mcp` (the default subcommand of the s
 
 HTTP clients (centralised mode) connect via `/mcp` and **must** call `register_agent` once per connection to declare their identity and bind a `project_path`. After that, every `project_id_or_slug` parameter on subsequent tools becomes optional and falls back to the bound project. The one exception is `create_project`, which is auth-soft: an HTTP client with no project yet calls `create_project` first (passing `project_path`), then `register_agent` against the freshly-created project. Stdio clients pre-register at startup; they can still call `register_agent` to override the defaults.
 
-Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **31 tools** across projects, phases, tickets, comments, search, and introspection.
+Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **35 tools** across projects, phases, tickets, comments, search, feedback, archive policy, and introspection.
 
 ### Projects (8)
 
@@ -1014,6 +1014,74 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `search_tickets` | Semantic search over ticket titles and bodies in a project. Use when looking for related work. |
 | `search_learnings` | Semantic search over completion learnings from past finished tickets. **Run this before starting non-trivial work — past you may have left notes.** |
 | `search_comments` | Semantic search across comments. |
+
+### Feedback (1)
+
+| Tool | Description |
+|---|---|
+| `rate_search_result` | Thumbs-up / thumbs-down for one or more search results, keyed by the `entry_key` (`<kind>:<id>`) each hit carries. Aggregate counters live in per-project `feedback.yaml` (git-tracked) and feed the W2 ranking multiplier + W3 archival policy. Per-key partial success — a malformed or unknown key fails just that key, not the whole call. No per-rating ticket comment is created (would be noisy at scale); `feedback.yaml`'s git history is the audit trail. |
+
+### Archive (1)
+
+| Tool | Description |
+|---|---|
+| `apply_archive_policy` | Run the per-project archive policy. **Dry-run by default**; pass `commit: true` to actually flip the flags. Returns `considered`, `would_archive`, `archived`, `skipped`, and the resolved policy `config`. Refuses when the project's `archive.enabled: false` is set (opt-in gate). Each committed archive writes a `system_archive` audit comment with the decision reason. |
+
+#### Search ranking with feedback (W2)
+
+Each search hit's `score` is the **final** ranking score, computed as:
+
+```
+quality    = (likes + alpha) / (likes + dislikes + alpha + beta)   // ∈ (0, 1)
+multiplier = min_multiplier + (1 - min_multiplier) * quality        // ∈ [min_multiplier, 1.0]
+final      = cosine_similarity * multiplier                         // when cosine > 0
+```
+
+Defaults are `α=β=2`, `min_multiplier=0.5`, `enabled=true`. An unrated entry has `quality=0.5 → multiplier=0.75`; a heavily-liked entry approaches multiplier `1.0`; a heavily-disliked entry floors at `0.5`. Negative cosine (anti-correlated) passes through unchanged so the multiplier can't promote a poor match.
+
+Each hit also surfaces `raw_score` — the pre-multiplier cosine — so external tooling can see the delta the multiplier introduced.
+
+Per-project override in `project.yaml`:
+
+```yaml
+feedback:
+  alpha: 2.0
+  beta: 2.0
+  min_multiplier: 0.5
+  enabled: true   # off → behave as today (cosine-only)
+```
+
+All fields optional; missing values inherit the defaults. `enabled: false` is the kill switch.
+
+#### Archive policy (W3)
+
+Per-project archive block in `project.yaml` (all fields optional; opt-in via `enabled: true`):
+
+```yaml
+archive:
+  enabled: false               # opt-in per project
+  min_age_days: 180            # only consider entries this old or older
+  min_retrievals: 3            # ...AND retrieved at least this many times
+  dislike_ratio: 0.5           # dislikes / (likes + dislikes) ≥ this → early-archive eligible
+  early_archive_age_days: 30   # ...but not earlier than this
+  auto_sweep_on_mount: false   # T6 hook; run the sweep at mount time
+```
+
+Decision matrix (per ticket):
+
+```
+NEVER archive if already archived OR policy disabled.
+ARCHIVE (aged branch) if age ≥ min_age_days
+                    AND retrievals ≥ min_retrievals
+                    AND (total_ratings == 0 OR dislike_ratio ≥ threshold).
+EARLY ARCHIVE if age ≥ early_archive_age_days
+              AND total_ratings ≥ 3
+              AND dislike_ratio ≥ threshold.
+```
+
+Archive flag is **independent of column** — a `done` ticket can be archived (its completion fields stay frozen; only the flag flips). Archived tickets are post-filtered out of `search_*` and `list_tickets` by default; `include_archived: true` brings them back. `get_ticket` returns archived tickets unconditionally. Vec index entries stay in place, so unarchive is free (no re-embed). Manual archive/unarchive route through the `archive_ticket` / `unarchive_ticket` tools.
+
+`apply_archive_policy` walks the candidate set and produces a dry-run report by default (`commit: true` actually flips the flags). Refuses when `archive.enabled: false`. `archive.auto_sweep_on_mount: true` opts the project into a background sweep that fires after each mount-hydrate completes — guarded by a per-mount mutex so overlapping triggers don't stampede, and skipped silently when the policy is disabled. The sweep emits a structured log line with `considered`, `archived`, `skipped`, and `took` counts.
 
 ### Introspection (2)
 

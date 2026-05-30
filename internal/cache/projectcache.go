@@ -660,6 +660,8 @@ func (c *ProjectCache) hydrateTicket(st *store.Store, ticketDir string, tr *stor
 		DependsOn:          append([]string(nil), tr.DependsOn...),
 		ParallelizableWith: append([]string(nil), tr.ParallelizableWith...),
 		CompletedAt:        tr.CompletedAt,
+		Archived:           tr.Archived,
+		ArchivedAt:         tr.ArchivedAt,
 		CreatedAt:          tr.CreatedAt,
 		UpdatedAt:          tr.UpdatedAt,
 	}

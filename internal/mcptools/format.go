@@ -52,6 +52,8 @@ func formatTicket(t *domain.Ticket) map[string]any {
 		"testing_evidence":    ptrStringOrNil(t.TestingEvidence),
 		"work_summary":        ptrStringOrNil(t.WorkSummary),
 		"learnings":           ptrStringOrNil(t.Learnings),
+		"archived":            t.Archived,
+		"archived_at":         formatTimePtr(t.ArchivedAt),
 	}
 	return out
 }
@@ -126,26 +128,36 @@ func formatAgent(a *domain.Agent) map[string]any {
 	}
 }
 
-// formatTicketHit wraps a search.TicketHit.
+// formatTicketHit wraps a search.TicketHit. entry_key is the stable
+// `ticket:<id>` form to feed back to rate_search_result. score is the FINAL
+// (adjusted) score after the W2 feedback multiplier; raw_score is the
+// pre-multiplier cosine so debugging can see the delta.
 func formatTicketHit(h svc.TicketHit) map[string]any {
 	return map[string]any{
-		"ticket": formatTicket(h.Ticket),
-		"score":  h.Score,
+		"ticket":    formatTicket(h.Ticket),
+		"score":     h.Score,
+		"raw_score": h.RawScore,
+		"entry_key": string(h.EntryKey),
 	}
 }
 
 // formatCommentHit wraps a search.CommentHit, including the denormalised
-// ticket title for cheap rendering.
+// ticket title for cheap rendering. entry_key carries the `comment:<id>` form;
+// raw_score / score split as on formatTicketHit.
 func formatCommentHit(h svc.CommentHit) map[string]any {
 	return map[string]any{
 		"comment":      formatComment(h.Comment),
 		"score":        h.Score,
+		"raw_score":    h.RawScore,
 		"ticket_title": h.TicketTitle,
+		"entry_key":    string(h.EntryKey),
 	}
 }
 
 // formatLearningHit renders a search.LearningHit. project_slug surfaces the
-// cross-mount provenance the resident learnings index now carries.
+// cross-mount provenance the resident learnings index now carries. entry_key
+// carries the `learning:<ticket-id>` form; raw_score / score split as on
+// formatTicketHit.
 func formatLearningHit(h svc.LearningHit) map[string]any {
 	return map[string]any{
 		"ticket_id":    h.TicketID,
@@ -154,7 +166,23 @@ func formatLearningHit(h svc.LearningHit) map[string]any {
 		"title":        h.Title,
 		"learnings":    h.Learnings,
 		"score":        h.Score,
+		"raw_score":    h.RawScore,
 		"completed_at": formatTime(h.CompletedAt),
+		"entry_key":    string(h.EntryKey),
+	}
+}
+
+// feedbackHint is the boilerplate top-level block every search response
+// attaches when at least one hit came back. Skipped on empty results so we
+// don't nag callers with "rate these (none)".
+func feedbackHint(entryKeys []string) map[string]any {
+	if len(entryKeys) == 0 {
+		return nil
+	}
+	return map[string]any{
+		"tool":       "rate_search_result",
+		"entry_keys": entryKeys,
+		"note":       "If any of these were useful or misleading, rate them with rate_search_result so future searches improve.",
 	}
 }
 
