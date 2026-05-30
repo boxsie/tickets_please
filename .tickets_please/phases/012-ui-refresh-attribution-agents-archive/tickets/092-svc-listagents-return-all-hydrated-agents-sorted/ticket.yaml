@@ -1,0 +1,10 @@
+id: 6106d6ed-726e-441f-905b-89abb5de3d4a
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+number: 92
+title: 'svc.ListAgents: return all hydrated agents sorted by last_seen_at desc'
+column: todo
+phase_id: 9cb33cde-d600-45e4-874b-10198f6aab85
+wave: 3
+created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
+created_at: 2026-05-30T22:07:32.941455423+01:00
+updated_at: 2026-05-30T22:07:32.941455423+01:00
