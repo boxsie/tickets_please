@@ -37,7 +37,7 @@ func Playground() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>UI components playground</title><link rel=\"stylesheet\" href=\"/static/app.css\"></head><body><main class=\"dashboard mx-auto my-8 px-6 max-w-[64rem]\"><h1>UI components playground</h1><p class=\"hint\">Every variant of every component in <code>internal/web/components/ui/</code>. If a page using these primitives looks wrong, this page is the visual baseline.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>UI components playground</title><link rel=\"stylesheet\" href=\"/static/app.css\"><script type=\"module\" src=\"/static/datastar.js\"></script></head><body><main class=\"dashboard mx-auto my-8 px-6 max-w-[64rem]\"><h1>UI components playground</h1><p class=\"hint\">Every variant of every component in <code>internal/web/components/ui/</code>. If a page using these primitives looks wrong, this page is the visual baseline.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -66,6 +66,10 @@ func Playground() templ.Component {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = playgroundModal().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = playgroundSSE().Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -627,7 +631,7 @@ func playgroundToasts() templ.Component {
 	})
 }
 
-func playgroundModal() templ.Component {
+func playgroundSSE() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -660,7 +664,62 @@ func playgroundModal() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<p class=\"hint\">Native <code>&lt;dialog&gt;</code>. The two triggers exercise default + wide variants; the same inline JS (below) is the canonical open/close driver.</p><div class=\"form-actions\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<p class=\"hint\">Subscribes to <code>/sse</code> on load (Datastar <code>&#64;get</code>). The button POSTs to <code>/_dev/sse-ping</code>, the server publishes one <code>datastar-patch-elements</code> event to the global topic, and Datastar merges the returned <code>&lt;span id=&#34;sse-target&#34;&gt;</code> into the DOM by id. End-to-end proof that the pipe is alive.</p><div data-on-load=\"@get('/sse')\" class=\"form-actions\" style=\"align-items:center;\"><span id=\"sse-target\" class=\"badge badge-todo\">waiting for ping…</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = Button(ButtonProps{Variant: ButtonVariantPrimary, Label: "SSE ping", Attrs: templ.Attributes{"data-on-click": "@post('/_dev/sse-ping')"}}).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = Card(CardProps{Title: "SSE + Datastar"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var19), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func playgroundModal() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var20 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var20 == nil {
+			templ_7745c5c3_Var20 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Var21 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<p class=\"hint\">Native <code>&lt;dialog&gt;</code>. The two triggers exercise default + wide variants; the same inline JS (below) is the canonical open/close driver.</p><div class=\"form-actions\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -672,11 +731,11 @@ func playgroundModal() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var20 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var22 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -688,7 +747,7 @@ func playgroundModal() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<p>This is the standard modal body. Inside is just children — call sites compose forms, prose, whatever.</p><p class=\"hint\">Close: × in the header, ESC, or click outside.</p><div class=\"form-actions\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<p>This is the standard modal body. Inside is just children — call sites compose forms, prose, whatever.</p><p class=\"hint\">Close: × in the header, ESC, or click outside.</p><div class=\"form-actions\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -700,21 +759,21 @@ func playgroundModal() templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = Modal(ModalProps{ID: "dlg-default", Title: "Default modal"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var20), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = Modal(ModalProps{ID: "dlg-default", Title: "Default modal"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var22), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var21 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var23 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -726,7 +785,7 @@ func playgroundModal() templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<p>Wide variant — used for evidence/work_summary forms that need more horizontal room.</p><form class=\"stack\" onsubmit=\"event.preventDefault();\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<p>Wide variant — used for evidence/work_summary forms that need more horizontal room.</p><form class=\"stack\" onsubmit=\"event.preventDefault();\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -738,7 +797,7 @@ func playgroundModal() templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<div class=\"form-actions\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div class=\"form-actions\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -750,23 +809,23 @@ func playgroundModal() templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div></form>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = Modal(ModalProps{ID: "dlg-wide", Title: "Wide modal", Wide: true}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var21), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = Modal(ModalProps{ID: "dlg-wide", Title: "Wide modal", Wide: true}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var23), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "    <script>\n\t\t(function () {\n\t\t\tdocument.querySelectorAll('[data-dialog]').forEach(function (btn) {\n\t\t\t\tbtn.addEventListener('click', function () {\n\t\t\t\t\tvar dlg = document.getElementById(btn.getAttribute('data-dialog'));\n\t\t\t\t\tif (dlg && typeof dlg.showModal === 'function') dlg.showModal();\n\t\t\t\t});\n\t\t\t});\n\t\t\tdocument.querySelectorAll('[data-dialog-close]').forEach(function (btn) {\n\t\t\t\tbtn.addEventListener('click', function () {\n\t\t\t\t\tvar dlg = document.getElementById(btn.getAttribute('data-dialog-close'));\n\t\t\t\t\tif (dlg) dlg.close();\n\t\t\t\t});\n\t\t\t});\n\t\t\tdocument.querySelectorAll('dialog.modal').forEach(function (dlg) {\n\t\t\t\tdlg.addEventListener('click', function (e) {\n\t\t\t\t\tif (e.target === dlg) dlg.close();\n\t\t\t\t});\n\t\t\t});\n\t\t})();\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "    <script>\n\t\t(function () {\n\t\t\tdocument.querySelectorAll('[data-dialog]').forEach(function (btn) {\n\t\t\t\tbtn.addEventListener('click', function () {\n\t\t\t\t\tvar dlg = document.getElementById(btn.getAttribute('data-dialog'));\n\t\t\t\t\tif (dlg && typeof dlg.showModal === 'function') dlg.showModal();\n\t\t\t\t});\n\t\t\t});\n\t\t\tdocument.querySelectorAll('[data-dialog-close]').forEach(function (btn) {\n\t\t\t\tbtn.addEventListener('click', function () {\n\t\t\t\t\tvar dlg = document.getElementById(btn.getAttribute('data-dialog-close'));\n\t\t\t\t\tif (dlg) dlg.close();\n\t\t\t\t});\n\t\t\t});\n\t\t\tdocument.querySelectorAll('dialog.modal').forEach(function (dlg) {\n\t\t\t\tdlg.addEventListener('click', function (e) {\n\t\t\t\t\tif (e.target === dlg) dlg.close();\n\t\t\t\t});\n\t\t\t});\n\t\t})();\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = Card(CardProps{Title: "Modal"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var19), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Card(CardProps{Title: "Modal"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var21), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

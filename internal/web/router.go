@@ -111,11 +111,24 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// stderr — the same JSON records, mirrored via internal/log.RingHandler.
 	mux.Handle("GET /logs", wrap(a.handleLogs))
 
+	// /sse is the always-on realtime channel — Datastar subscribes here for
+	// push-driven DOM patches. Unwrapped (no session/CSRF middleware): the
+	// stream is GET-only, identity arrives via cookie if the subscriber
+	// already has one, and W1 publishes to a single global topic with no
+	// per-session scoping. handlers_sse.go closes the stream on context
+	// cancel — the same lifecycle the http.Server gives every handler.
+	mux.Handle("GET /sse", http.HandlerFunc(a.handleSSE))
+
 	// Dev-only scaffolding: smoke routes for the templ + Tailwind + Datastar
 	// migration. Gated on deps.Dev so production builds don't expose them.
 	if deps.Dev {
 		mux.Handle("GET /_dev/templ-hello", wrap(a.handleTemplHello))
 		mux.Handle("GET /_dev/components", wrap(a.handleComponentsPlayground))
+		// Bypass wrap (session + CSRF) for the dev SSE ping: it's a dev-only
+		// fire-and-forget that publishes to the Hub. Datastar's @post action
+		// doesn't carry the form-style _csrf hidden field, and CSRF on a
+		// dev-only no-op buys nothing.
+		mux.Handle("POST /_dev/sse-ping", http.HandlerFunc(a.handleSSEPing))
 	}
 
 	// Root: home handler. http.ServeMux's "/" pattern catches every path not

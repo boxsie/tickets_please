@@ -30,6 +30,7 @@ import (
 	"tickets_please/internal/mcptools"
 	"tickets_please/internal/svc"
 	"tickets_please/internal/web"
+	"tickets_please/internal/web/sse"
 )
 
 // version is the MCP server version reported to clients. Bump when meaningful
@@ -233,7 +234,7 @@ func runServe(args []string, cfg config.Config, log *slog.Logger, logRing *tplog
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok")
 	})
-	web.Mount(mux, web.Deps{Service: s, Logger: log, Cfg: cfg, Dev: *dev, Logs: logRing})
+	web.Mount(mux, web.Deps{Service: s, Logger: log, Cfg: cfg, Dev: *dev, Logs: logRing, Hub: sse.NewMemHub()})
 
 	srv := &http.Server{
 		Addr:              *addr,
