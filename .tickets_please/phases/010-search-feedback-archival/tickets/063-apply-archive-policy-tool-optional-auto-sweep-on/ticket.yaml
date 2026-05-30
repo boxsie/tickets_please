@@ -2,11 +2,11 @@ id: 98403023-605b-45f3-8461-2a389b06fce2
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 63
 title: apply_archive_policy tool + optional auto-sweep on mount
-column: todo
+column: in_progress
 phase_id: bb7793a2-1f20-4f02-9b08-0b67d16bf4f0
 wave: 3
 depends_on:
     - 9068aa1e-15db-446b-8f95-4d7ddc2a7742
 created_by: b0bb6b33-2b2c-440d-a713-623927c8c30d
 created_at: 2026-05-30T17:18:51.014487949+01:00
-updated_at: 2026-05-30T17:18:51.014487949+01:00
+updated_at: 2026-05-30T18:35:19.984389484+01:00
