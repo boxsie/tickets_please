@@ -1,0 +1,9 @@
+id: 14b6e0a2-1f58-4bfb-a84b-66cc89157038
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+slug: git-linkage-tickets-commits-prs-releases
+number: 14
+name: 'Git linkage: tickets ↔ commits ↔ PRs ↔ releases'
+description: Automatic linkage of tickets to the commits, PRs, branches, and releases that implement them — works in both local and remote tickets_please deployments
+created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
+created_at: 2026-05-30T22:09:35.075739174+01:00
+updated_at: 2026-05-30T22:09:35.075739174+01:00
