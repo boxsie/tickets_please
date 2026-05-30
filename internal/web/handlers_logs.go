@@ -3,21 +3,16 @@ package web
 import (
 	"net/http"
 	"strings"
-)
 
-// logsPageData is the payload for pages/logs.tmpl. Lines are pre-joined into
-// a single string so the template can drop the whole buffer into a <pre>
-// without per-iteration overhead.
-type logsPageData struct {
-	Lines string
-	Count int
-	Empty bool
-}
+	"tickets_please/internal/web/components/pages"
+	"tickets_please/internal/web/components/partials"
+)
 
 // handleLogs renders the in-process log ring as a plain <pre> block. The
 // page auto-tails via htmx polling against the same handler with HX-Request
-// set, returning just the <pre> fragment. When the ring isn't wired (e.g.
-// in tests that don't care), the page renders an empty buffer.
+// set, returning just the inner LogsPre fragment so the swap doesn't drag
+// the chrome along. When the ring isn't wired (e.g. in tests that don't
+// care), the page renders an empty buffer.
 func (a *app) handleLogs(w http.ResponseWriter, r *http.Request) {
 	var lines []string
 	if a.deps.Logs != nil {
@@ -27,17 +22,16 @@ func (a *app) handleLogs(w http.ResponseWriter, r *http.Request) {
 			lines[i] = string(b)
 		}
 	}
-	data := logsPageData{
+	props := partials.LogsPreProps{
 		Lines: strings.Join(lines, "\n"),
 		Count: len(lines),
 		Empty: len(lines) == 0,
 	}
 	if r.Header.Get("HX-Request") == "true" {
-		a.renderer.Partial(w, r, "logs_pre", data)
+		a.renderer.RenderTemplPartial(w, r, partials.LogsPre(props))
 		return
 	}
-	a.renderer.Page(w, r, "logs", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title: "Logs · tickets_please",
-		Body:  data,
-	})
+	}, pages.Logs(props))
 }

@@ -1,0 +1,36 @@
+package partials
+
+import "strconv"
+
+// LogsPreProps mirrors handlers_logs.go's logsPageData — the typed view of the
+// in-process log ring rendered into the auto-tailing <pre>. Lines are
+// pre-joined so the template avoids per-record looping; Count powers the
+// "N records buffered" hint; Empty toggles the empty-state copy.
+type LogsPreProps struct {
+	Lines string
+	Count int
+	Empty bool
+}
+
+// LogsPre renders the inner content of the #logs-tail swap target — the
+// buffered-count hint plus either the empty-state copy or the <pre> with the
+// log lines. 1:1 port of templates/partials/logs_pre.tmpl — same id, same
+// class, same pluralisation.
+templ LogsPre(p LogsPreProps) {
+	<p class="muted logs-meta">{ pluralCount(p.Count) }</p>
+	if p.Empty {
+		<p class="muted">No log records captured yet.</p>
+	} else {
+		<pre id="logs-body" class="logs-pre">{ p.Lines }</pre>
+	}
+}
+
+// pluralCount produces the "N record(s) buffered." line. Lives in one place
+// so the legacy template's `{{if ne .Count 1}}s{{end}}` rule isn't scattered
+// across the templ AST.
+func pluralCount(n int) string {
+	if n == 1 {
+		return "1 record buffered."
+	}
+	return strconv.Itoa(n) + " records buffered."
+}

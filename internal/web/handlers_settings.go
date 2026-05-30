@@ -13,6 +13,7 @@ import (
 
 	"tickets_please/internal/config"
 	"tickets_please/internal/svc"
+	"tickets_please/internal/web/components/pages"
 )
 
 // userConfigPathFn is the indirection through which handlers locate the
@@ -40,51 +41,24 @@ var userConfigPathFn = config.UserConfigPath
 // renderer reads fields one at a time and the service constructor has
 // already snapshotted the original Cfg into per-mount providers.
 
-// settingsPageData is the payload for pages/settings.tmpl. KeyMasked is true
-// when an OpenAI key is set on cfg — the form renders dots instead of the
-// raw value, and a blank submit leaves it untouched (treated as "no change").
-type settingsPageData struct {
-	EmbedProvider string
-	EmbedModel    string
-	OllamaURL     string
-	DataDir       string
-	DataRoot      string
-	ConfigPath    string
-	ConfigSource  string
-	KeyMasked     bool
-
-	FormError string
-	Mounts    []mountRow
-}
-
-// mountRow is one entry in the project table on /settings. Slug links to the
-// project, EmbedName + EmbedModel show the resolved per-mount embedder, and
-// the Re-embed button POSTs to the per-project route W5-T1 owns.
-type mountRow struct {
-	Slug       string
-	EmbedName  string
-	EmbedModel string
-	EmbedDim   int
-}
-
 // handleGlobalSettings serves GET /settings. Reads from a.deps.Cfg directly
 // — Service updates the same struct in handleGlobalSettingsUpdate, so the
 // page always shows the live values without a round-trip to disk.
 func (a *app) handleGlobalSettings(w http.ResponseWriter, r *http.Request) {
-	a.renderer.Page(w, r, "settings", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title: "Settings · tickets_please",
-		Body:  a.buildSettingsPageData(""),
-	})
+	}, pages.Settings(a.buildSettingsPageProps(w, r, "")))
 }
 
-// buildSettingsPageData snapshots cfg + the project mount registry into a
-// view-model the template can render directly. Hoisted so error re-renders
-// reuse the same construction.
-func (a *app) buildSettingsPageData(formErr string) settingsPageData {
+// buildSettingsPageProps snapshots cfg + the project mount registry into the
+// typed templ view-model. Hoisted so error re-renders reuse the same
+// construction. CSRF is pulled off the chrome provider so the form posts can
+// round-trip through the existing checkCSRF middleware.
+func (a *app) buildSettingsPageProps(w http.ResponseWriter, r *http.Request, formErr string) pages.SettingsProps {
 	cfg := a.deps.Service.Cfg
-	rows := make([]mountRow, 0)
+	rows := make([]pages.SettingsMount, 0)
 	_ = a.deps.Service.WalkProjectMounts(func(slug string, m *svc.ProjectMount) error {
-		row := mountRow{Slug: slug, EmbedModel: m.EmbedModel, EmbedDim: m.EmbedDim}
+		row := pages.SettingsMount{Slug: slug, EmbedModel: m.EmbedModel, EmbedDim: m.EmbedDim}
 		if m.Embed != nil {
 			row.EmbedName = m.Embed.Name()
 		}
@@ -93,7 +67,8 @@ func (a *app) buildSettingsPageData(formErr string) settingsPageData {
 	})
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Slug < rows[j].Slug })
 	configPath, _ := userConfigPathFn()
-	return settingsPageData{
+	chrome := a.Chrome(w, r)
+	return pages.SettingsProps{
 		EmbedProvider: cfg.EmbedProvider,
 		EmbedModel:    cfg.OllamaModel,
 		OllamaURL:     cfg.OllamaURL,
@@ -104,6 +79,7 @@ func (a *app) buildSettingsPageData(formErr string) settingsPageData {
 		KeyMasked:     strings.TrimSpace(cfg.OpenAIKey) != "",
 		FormError:     formErr,
 		Mounts:        rows,
+		CSRF:          chrome.CSRF,
 	}
 }
 
@@ -128,7 +104,7 @@ func (a *app) handleGlobalSettingsUpdate(w http.ResponseWriter, r *http.Request)
 
 	path, err := userConfigPathFn()
 	if err != nil {
-		a.renderer.Error(w, r, http.StatusInternalServerError, err)
+		a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	// SaveYAMLNode requires the file to exist (it reads + parses). Ensure
@@ -136,11 +112,11 @@ func (a *app) handleGlobalSettingsUpdate(w http.ResponseWriter, r *http.Request)
 	// even when the user has never created the file.
 	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0o755); mkErr != nil {
-			a.renderer.Error(w, r, http.StatusInternalServerError, fmt.Errorf("create config dir: %w", mkErr))
+			a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, fmt.Errorf("create config dir: %w", mkErr))
 			return
 		}
 		if writeErr := os.WriteFile(path, []byte("# tickets_please configuration\n"), 0o644); writeErr != nil {
-			a.renderer.Error(w, r, http.StatusInternalServerError, fmt.Errorf("create config file: %w", writeErr))
+			a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, fmt.Errorf("create config file: %w", writeErr))
 			return
 		}
 	}
@@ -164,7 +140,7 @@ func (a *app) handleGlobalSettingsUpdate(w http.ResponseWriter, r *http.Request)
 		}
 		return nil
 	}); err != nil {
-		a.renderer.Error(w, r, http.StatusInternalServerError, err)
+		a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -207,8 +183,7 @@ func (a *app) handleReembedAll(w http.ResponseWriter, r *http.Request) {
 // status. Used for client-side validation failures (e.g. unknown provider).
 func (a *app) renderSettingsError(w http.ResponseWriter, r *http.Request, err error, status int) {
 	w.WriteHeader(status)
-	a.renderer.Page(w, r, "settings", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title: "Settings · tickets_please",
-		Body:  a.buildSettingsPageData(err.Error()),
-	})
+	}, pages.Settings(a.buildSettingsPageProps(w, r, err.Error())))
 }

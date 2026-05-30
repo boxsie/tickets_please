@@ -1,0 +1,21 @@
+package partials
+
+import "strconv"
+
+// ErrorProps is the typed payload for the Error partial. Mirrors the shape the
+// legacy partials/error.tmpl read (Status + Message) so the rendered HTML is
+// byte-equivalent to the html/template version.
+type ErrorProps struct {
+	Status  int
+	Message string
+}
+
+// Error renders an inline error banner with the HTTP status as a data-attr.
+// 1:1 port of templates/partials/error.tmpl — same class, same role, same
+// data-status attribute the CSS keys off.
+templ Error(p ErrorProps) {
+	<div class="error" role="alert" data-status={ strconv.Itoa(p.Status) }>
+		<strong>Error { strconv.Itoa(p.Status) }</strong>
+		<p>{ p.Message }</p>
+	</div>
+}

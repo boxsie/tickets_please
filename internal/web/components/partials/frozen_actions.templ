@@ -1,0 +1,17 @@
+package partials
+
+// FrozenActions renders the disabled action bar shown on done (frozen) ticket
+// detail pages: a frozen badge plus three disabled buttons (Edit / Move /
+// Complete). 1:1 port of templates/partials/frozen_actions.tmpl — same copy,
+// same titles, same disabled state.
+//
+// Done tickets are immutable server-side, but the UI still has to render
+// *something* in the action slot — these greyed-out buttons spell out *why*
+// the user can't act, with a tooltip pointing at the "make a new ticket"
+// workaround.
+templ FrozenActions() {
+	<span class="frozen-badge" title="done tickets are frozen — no edits, no reopen, no comments">&#128274; frozen</span>
+	<button type="button" class="btn" disabled title="done tickets are frozen — create a new ticket if work resurfaces">Edit</button>
+	<button type="button" class="btn" disabled title="done tickets are frozen — create a new ticket if work resurfaces">Move</button>
+	<button type="button" class="btn" disabled title="done tickets are frozen — create a new ticket if work resurfaces">Complete</button>
+}
