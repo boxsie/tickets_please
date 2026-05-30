@@ -2,12 +2,14 @@ id: 6115a046-bd14-4701-b6f6-268a6b8012d6
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 60
 title: Surface entry_keys + feedback_hint in search responses
-column: in_progress
+column: done
 phase_id: bb7793a2-1f20-4f02-9b08-0b67d16bf4f0
 wave: 1
 depends_on:
     - 74fa2753-7379-4df7-be7b-f5f712d66038
     - 3f2b1a5b-0b41-4307-978e-d4bbb6ba4b7b
 created_by: b0bb6b33-2b2c-440d-a713-623927c8c30d
+completed_by: b02d27bc-bf74-49d3-b9a6-e43e48e84d2f
+completed_at: 2026-05-30T18:13:15.930495308+01:00
 created_at: 2026-05-30T17:17:18.122934843+01:00
-updated_at: 2026-05-30T18:06:37.853564082+01:00
+updated_at: 2026-05-30T18:13:15.930495308+01:00
