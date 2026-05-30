@@ -1,0 +1,9 @@
+id: 9cb33cde-d600-45e4-874b-10198f6aab85
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+slug: ui-refresh-attribution-agents-archive
+number: 12
+name: 'UI refresh: attribution, agents, archive'
+description: Surface what the backend already knows — authors, timestamps, archived state, ratings — and add the long-missing agents page
+created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
+created_at: 2026-05-30T22:00:39.233338709+01:00
+updated_at: 2026-05-30T22:00:39.233338709+01:00
