@@ -1,0 +1,50 @@
+package projects
+
+import "strconv"
+
+// Search is the per-project semantic search page (1:1 port of
+// templates/pages/projects/search.tmpl). The htmx hooks on the input
+// (`hx-get`, `hx-trigger="keyup changed delay:300ms, search"`,
+// `hx-include`, `hx-target="#results"`) are preserved verbatim — the live-
+// search behaviour relies on them.
+templ Search(props SearchProps) {
+	{{ p := props.Project }}
+	<section class="search-page">
+		<header class="page-header">
+			<h1>Search { p.Name }</h1>
+			<p class="subtitle">
+				<code>{ p.Slug }</code>
+				<span class="breadcrumb-sep"></span>
+				Vector search inside this project's tickets, comments, and learnings.
+			</p>
+		</header>
+		<form method="get" action={ templ.SafeURL("/p/" + p.Slug + "/search") } class="search-form">
+			<input
+				type="search"
+				name="q"
+				autofocus
+				placeholder="What are we looking for?"
+				value={ props.Query }
+				hx-get={ "/p/" + p.Slug + "/search" }
+				hx-trigger="keyup changed delay:300ms, search"
+				hx-include="[name='kind'],[name='limit']"
+				hx-target="#results"
+				hx-swap="innerHTML"
+				hx-sync="this:replace"
+			/>
+			<input type="hidden" name="kind" value={ props.Kind }/>
+			<input type="hidden" name="limit" value={ strconv.Itoa(props.Limit) }/>
+			<nav class="search-tabs" aria-label="Search kind">
+				for _, k := range SearchKinds {
+					<a
+						class={ searchTabClass(k, props.Kind) }
+						href={ templ.SafeURL("/p/" + p.Slug + "/search?q=" + props.Query + "&kind=" + k) }
+					>{ k }</a>
+				}
+			</nav>
+		</form>
+		<div id="results" class="search-results">
+			@SearchResults(props)
+		</div>
+	</section>
+}

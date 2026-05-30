@@ -1,0 +1,23 @@
+package projects
+
+// Summary is the project summary page wrapper (1:1 port of
+// templates/pages/projects/summary.tmpl). The page is mostly a back-link +
+// title; the meat is one of the two SummaryView / SummaryEdit partials,
+// picked by Mode. Both partials live in the same package so the htmx in-place
+// editor can swap one for the other without a page reload.
+templ Summary(props SummaryProps) {
+	{{ p := props.Project }}
+	<section class="project-summary">
+		<header class="page-header">
+			<a class="back-link" href={ templ.SafeURL("/p/" + p.Slug) }>{ p.Name }</a>
+			<h1>{ p.Name } <span class="muted">· summary</span></h1>
+		</header>
+		<div id="summary-region">
+			if props.Mode == "edit" {
+				@SummaryEdit(props)
+			} else {
+				@SummaryView(props)
+			}
+		</div>
+	</section>
+}

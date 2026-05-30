@@ -1,0 +1,40 @@
+package projects
+
+// Load is the mount-existing-project page (1:1 port of
+// templates/pages/projects/load.tmpl). Two forms: the picker (HTMX-driven
+// directory navigator that ends in a hidden `path` submit) and a manual-
+// entry fallback. The picker is rendered via the FSPicker partial.
+templ Load(props LoadProps) {
+	<section class="form-page form-page-wide">
+		<header class="page-header">
+			<h1>Load existing project</h1>
+			<p class="subtitle">Browse to a directory containing <code>.tickets_please/project.yaml</code>. The picker flags loadable folders with a <span class="marker-badge inline-badge">project</span> badge.</p>
+		</header>
+		if props.FormError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { props.FormError }</div>
+		}
+		<form method="post" action="/p/load" id="load-form" class="stack">
+			@FSPicker(props.Picker)
+			<input type="hidden" name="_csrf" value={ props.CSRF }/>
+		</form>
+		<details class="manual-entry">
+			<summary>Or enter the path manually</summary>
+			<form method="post" action="/p/load" class="stack">
+				<label for="manual-path">Absolute path</label>
+				<input
+					type="text"
+					id="manual-path"
+					name="path"
+					required
+					placeholder="/home/you/code/some-repo"
+					autocomplete="off"
+					value={ props.Path }
+				/>
+				<input type="hidden" name="_csrf" value={ props.CSRF }/>
+				<div class="form-actions">
+					<button type="submit">Load project</button>
+				</div>
+			</form>
+		</details>
+	</section>
+}
