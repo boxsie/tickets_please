@@ -17,6 +17,7 @@ import (
 
 	"tickets_please/internal/domain"
 	"tickets_please/internal/web/components/layout"
+	"tickets_please/internal/web/components/partials"
 )
 
 // PageOpts is the per-call slice of PageData a handler fills in. Title is the
@@ -241,12 +242,33 @@ func (r *Renderer) LayoutPageData(w http.ResponseWriter, req *http.Request, opts
 // Error renders partials/error.tmpl at the supplied status. Use 422 for
 // hard-rule violations (e.g. svc.MoveTicket with target=done), 404 for
 // not-found, etc. The error's message goes into the partial's body.
+//
+// Deprecated: kept for handlers not yet migrated to templ. New code (or
+// handlers being migrated) should call RenderTemplError instead, which emits
+// the same byte-level output via the partials.Error templ component. The
+// cleanup ticket retires this once nothing references it.
 func (r *Renderer) Error(w http.ResponseWriter, req *http.Request, status int, err error) {
 	w.WriteHeader(status)
 	r.Partial(w, req, "error", errorData{
 		Status:  status,
 		Message: err.Error(),
 	})
+}
+
+// RenderTemplError is the templ-backed counterpart to Error: writes the
+// supplied status, then renders partials.Error as the body. Output is
+// byte-equivalent to the legacy partials/error.tmpl — same class, role,
+// and data-status attribute — so the existing CSS and tests keep working.
+//
+// Lives alongside Error (not replacing it) so handlers can migrate
+// piecemeal; the universal-error contract stays intact for callers still
+// on the old path.
+func (r *Renderer) RenderTemplError(w http.ResponseWriter, req *http.Request, status int, err error) {
+	w.WriteHeader(status)
+	r.RenderTemplPartial(w, req, partials.Error(partials.ErrorProps{
+		Status:  status,
+		Message: err.Error(),
+	}))
 }
 
 // errorData is the payload for partials/error.tmpl.

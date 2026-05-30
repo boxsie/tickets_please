@@ -1,0 +1,22 @@
+package partials
+
+// FlashProps is the typed payload for the inline Flash partial. Kept separate
+// from layout.FlashBanner because that one renders inside the chrome from
+// PageData.Chrome.Flash; this partial exists so a future handler (or test)
+// can render a one-off flash fragment by itself if needed.
+//
+// The layout-rendered banner is the primary path — most handlers should set
+// a flash via SetFlash and let the next Layout render emit it.
+type FlashProps struct {
+	Kind    string
+	Message string
+}
+
+// Flash renders the one-shot flash banner as a standalone fragment. 1:1 port
+// of templates/partials/flash.tmpl — same class string, same role, same
+// data-kind attribute.
+templ Flash(p FlashProps) {
+	<div class={ "flash", "flash-" + p.Kind } role="status" data-kind={ p.Kind }>
+		{ p.Message }
+	</div>
+}

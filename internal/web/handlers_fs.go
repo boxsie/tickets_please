@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"tickets_please/internal/web/components/partials"
 )
 
 // Filesystem picker for /p/load. The browser can't give the server an
@@ -51,6 +53,32 @@ type fsCrumb struct {
 	Path  string `json:"path"`
 }
 
+// toPickerProps converts the JSON/listing struct into the partials.FSPicker
+// view-model. Done at the seam so partials/fs_picker.templ stays free of any
+// import on internal/web (which would cycle).
+func (l fsListing) toPickerProps() partials.FSPickerProps {
+	out := partials.FSPickerProps{
+		Cwd:       l.Cwd,
+		Parent:    l.Parent,
+		Truncated: l.Truncated,
+		HasMarker: l.HasMarker,
+		Error:     l.Error,
+	}
+	if len(l.Crumbs) > 0 {
+		out.Crumbs = make([]partials.FSCrumb, len(l.Crumbs))
+		for i, c := range l.Crumbs {
+			out.Crumbs[i] = partials.FSCrumb{Label: c.Label, Path: c.Path}
+		}
+	}
+	if len(l.Entries) > 0 {
+		out.Entries = make([]partials.FSEntry, len(l.Entries))
+		for i, e := range l.Entries {
+			out.Entries[i] = partials.FSEntry{Name: e.Name, HasMarker: e.HasMarker}
+		}
+	}
+	return out
+}
+
 // handleFSBrowse serves GET /api/fs?path=<abs>. On HX-Request it returns
 // the fs_picker partial (rendered into #picker via outerHTML); otherwise
 // returns JSON for clients that want the raw shape.
@@ -68,7 +96,7 @@ func (a *app) handleFSBrowse(w http.ResponseWriter, r *http.Request) {
 	listing := buildFSListing(path)
 
 	if r.Header.Get("HX-Request") == "true" {
-		a.renderer.Partial(w, r, "fs_picker", listing)
+		a.renderer.RenderTemplPartial(w, r, partials.FSPicker(listing.toPickerProps()))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
