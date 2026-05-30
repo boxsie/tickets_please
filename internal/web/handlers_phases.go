@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"tickets_please/internal/domain"
+	phasescomp "tickets_please/internal/web/components/pages/phases"
 )
 
 // Phases & waves CRUD. Mirrors handlers_projects.go's shape:
@@ -27,18 +28,15 @@ import (
 
 // --- list / create ---------------------------------------------------------
 
-type phasesIndexData struct {
-	Project *domain.Project
-	Phases  []phaseWithWaves
-}
-
 // phaseWithWaves carries a phase + the wave-bucketed tickets that belong to
 // it, so the index can render each phase as a collapsible drill-down without
 // a second round-trip from the template.
 //
 // Dist is the count-per-column for tickets in this phase, Total is their
 // sum. The summary row uses both to render a mini status-bar without a
-// second walk over the tickets in the template.
+// second walk over the tickets in the template. The render boundary
+// converts these handler-side shapes into phasescomp.IndexProps via
+// toIndexProps before the templ component renders.
 type phaseWithWaves struct {
 	Phase *domain.Phase
 	Waves []waveSection
@@ -84,11 +82,10 @@ func (a *app) handlePhasesIndex(w http.ResponseWriter, r *http.Request) {
 		tickets = nil
 	}
 	enriched := bucketTicketsByPhaseAndWave(phases, tickets)
-	a.renderer.Page(w, r, "phases/index", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       proj.Name + " · phases · tickets_please",
 		CurrentSlug: slug,
-		Body:        phasesIndexData{Project: proj, Phases: enriched},
-	})
+	}, phasescomp.Index(toIndexProps(proj, enriched)))
 }
 
 // bucketTicketsByPhaseAndWave groups tickets by (phase, wave) and returns the
@@ -133,6 +130,45 @@ func bucketTicketsByPhaseAndWave(phases []*domain.Phase, tickets []*domain.Ticke
 	return out
 }
 
+// toIndexProps converts the handler-side phaseWithWaves slice into the templ
+// package's mirror props, threading the project slug down to every wave so
+// the WaveSection can build /tickets/{id}?slug=... links without reaching
+// back up the render tree.
+func toIndexProps(proj *domain.Project, phases []phaseWithWaves) phasescomp.IndexProps {
+	out := phasescomp.IndexProps{Project: proj}
+	out.Phases = make([]phasescomp.PhaseRowProps, 0, len(phases))
+	for _, pw := range phases {
+		out.Phases = append(out.Phases, phasescomp.PhaseRowProps{
+			Phase: pw.Phase,
+			Waves: toWaveProps(proj.Slug, pw.Waves),
+			Dist: phasescomp.PhaseDist{
+				Todo:       pw.Dist.Todo,
+				InProgress: pw.Dist.InProgress,
+				Testing:    pw.Dist.Testing,
+				Done:       pw.Dist.Done,
+			},
+			Total: pw.Total,
+		})
+	}
+	return out
+}
+
+// toWaveProps converts handler waveSection → templ WaveSectionProps. The
+// project slug is the same for every wave on a page, so we splat it across
+// the bucket here rather than carrying it in every wave on the handler side.
+func toWaveProps(projectSlug string, waves []waveSection) []phasescomp.WaveSectionProps {
+	out := make([]phasescomp.WaveSectionProps, 0, len(waves))
+	for _, w := range waves {
+		out = append(out, phasescomp.WaveSectionProps{
+			ProjectSlug:  projectSlug,
+			Wave:         w.Wave,
+			Tickets:      w.Tickets,
+			IsUnassigned: w.IsUnassigned,
+		})
+	}
+	return out
+}
+
 // bucketTicketsByWave groups tickets by wave number, ordered ascending with
 // wave 0 (unassigned) sorted last — matches svc.ListWaves and handleWaves.
 // Within each wave tickets are sorted by title for deterministic rendering.
@@ -172,14 +208,10 @@ func bucketTicketsByWave(tickets []*domain.Ticket) []waveSection {
 	return out
 }
 
-type phaseFormData struct {
-	Mode      string // "new" or "edit"
-	Project   *domain.Project
-	Phase     *domain.Phase
-	FormError string
-	Submitted phaseFormSubmitted
-}
-
+// phaseFormSubmitted is the handler-side mirror of the new/edit form fields:
+// the user-supplied values we round-trip back into the templ FormProps when
+// validation fails. Kept handler-local (rather than imported from the templ
+// package) so the handler isn't coupled to the components layer for shapes.
 type phaseFormSubmitted struct {
 	Slug        string
 	Name        string
@@ -194,14 +226,14 @@ func (a *app) handlePhaseNewForm(w http.ResponseWriter, r *http.Request) {
 		a.renderer.Error(w, r, classifyServiceError(err), err)
 		return
 	}
-	a.renderer.Page(w, r, "phases/new", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       "New phase · " + proj.Name,
 		CurrentSlug: proj.Slug,
-		Body: phaseFormData{
-			Mode:    "new",
-			Project: proj,
-		},
-	})
+	}, phasescomp.New(phasescomp.FormProps{
+		Mode:    "new",
+		Project: proj,
+		CSRF:    a.summaryCSRF(r),
+	}))
 }
 
 func (a *app) handlePhaseCreate(w http.ResponseWriter, r *http.Request) {
@@ -218,39 +250,41 @@ func (a *app) handlePhaseCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	phase, err := a.deps.Service.CreatePhase(r.Context(), slug, in.Name, in.Description, in.Summary)
 	if err != nil {
-		a.renderPhaseFormError(w, r, "phases/new", "new", proj, nil, in, err)
+		a.renderPhaseFormError(w, r, "new", proj, nil, in, err)
 		return
 	}
 	SetFlash(w, r, "success", "Phase "+phase.Name+" created.")
 	http.Redirect(w, r, "/p/"+proj.Slug+"/phases/"+phase.Slug, http.StatusSeeOther)
 }
 
-func (a *app) renderPhaseFormError(w http.ResponseWriter, r *http.Request, page, mode string, proj *domain.Project, phase *domain.Phase, in phaseFormSubmitted, err error) {
+func (a *app) renderPhaseFormError(w http.ResponseWriter, r *http.Request, mode string, proj *domain.Project, phase *domain.Phase, in phaseFormSubmitted, err error) {
 	w.WriteHeader(classifyServiceError(err))
 	title := "New phase · " + proj.Name
 	if mode == "edit" && phase != nil {
 		title = "Edit " + phase.Name + " · " + proj.Name
 	}
-	a.renderer.Page(w, r, page, PageOpts{
-		Title:       title,
-		CurrentSlug: proj.Slug,
-		Body: phaseFormData{
-			Mode:      mode,
-			Project:   proj,
-			Phase:     phase,
-			FormError: err.Error(),
-			Submitted: in,
+	props := phasescomp.FormProps{
+		Mode:      mode,
+		Project:   proj,
+		Phase:     phase,
+		FormError: err.Error(),
+		Submitted: phasescomp.FormSubmitted{
+			Slug:        in.Slug,
+			Name:        in.Name,
+			Description: in.Description,
+			Summary:     in.Summary,
 		},
-	})
+		CSRF: a.summaryCSRF(r),
+	}
+	opts := PageOpts{Title: title, CurrentSlug: proj.Slug}
+	if mode == "edit" {
+		a.renderer.RenderTempl(w, r, opts, phasescomp.Edit(props))
+		return
+	}
+	a.renderer.RenderTempl(w, r, opts, phasescomp.New(props))
 }
 
 // --- detail / edit / update / delete --------------------------------------
-
-type phaseDetailData struct {
-	Project *domain.Project
-	Phase   *domain.Phase
-	Waves   []waveSection
-}
 
 func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
@@ -278,15 +312,16 @@ func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
 		tickets = nil
 	}
 	waves := bucketTicketsByWave(tickets)
-	a.renderer.Page(w, r, "phases/detail", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       phase.Name + " · " + proj.Name,
 		CurrentSlug: proj.Slug,
-		Body: phaseDetailData{
-			Project: proj,
-			Phase:   phase,
-			Waves:   waves,
-		},
-	})
+	}, phasescomp.Detail(phasescomp.DetailProps{
+		Project:     proj,
+		Phase:       phase,
+		Waves:       toWaveProps(proj.Slug, waves),
+		CSRF:        a.summaryCSRF(r),
+		SummaryHTML: renderMarkdown(phase.Summary),
+	}))
 }
 
 func (a *app) handlePhaseEditForm(w http.ResponseWriter, r *http.Request) {
@@ -302,20 +337,20 @@ func (a *app) handlePhaseEditForm(w http.ResponseWriter, r *http.Request) {
 		a.renderer.Error(w, r, classifyServiceError(err), err)
 		return
 	}
-	a.renderer.Page(w, r, "phases/edit", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       "Edit " + phase.Name + " · " + proj.Name,
 		CurrentSlug: proj.Slug,
-		Body: phaseFormData{
-			Mode:    "edit",
-			Project: proj,
-			Phase:   phase,
-			Submitted: phaseFormSubmitted{
-				Slug:        phase.Slug,
-				Name:        phase.Name,
-				Description: phase.Description,
-			},
+	}, phasescomp.Edit(phasescomp.FormProps{
+		Mode:    "edit",
+		Project: proj,
+		Phase:   phase,
+		Submitted: phasescomp.FormSubmitted{
+			Slug:        phase.Slug,
+			Name:        phase.Name,
+			Description: phase.Description,
 		},
-	})
+		CSRF: a.summaryCSRF(r),
+	}))
 }
 
 func (a *app) handlePhaseUpdate(w http.ResponseWriter, r *http.Request) {
@@ -338,7 +373,7 @@ func (a *app) handlePhaseUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	updateIn := domain.UpdatePhaseInput{Name: &in.Name, Description: &in.Description}
 	if _, err := a.deps.Service.UpdatePhase(r.Context(), slug, phaseSlug, updateIn); err != nil {
-		a.renderPhaseFormError(w, r, "phases/edit", "edit", proj, phase, in, err)
+		a.renderPhaseFormError(w, r, "edit", proj, phase, in, err)
 		return
 	}
 	SetFlash(w, r, "success", "Phase updated.")
@@ -362,15 +397,6 @@ func (a *app) handlePhaseDelete(w http.ResponseWriter, r *http.Request) {
 
 // --- summary view + in-place editor ---------------------------------------
 
-type phaseSummaryData struct {
-	Project   *domain.Project
-	Phase     *domain.Phase
-	Mode      string // "view" or "edit"
-	Summary   string
-	FormError string
-	CSRF      string
-}
-
 func (a *app) handlePhaseSummaryView(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	phaseSlug := r.PathValue("phase")
@@ -388,26 +414,26 @@ func (a *app) handlePhaseSummaryView(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("edit") == "1" {
 		mode = "edit"
 	}
-	body := phaseSummaryData{
-		Project: proj,
-		Phase:   phase,
-		Mode:    mode,
-		Summary: phase.Summary,
-		CSRF:    a.summaryCSRF(r),
+	props := phasescomp.SummaryProps{
+		Project:     proj,
+		Phase:       phase,
+		Mode:        mode,
+		Summary:     phase.Summary,
+		SummaryHTML: renderMarkdown(phase.Summary),
+		CSRF:        a.summaryCSRF(r),
 	}
 	if r.Header.Get("HX-Request") == "true" {
-		partial := "phase_summary_view"
 		if mode == "edit" {
-			partial = "phase_summary_edit"
+			a.renderer.RenderTemplPartial(w, r, phasescomp.SummaryEdit(props))
+		} else {
+			a.renderer.RenderTemplPartial(w, r, phasescomp.SummaryView(props))
 		}
-		a.renderer.Partial(w, r, partial, body)
 		return
 	}
-	a.renderer.Page(w, r, "phases/summary", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       phase.Name + " · summary · " + proj.Name,
 		CurrentSlug: proj.Slug,
-		Body:        body,
-	})
+	}, phasescomp.Summary(props))
 }
 
 func (a *app) handlePhaseSummaryUpdate(w http.ResponseWriter, r *http.Request) {
@@ -427,17 +453,18 @@ func (a *app) handlePhaseSummaryUpdate(w http.ResponseWriter, r *http.Request) {
 	csrf := a.summaryCSRF(r)
 	if _, err := a.deps.Service.UpdatePhase(r.Context(), slug, phaseSlug, domain.UpdatePhaseInput{Summary: &summary}); err != nil {
 		w.WriteHeader(classifyServiceError(err))
-		body := phaseSummaryData{
+		props := phasescomp.SummaryProps{
 			Project: proj, Phase: phase, Mode: "edit",
-			Summary: summary, FormError: err.Error(), CSRF: csrf,
+			Summary: summary, SummaryHTML: renderMarkdown(summary),
+			FormError: err.Error(), CSRF: csrf,
 		}
 		if r.Header.Get("HX-Request") == "true" {
-			a.renderer.Partial(w, r, "phase_summary_edit", body)
+			a.renderer.RenderTemplPartial(w, r, phasescomp.SummaryEdit(props))
 			return
 		}
-		a.renderer.Page(w, r, "phases/summary", PageOpts{
-			Title: phase.Name + " · summary · " + proj.Name, CurrentSlug: proj.Slug, Body: body,
-		})
+		a.renderer.RenderTempl(w, r, PageOpts{
+			Title: phase.Name + " · summary · " + proj.Name, CurrentSlug: proj.Slug,
+		}, phasescomp.Summary(props))
 		return
 	}
 	updated, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
@@ -445,9 +472,16 @@ func (a *app) handlePhaseSummaryUpdate(w http.ResponseWriter, r *http.Request) {
 		a.renderer.Error(w, r, classifyServiceError(err), err)
 		return
 	}
-	body := phaseSummaryData{Project: proj, Phase: updated, Mode: "view", Summary: updated.Summary, CSRF: csrf}
+	props := phasescomp.SummaryProps{
+		Project:     proj,
+		Phase:       updated,
+		Mode:        "view",
+		Summary:     updated.Summary,
+		SummaryHTML: renderMarkdown(updated.Summary),
+		CSRF:        csrf,
+	}
 	if r.Header.Get("HX-Request") == "true" {
-		a.renderer.Partial(w, r, "phase_summary_view", body)
+		a.renderer.RenderTemplPartial(w, r, phasescomp.SummaryView(props))
 		return
 	}
 	SetFlash(w, r, "success", "Summary updated.")

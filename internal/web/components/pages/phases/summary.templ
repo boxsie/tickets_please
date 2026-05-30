@@ -1,0 +1,78 @@
+package phases
+
+// Summary is the /p/{slug}/phases/{phase}/summary page — wraps the view/edit
+// partials with a page header. The partials swap in place via HTMX targeting
+// `#summary-region`, mirroring the legacy template's behaviour exactly.
+templ Summary(p SummaryProps) {
+	<section class="phase-summary">
+		<header class="page-header">
+			<a class="back-link" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug) }>{ p.Phase.Name }</a>
+			<h1>{ p.Phase.Name } <span class="muted">&middot; summary</span></h1>
+		</header>
+		<div id="summary-region">
+			if p.Mode == "edit" {
+				@SummaryEdit(p)
+			} else {
+				@SummaryView(p)
+			}
+		</div>
+	</section>
+}
+
+// SummaryView is the read-only summary card with an Edit button that HTMX-
+// swaps into SummaryEdit. 1:1 port of partials/phase_summary_view.tmpl.
+//
+// Renders SummaryHTML (handler-pre-rendered markdown) — see DetailProps for
+// the rationale behind passing rendered HTML rather than raw markdown.
+templ SummaryView(p SummaryProps) {
+	<div id="summary-region" class="card markdown">
+		if p.Summary != "" {
+			@templ.Raw(string(p.SummaryHTML))
+		} else {
+			<p class="hint">No summary set yet.</p>
+		}
+		<p class="form-actions">
+			<button
+				type="button"
+				class="btn"
+				hx-get={ "/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/summary?edit=1" }
+				hx-target="#summary-region"
+				hx-swap="outerHTML"
+			>Edit</button>
+		</p>
+	</div>
+}
+
+// SummaryEdit is the edit-mode form that POSTs back to the summary endpoint
+// via HTMX, swapping itself in place with whatever the handler returns next
+// (success → SummaryView, error → SummaryEdit with FormError). 1:1 port of
+// partials/phase_summary_edit.tmpl.
+templ SummaryEdit(p SummaryProps) {
+	<div id="summary-region" class="card">
+		if p.FormError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { p.FormError }</div>
+		}
+		<form
+			method="post"
+			action={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/summary") }
+			class="stack"
+			hx-post={ "/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/summary" }
+			hx-target="#summary-region"
+			hx-swap="outerHTML"
+		>
+			<label for="summary">Summary <span class="muted">(markdown, &ge;200 chars)</span></label>
+			<textarea id="summary" name="summary" rows="16" required minlength="200">{ p.Summary }</textarea>
+			<input type="hidden" name="_csrf" value={ p.CSRF }/>
+			<div class="form-actions">
+				<button type="submit">Save</button>
+				<button
+					type="button"
+					class="btn-link"
+					hx-get={ "/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/summary" }
+					hx-target="#summary-region"
+					hx-swap="outerHTML"
+				>Cancel</button>
+			</div>
+		</form>
+	</div>
+}

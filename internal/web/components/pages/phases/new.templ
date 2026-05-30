@@ -1,0 +1,54 @@
+package phases
+
+// New is the /p/{slug}/phases/new form page. Creates a phase with name +
+// description + summary (≥200 chars per the form validation). 1:1 port of
+// templates/pages/phases/new.tmpl.
+templ New(p FormProps) {
+	<section class="form-page">
+		<header class="page-header">
+			<h1>New phase</h1>
+			<p class="subtitle"><a href={ templ.SafeURL("/p/" + p.Project.Slug) }>{ p.Project.Name }</a></p>
+			<p class="hint">Phases are sub-projects for larger bodies of work. Slug is auto-derived from the name on the server side.</p>
+		</header>
+		if p.FormError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { p.FormError }</div>
+		}
+		<form method="post" action={ templ.SafeURL("/p/" + p.Project.Slug + "/phases") } class="stack">
+			<label for="name">Name</label>
+			<input
+				type="text"
+				id="name"
+				name="name"
+				required
+				placeholder="Web Frontend"
+				value={ p.Submitted.Name }
+			/>
+			<label for="description">
+				Description <span class="muted">(short, optional)</span>
+			</label>
+			<input
+				type="text"
+				id="description"
+				name="description"
+				placeholder="One-line summary for the phase list"
+				value={ p.Submitted.Description }
+			/>
+			<label for="summary">
+				Summary <span class="muted">(markdown, &ge;200 chars; load-bearing &mdash; agents read this first)</span>
+			</label>
+			<textarea
+				id="summary"
+				name="summary"
+				rows="12"
+				required
+				minlength="200"
+				placeholder="What is this phase? What's the goal? What constraints matter?"
+			>{ p.Submitted.Summary }</textarea>
+			<input type="hidden" name="_csrf" value={ p.CSRF }/>
+			<div class="form-actions">
+				<button type="submit">Create phase</button>
+				<a class="btn-link" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases") }>Cancel</a>
+			</div>
+		</form>
+	</section>
+}

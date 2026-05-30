@@ -1,0 +1,34 @@
+package phases
+
+// WaveSection renders one wave's bucket of tickets — the chip + title +
+// count header, followed by the per-ticket list with status dot and badge.
+//
+// Both the phases-index expanded view (inside each <details>) and the
+// phase-detail page reach for this component, deduping what used to be two
+// identical render blocks in the legacy templates.
+//
+// Bucketing/sorting stays in the handler (see bucketTicketsByWave). This
+// component is presentation-only: it trusts the props it gets.
+templ WaveSection(p WaveSectionProps) {
+	<section class={ WaveClass(p) }>
+		<header class="phase-wave-head">
+			<span class={ WaveChipClass(p) }>
+				{ WaveChipText(p) }
+			</span>
+			<span class="phase-wave-title">
+				{ WaveTitle(p) }
+			</span>
+			<span class="phase-wave-count muted">{ TicketCountLabel(len(p.Tickets)) }</span>
+		</header>
+		<ul class="phase-wave-tickets">
+			for _, t := range p.Tickets {
+				<li class="phase-wave-ticket">
+					<span class={ "dot", "dot-" + string(t.Column) } title={ string(t.Column) }></span>
+					<a class="phase-wave-ticket-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.ProjectSlug) }>{ t.Title }</a>
+					<span class={ "badge", "badge-" + string(t.Column) }>{ string(t.Column) }</span>
+				</li>
+			}
+		</ul>
+	</section>
+}
+

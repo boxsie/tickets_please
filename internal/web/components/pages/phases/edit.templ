@@ -1,0 +1,30 @@
+package phases
+
+// Edit is the /p/{slug}/phases/{phase}/edit form page. Edits name and
+// description; slug is immutable and summary lives on its own page.
+// 1:1 port of templates/pages/phases/edit.tmpl.
+templ Edit(p FormProps) {
+	<section class="form-page">
+		<header class="page-header">
+			<h1>Edit { p.Phase.Name }</h1>
+			<p class="subtitle">
+				Slug <code>{ p.Phase.Slug }</code> is immutable.
+				Edit summary on the <a href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/summary") }>Summary page</a>.
+			</p>
+		</header>
+		if p.FormError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { p.FormError }</div>
+		}
+		<form method="post" action={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug) } class="stack">
+			<label for="name">Name</label>
+			<input type="text" id="name" name="name" required value={ p.Submitted.Name }/>
+			<label for="description">Description</label>
+			<input type="text" id="description" name="description" value={ p.Submitted.Description }/>
+			<input type="hidden" name="_csrf" value={ p.CSRF }/>
+			<div class="form-actions">
+				<button type="submit">Save</button>
+				<a class="btn-link" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug) }>Cancel</a>
+			</div>
+		</form>
+	</section>
+}
