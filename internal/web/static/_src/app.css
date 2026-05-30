@@ -1,14 +1,73 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 /* ---------------------------------------------------------------------------
-   Hand-authored layer.
+   tickets_please app stylesheet — Tailwind v4, embedded build.
 
-   Every class the templates use lives here as a semantic component. Tailwind
-   utilities cover the long tail; if a one-off class is needed in markup,
-   safelist it in tailwind.config.js so it survives purge.
+   This file is the *source*; `internal/web/static/app.css` is the generated
+   output and is what the binary embeds. Regenerate via `make css` (which
+   `make build` runs for you).
+
+   Tailwind v4 is CSS-first: no JS config, no purge safelist, no separate
+   theme.extend. Design tokens live in @theme below; semantic classes live
+   in @layer components further down (everything the templates reference by
+   name — `.topbar`, `.sidebar-link`, `.badge-todo`, etc.). The legacy CSS
+   variables in @layer base are kept so `var(--bg)`/`var(--fg)` keep working
+   while the migration ports pages to typed templ components that consume
+   the @theme tokens directly via Tailwind utility classes.
    --------------------------------------------------------------------------- */
+
+@import "tailwindcss";
+
+/* @source paths are relative to this file. v4 scans them for class names
+   referenced in markup (legacy html/template files + new typed templ
+   components + their generated *_templ.go) so utility classes used in those
+   files survive purge. @layer components blocks are emitted regardless of
+   reference, so the hand-authored semantic classes always ship. */
+@source "../../templates";
+@source "../../components";
+
+/* @theme exposes design tokens to Tailwind v4's utility generator. Each
+   --color-* / --font-* token also materialises as a CSS custom property on
+   :root, so plain `var(--color-fg)` works alongside `text-fg`. Keep the
+   token set small — these are the bridge between legacy CSS vars and the
+   new utility-class world; rich gradients/shadows belong in @layer
+   components, not here. The four badge colours below are the canonical
+   column palette (todo/in_progress/testing/done) referenced by every
+   ticket card, status bar, and progress segment. */
+@theme {
+  /* Surfaces & lines */
+  --color-base:        #0d1014;
+  --color-bar:         #14181f;
+  --color-elev:        #181d26;
+  --color-hover:       #1d2230;
+  --color-active:      #283352;
+  --color-line:        #232732;
+  --color-line-strong: #2e3340;
+
+  /* Foreground / text */
+  --color-fg:    #e8eaed;
+  --color-muted: #9aa2b1;
+  --color-faint: #707686;
+
+  /* Accent + status */
+  --color-accent:  #6aa9ff;
+  --color-warn:    #f5a524;
+  --color-success: #3ecf8e;
+  --color-error:   #ff6b6b;
+
+  /* Badge palette — the four canonical Trello columns. These power the
+     `bg-badge-todo`/`text-badge-todo` utility families. The hand-authored
+     `.badge-todo`/etc. classes in @layer components below intentionally use
+     paired bg+fg+border tokens that aren't cleanly expressible as a single
+     colour, so the duplication is deliberate; if you change a colour here,
+     change the matching .badge-* class too. */
+  --color-badge-todo:        #a8b0c0;
+  --color-badge-in_progress: #6aa9ff;
+  --color-badge-testing:     #f5a524;
+  --color-badge-done:        #3ecf8e;
+
+  /* Typography */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
 
 @layer base {
   :root {
@@ -1907,6 +1966,25 @@
     background: transparent;
     border: none;
     border-radius: 0;
+  }
+
+  /* ============================================================
+     Logs page (partials/logs_pre.tmpl)
+     ============================================================ */
+  .logs-meta {
+    margin: 0 0 0.5rem;
+  }
+  .logs-pre {
+    background:    #111;
+    color:         #eee;
+    padding:       1em;
+    max-height:    70vh;
+    overflow:      auto;
+    font-family:   var(--font-mono);
+    font-size:     12px;
+    line-height:   1.4;
+    white-space:   pre-wrap;
+    word-break:    break-all;
   }
 
   /* ============================================================

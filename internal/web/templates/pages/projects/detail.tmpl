@@ -43,6 +43,9 @@
   {{if $m.Total}}
   <section class="card">
     <h2>Status distribution</h2>
+    {{- /* Escape hatch: per-segment width is a server-computed percentage,
+           not expressible as a static utility class. Colour comes from the
+           .status-bar-{column} class; inline style only carries width. */ -}}
     <div class="status-bar">
       {{range $b.StatusSegments}}
       {{if .Count}}<div class="status-bar-segment status-bar-{{.Column}}" style="width: {{.Percent}}%" title="{{.Label}}: {{.Count}} ({{.Percent}}%)"></div>{{end}}

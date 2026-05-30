@@ -1,11 +1,11 @@
-.PHONY: build build-windows run test init-config init-data check templ generate dev
+.PHONY: build build-windows run test init-config init-data check templ generate dev css
 
 BIN := tickets_please
 
-# generate is the umbrella for every code-gen step. Today: templ only. New
-# generators get a .PHONY target above and a line under here so a single
-# `make generate` keeps everything in sync.
-generate: templ
+# generate is the umbrella for every code-gen step. New generators get a
+# .PHONY target above and a line under here so a single `make generate`
+# keeps everything in sync.
+generate: templ css
 
 # TEMPL is the templ CLI used to regenerate *_templ.go from *.templ. Always
 # safe to re-run; output is deterministic and we commit it (see
@@ -22,6 +22,24 @@ templ:
 	  exit 1; \
 	fi
 	$(TEMPL) generate
+
+# TAILWIND is the Tailwind v4 standalone CLI. Single binary, no Node, no
+# npm — keeps the toolchain ethos of "fewer moving parts" intact. Download
+# from https://github.com/tailwindlabs/tailwindcss/releases (binary name
+# tailwindcss-linux-x64 / -darwin-arm64 / etc.; chmod +x and drop on PATH).
+# The committed internal/web/static/app.css is the build output; the source
+# lives at internal/web/static/_src/app.css and is the only thing humans
+# should edit.
+TAILWIND ?= $(shell command -v tailwindcss 2>/dev/null)
+
+css:
+	@if [ -z "$(TAILWIND)" ]; then \
+	  echo "tailwindcss CLI not found on PATH."; \
+	  echo "download from: https://github.com/tailwindlabs/tailwindcss/releases"; \
+	  echo "  curl -sSL -o ~/go/bin/tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 && chmod +x ~/go/bin/tailwindcss"; \
+	  exit 1; \
+	fi
+	$(TAILWIND) -i internal/web/static/_src/app.css -o internal/web/static/app.css --minify
 
 build: generate
 	go build -o $(BIN) ./cmd/tickets_please

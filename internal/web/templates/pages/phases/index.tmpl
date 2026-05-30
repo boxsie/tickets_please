@@ -24,6 +24,10 @@
           </div>
           <div class="phase-row-meta">
             {{if gt $total 0}}
+            {{- /* Escape hatch: per-segment width is a server-computed percentage,
+                   not expressible as a static utility class. Keeping it as an
+                   inline style attribute is the simplest path; the colour and
+                   border come from the .phase-row-bar-{column} classes. */ -}}
             <div class="phase-row-bar" title="{{$dist.Todo}} todo · {{$dist.InProgress}} in progress · {{$dist.Testing}} testing · {{$dist.Done}} done">
               {{if gt $dist.Todo 0}}<span class="phase-row-bar-seg phase-row-bar-todo" style="width: {{percentOf $dist.Todo $total}}%"></span>{{end}}
               {{if gt $dist.InProgress 0}}<span class="phase-row-bar-seg phase-row-bar-in_progress" style="width: {{percentOf $dist.InProgress $total}}%"></span>{{end}}

@@ -21,7 +21,7 @@
     <h2>Summary</h2>
     {{if $phase.Summary}}
     <div class="markdown">{{markdown $phase.Summary}}</div>
-    <p style="margin-top: 1rem;"><a href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary">Open the full summary editor →</a></p>
+    <p class="mt-4"><a href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary">Open the full summary editor →</a></p>
     {{else}}
     <p class="hint">No summary set. <a href="/p/{{$proj.Slug}}/phases/{{$phase.Slug}}/summary?edit=1">Add one →</a></p>
     {{end}}
