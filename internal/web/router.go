@@ -111,6 +111,12 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// stderr — the same JSON records, mirrored via internal/log.RingHandler.
 	mux.Handle("GET /logs", wrap(a.handleLogs))
 
+	// Dev-only scaffolding: smoke routes for the templ + Tailwind + Datastar
+	// migration. Gated on deps.Dev so production builds don't expose them.
+	if deps.Dev {
+		mux.Handle("GET /_dev/templ-hello", wrap(a.handleTemplHello))
+	}
+
 	// Root: home handler. http.ServeMux's "/" pattern catches every path not
 	// matched by a more specific handler, so the more-specific /p/* patterns
 	// above preempt it.

@@ -1,0 +1,20 @@
+# tickets_please feedback aggregates — likes/dislikes/retrievals per search result.
+# Schema: version + map keyed by `<kind>:<id>` (see internal/domain/feedback.go).
+# Edit by hand only if you know what you're doing; the MCP `rate_search_result` tool is the supported path.
+version: 1
+entries:
+    learning:5f8bcc39-f453-426a-96f4-d79582c2fe8b:
+        last_used_at: 2026-05-30T21:21:11.043655379Z
+        retrievals: 1
+    learning:9d0215ad-15d6-4d34-86c9-a2af7aae18a7:
+        last_used_at: 2026-05-30T21:21:11.043655379Z
+        retrievals: 1
+    learning:b0e89cfd-168a-43fb-9434-5bd3ac913e32:
+        last_used_at: 2026-05-30T21:21:11.043655379Z
+        retrievals: 1
+    learning:c9d8e384-39a8-4ec2-8a69-d1e83230ba95:
+        last_used_at: 2026-05-30T21:21:11.043655379Z
+        retrievals: 1
+    learning:de1a552e-d51b-4867-85e5-a5e910de23c8:
+        last_used_at: 2026-05-30T21:21:11.043655379Z
+        retrievals: 1
