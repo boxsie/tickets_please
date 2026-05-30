@@ -115,6 +115,7 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// migration. Gated on deps.Dev so production builds don't expose them.
 	if deps.Dev {
 		mux.Handle("GET /_dev/templ-hello", wrap(a.handleTemplHello))
+		mux.Handle("GET /_dev/components", wrap(a.handleComponentsPlayground))
 	}
 
 	// Root: home handler. http.ServeMux's "/" pattern catches every path not

@@ -1,0 +1,13 @@
+package ui
+
+// Card is the standard page-content panel — used everywhere the existing
+// templates have a <section class="card">. Children render inside the card
+// body; Title produces the <h2> heading the existing CSS already styles.
+templ Card(props CardProps) {
+	<section class={ cardClass(props) }>
+		if props.Title != "" {
+			<h2>{ props.Title }</h2>
+		}
+		{ children... }
+	</section>
+}

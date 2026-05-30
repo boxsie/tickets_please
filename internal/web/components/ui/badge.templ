@@ -1,0 +1,8 @@
+package ui
+
+// Badge renders a small pill-shaped status label. The six variants cover
+// every column the ticket store uses plus the two cross-cutting flavours
+// (system_move comments, blocked-state indicator).
+templ Badge(props BadgeProps) {
+	<span class={ badgeClass(props.Variant) }>{ props.Label }</span>
+}

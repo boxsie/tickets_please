@@ -1143,6 +1143,25 @@
     font-size: 0.78rem;
     font-weight: 600;
   }
+  /* Toast primitives — backing classes for components/ui/toast.templ. The four
+     variants mirror the .flash-* palette so a toast on a /_dev/components
+     review matches the chrome-flash colour the same severity carries. */
+  .toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg-elev);
+    color: var(--fg);
+    font-size: 0.88rem;
+  }
+  .toast strong { font-weight: 600; }
+  .toast-info    { background: var(--accent-soft); color: var(--accent); border-color: rgba(106,169,255,0.4); }
+  .toast-success { background: var(--success-bg);  color: var(--success); border-color: rgba(62,207,142,0.4); }
+  .toast-warn    { background: var(--warn-bg);     color: var(--warn);    border-color: rgba(245,165,36,0.4); }
+  .toast-error   { background: rgba(255,107,107,0.12); color: var(--error); border-color: rgba(255,107,107,0.4); }
   .frozen-card {
     border-color: rgba(62,207,142,0.25);
   }
