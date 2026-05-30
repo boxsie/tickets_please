@@ -1,0 +1,26 @@
+package projects
+
+import "tickets_please/internal/web/components/md"
+
+// SummaryView is the rendered-markdown form of the project summary editor —
+// 1:1 port of partials/project_summary_view.tmpl. The outer div carries the
+// `summary-region` id so the htmx outerHTML swap from the edit button lands
+// in the right place; same hx-* attributes as the legacy partial.
+templ SummaryView(props SummaryProps) {
+	<div id="summary-region" class="card markdown">
+		if props.Summary != "" {
+			@md.MD(props.Summary)
+		} else {
+			<p class="hint">No summary set yet.</p>
+		}
+		<p class="form-actions">
+			<button
+				type="button"
+				class="btn"
+				hx-get={ "/p/" + props.Project.Slug + "/summary?edit=1" }
+				hx-target="#summary-region"
+				hx-swap="outerHTML"
+			>Edit</button>
+		</p>
+	</div>
+}

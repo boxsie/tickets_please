@@ -13,6 +13,7 @@ import (
 	"tickets_please/internal/domain"
 	"tickets_please/internal/svc"
 	"tickets_please/internal/web/components/layout"
+	projectspg "tickets_please/internal/web/components/pages/projects"
 )
 
 // Projects CRUD handlers — wraps the eight project-related Service methods
@@ -50,10 +51,9 @@ func (a *app) handleProjectsIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sort.Slice(projects, func(i, j int) bool { return projects[i].Slug < projects[j].Slug })
-	a.renderer.Page(w, r, "projects/index", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title: "Projects · tickets_please",
-		Body:  projectsIndexData{Projects: projects},
-	})
+	}, projectspg.Index(projectspg.IndexProps{Projects: projects}))
 }
 
 // projectFormData is the shared payload for new/edit forms. The form template
@@ -80,12 +80,9 @@ type projectFormSubmitted struct {
 
 // handleProjectNewForm serves GET /p/new — the create form.
 func (a *app) handleProjectNewForm(w http.ResponseWriter, r *http.Request) {
-	a.renderer.Page(w, r, "projects/new", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title: "New project · tickets_please",
-		Body: projectFormData{
-			Mode: "new",
-		},
-	})
+	}, projectspg.New(projectspg.NewProps{CSRF: a.summaryCSRF(r)}))
 }
 
 // handleProjectCreate handles POST /p. Validates inputs, calls
@@ -114,23 +111,33 @@ func (a *app) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 // renderProjectFormError re-renders a project form (new or edit) with an
 // inline error message. Status code matches the kind of error so XHR clients
 // can branch on it (422 for validation, 409 for conflicts, 500 otherwise).
+//
+// The `page` and `mode` params are kept for back-compat with the previous
+// html/template surface (where multiple page names shared the form). Only
+// the New form is left in W4; both arguments are inspected purely to
+// preserve the call-site signature.
 func (a *app) renderProjectFormError(w http.ResponseWriter, r *http.Request, page, mode string, existing *domain.Project, in projectFormSubmitted, err error) {
+	_ = page
+	_ = mode
 	status := classifyServiceError(err)
 	w.WriteHeader(status)
 	currentSlug := ""
 	if existing != nil {
 		currentSlug = existing.Slug
 	}
-	a.renderer.Page(w, r, page, PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       titleForFormError(mode),
 		CurrentSlug: currentSlug,
-		Body: projectFormData{
-			Mode:      mode,
-			Project:   existing,
-			FormError: err.Error(),
-			Submitted: in,
+	}, projectspg.New(projectspg.NewProps{
+		FormError: err.Error(),
+		Submitted: projectspg.NewSubmitted{
+			Slug:        in.Slug,
+			Name:        in.Name,
+			Description: in.Description,
+			Summary:     in.Summary,
 		},
-	})
+		CSRF: a.summaryCSRF(r),
+	}))
 }
 
 func titleForFormError(mode string) string {
@@ -178,10 +185,12 @@ func (a *app) handleLoadProjectForm(w http.ResponseWriter, r *http.Request) {
 			startPath = "/"
 		}
 	}
-	a.renderer.Page(w, r, "projects/load", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title: "Load project · tickets_please",
-		Body:  loadProjectFormData{Picker: buildFSListing(startPath)},
-	})
+	}, projectspg.Load(projectspg.LoadProps{
+		Picker: fsListingToProps(buildFSListing(startPath)),
+		CSRF:   a.summaryCSRF(r),
+	}))
 }
 
 // handleLoadProjectMount handles POST /p/load — calls RegisterProjectMount
@@ -216,14 +225,36 @@ func (a *app) renderLoadFormError(w http.ResponseWriter, r *http.Request, msg, p
 		}
 	}
 	w.WriteHeader(status)
-	a.renderer.Page(w, r, "projects/load", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title: "Load project · tickets_please",
-		Body: loadProjectFormData{
-			FormError: msg,
-			Path:      path,
-			Picker:    buildFSListing(startPath),
-		},
-	})
+	}, projectspg.Load(projectspg.LoadProps{
+		FormError: msg,
+		Path:      path,
+		Picker:    fsListingToProps(buildFSListing(startPath)),
+		CSRF:      a.summaryCSRF(r),
+	}))
+}
+
+// fsListingToProps converts the package-private fsListing into the projects-
+// package mirror. The mirror exists so the templ page never imports the web
+// package (which would cycle).
+func fsListingToProps(l fsListing) projectspg.FSPickerData {
+	out := projectspg.FSPickerData{
+		Cwd:       l.Cwd,
+		Parent:    l.Parent,
+		Truncated: l.Truncated,
+		Error:     l.Error,
+		HasMarker: l.HasMarker,
+	}
+	out.Crumbs = make([]projectspg.FSCrumb, len(l.Crumbs))
+	for i, c := range l.Crumbs {
+		out.Crumbs[i] = projectspg.FSCrumb{Label: c.Label, Path: c.Path}
+	}
+	out.Entries = make([]projectspg.FSEntry, len(l.Entries))
+	for i, e := range l.Entries {
+		out.Entries[i] = projectspg.FSEntry{Name: e.Name, IsDir: e.IsDir, HasMarker: e.HasMarker}
+	}
+	return out
 }
 
 // --- detail / edit / update / delete --------------------------------------
@@ -233,13 +264,13 @@ func (a *app) renderLoadFormError(w http.ResponseWriter, r *http.Request, msg, p
 // work, recent activity, recent learnings. The Summary view at
 // /p/{slug}/summary is the LLM-loadable canonical doc and stays separate.
 type projectDetailData struct {
-	Project          *domain.Project
-	Phases           []*domain.Phase
-	Metrics          dashboardMetrics
-	StatusSegments   []statusSegment
-	ReadyTickets     []*domain.Ticket
-	RecentActivity   []activityItem
-	RecentLearnings  []learningExcerpt
+	Project         *domain.Project
+	Phases          []*domain.Phase
+	Metrics         dashboardMetrics
+	StatusSegments  []statusSegment
+	ReadyTickets    []*domain.Ticket
+	RecentActivity  []activityItem
+	RecentLearnings []learningExcerpt
 }
 
 // dashboardMetrics is the row of stat cards at the top of the dashboard.
@@ -313,11 +344,46 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 		RecentLearnings: pickRecentLearnings(tickets, 3),
 	}
 
-	a.renderer.Page(w, r, "projects/detail", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       proj.Name + " · tickets_please",
 		CurrentSlug: proj.Slug,
-		Body:        data,
-	})
+	}, projectspg.Detail(detailToProps(data, a.summaryCSRF(r))))
+}
+
+// detailToProps converts the web-package's projectDetailData into the
+// projects-package mirror. The conversion lives here (not in the projects
+// package) so the projects package never imports web.
+func detailToProps(d projectDetailData, csrf string) projectspg.DetailProps {
+	out := projectspg.DetailProps{
+		Project: d.Project,
+		Phases:  d.Phases,
+		Metrics: projectspg.DashboardMetrics{
+			Total:      d.Metrics.Total,
+			Active:     d.Metrics.Active,
+			InProgress: d.Metrics.InProgress,
+			Done:       d.Metrics.Done,
+		},
+		ReadyTickets: d.ReadyTickets,
+		CSRF:         csrf,
+	}
+	out.StatusSegments = make([]projectspg.StatusSegment, len(d.StatusSegments))
+	for i, s := range d.StatusSegments {
+		out.StatusSegments[i] = projectspg.StatusSegment{
+			Column:  s.Column,
+			Label:   s.Label,
+			Count:   s.Count,
+			Percent: s.Percent,
+		}
+	}
+	out.RecentActivity = make([]projectspg.ActivityItem, len(d.RecentActivity))
+	for i, a := range d.RecentActivity {
+		out.RecentActivity[i] = projectspg.ActivityItem{Ticket: a.Ticket, Ago: a.Ago}
+	}
+	out.RecentLearnings = make([]projectspg.LearningExcerpt, len(d.RecentLearnings))
+	for i, l := range d.RecentLearnings {
+		out.RecentLearnings[i] = projectspg.LearningExcerpt{Ticket: l.Ticket, Excerpt: l.Excerpt, Ago: l.Ago}
+	}
+	return out
 }
 
 // computeMetrics tallies the four headline stat-card numbers. Active
@@ -579,20 +645,32 @@ func (a *app) handleProjectSummaryView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// htmx swap target for the in-place editor: just the view/edit fragment.
+	props := summaryToProps(body)
 	if r.Header.Get("HX-Request") == "true" {
-		partial := "project_summary_view"
 		if mode == "edit" {
-			partial = "project_summary_edit"
+			a.renderer.RenderTemplPartial(w, r, projectspg.SummaryEdit(props))
+		} else {
+			a.renderer.RenderTemplPartial(w, r, projectspg.SummaryView(props))
 		}
-		a.renderer.Partial(w, r, partial, body)
 		return
 	}
 
-	a.renderer.Page(w, r, "projects/summary", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       proj.Name + " · summary · tickets_please",
 		CurrentSlug: proj.Slug,
-		Body:        body,
-	})
+	}, projectspg.Summary(props))
+}
+
+// summaryToProps converts the web-package's projectSummaryData into the
+// projects-package mirror.
+func summaryToProps(d projectSummaryData) projectspg.SummaryProps {
+	return projectspg.SummaryProps{
+		Project:   d.Project,
+		Mode:      d.Mode,
+		Summary:   d.Summary,
+		FormError: d.FormError,
+		CSRF:      d.CSRF,
+	}
 }
 
 // handleProjectSummaryUpdate handles POST /p/{slug}/summary. On success
@@ -619,15 +697,15 @@ func (a *app) handleProjectSummaryUpdate(w http.ResponseWriter, r *http.Request)
 			FormError: err.Error(),
 			CSRF:      csrf,
 		}
+		props := summaryToProps(body)
 		if r.Header.Get("HX-Request") == "true" {
-			a.renderer.Partial(w, r, "project_summary_edit", body)
+			a.renderer.RenderTemplPartial(w, r, projectspg.SummaryEdit(props))
 			return
 		}
-		a.renderer.Page(w, r, "projects/summary", PageOpts{
+		a.renderer.RenderTempl(w, r, PageOpts{
 			Title:       proj.Name + " · summary · tickets_please",
 			CurrentSlug: proj.Slug,
-			Body:        body,
-		})
+		}, projectspg.Summary(props))
 		return
 	}
 
@@ -640,7 +718,7 @@ func (a *app) handleProjectSummaryUpdate(w http.ResponseWriter, r *http.Request)
 
 	body := projectSummaryData{Project: updated, Mode: "view", Summary: updated.Summary, CSRF: csrf}
 	if r.Header.Get("HX-Request") == "true" {
-		a.renderer.Partial(w, r, "project_summary_view", body)
+		a.renderer.RenderTemplPartial(w, r, projectspg.SummaryView(summaryToProps(body)))
 		return
 	}
 	SetFlash(w, r, "success", "Summary updated.")

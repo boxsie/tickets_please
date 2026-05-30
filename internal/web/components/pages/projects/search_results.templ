@@ -1,0 +1,72 @@
+package projects
+
+import "fmt"
+
+// SearchResults is the results fragment swapped into #results by the live-
+// search input — 1:1 port of partials/project_search_results.tmpl. The kind
+// switch and "no matches" fallback both match the legacy template; scores
+// are rendered with two decimal places via fmt.Sprintf for the same look.
+templ SearchResults(props SearchProps) {
+	{{ slug := props.Project.Slug }}
+	if props.Err != "" {
+		<div class="form-error" role="alert"><strong>Error:</strong> { props.Err }</div>
+	} else if props.Query == "" {
+		<p class="hint">Type to search.</p>
+	} else if props.Kind == "learnings" && len(props.LearningHits) == 0 {
+		<p class="hint">No matches. Try broadening the query or switching tabs.</p>
+	} else if props.Kind == "tickets" && len(props.TicketHits) == 0 {
+		<p class="hint">No matches. Try broadening the query or switching tabs.</p>
+	} else if props.Kind == "comments" && len(props.CommentHits) == 0 {
+		<p class="hint">No matches. Try broadening the query or switching tabs.</p>
+	} else if props.Kind == "learnings" {
+		<ul class="search-hits">
+			for _, h := range props.LearningHits {
+				<li class="search-hit">
+					<div class="search-hit-row">
+						<a class="search-hit-title" href={ templ.SafeURL("/tickets/" + h.TicketID + "?slug=" + slug) }>{ h.Title }</a>
+						<span class="muted score">{ fmt.Sprintf("%.2f", h.Score) }</span>
+					</div>
+					<div class="search-hit-snippet">{ h.Learnings }</div>
+				</li>
+			}
+		</ul>
+	} else if props.Kind == "tickets" {
+		<ul class="search-hits">
+			for _, h := range props.TicketHits {
+				<li class="search-hit">
+					<div class="search-hit-row">
+						<a class="search-hit-title" href={ templ.SafeURL("/tickets/" + h.Ticket.ID + "?slug=" + slug) }>{ h.Ticket.Title }</a>
+						<span class={ "badge badge-" + string(h.Ticket.Column) }>{ string(h.Ticket.Column) }</span>
+						<span class="muted score">{ fmt.Sprintf("%.2f", h.Score) }</span>
+					</div>
+					if h.Ticket.Body != "" {
+						<div class="search-hit-snippet">{ h.Ticket.Body }</div>
+					}
+				</li>
+			}
+		</ul>
+	} else if props.Kind == "comments" {
+		<ul class="search-hits">
+			for _, h := range props.CommentHits {
+				<li class="search-hit">
+					<div class="search-hit-row">
+						<a class="search-hit-title" href={ templ.SafeURL("/tickets/" + h.Comment.TicketID + "?slug=" + slug + "#comment-" + h.Comment.ID) }>Re: { h.TicketTitle }</a>
+						<span class="muted score">{ fmt.Sprintf("%.2f", h.Score) }</span>
+					</div>
+					<div class="search-hit-snippet">{ h.Comment.Body }</div>
+				</li>
+			}
+		</ul>
+	}
+}
+
+// searchTabClass returns the active/inactive class string for a search tab.
+// Kept in Go (not inlined in the templ) so the active-tab logic is one
+// canonical place — same shape as the legacy template's
+// `{{if eq $k $b.Kind}} active{{end}}` block.
+func searchTabClass(kind, active string) string {
+	if kind == active {
+		return "search-tab active"
+	}
+	return "search-tab"
+}

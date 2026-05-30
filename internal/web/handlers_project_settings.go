@@ -8,6 +8,7 @@ import (
 
 	"tickets_please/internal/domain"
 	"tickets_please/internal/vecindex"
+	projectspg "tickets_please/internal/web/components/pages/projects"
 )
 
 // Per-project Settings page handlers — replaced the old /p/{slug}/edit form
@@ -44,10 +45,10 @@ type projectSettingsSubmitted struct {
 // form. SidecarPresent=false means the summary sidecar is missing entirely —
 // either the project was just created or a re-embed is in flight.
 type embedStatus struct {
-	SidecarPresent  bool
-	SidecarProvider string
-	SidecarModel    string
-	SidecarDim      int
+	SidecarPresent   bool
+	SidecarProvider  string
+	SidecarModel     string
+	SidecarDim       int
 	ExpectedProvider string
 	ExpectedModel    string
 }
@@ -89,20 +90,43 @@ func (a *app) handleProjectSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := a.readEmbedStatus(r.Context(), proj.Slug)
-	a.renderer.Page(w, r, "projects/settings", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       "Settings · " + proj.Name + " · tickets_please",
 		CurrentSlug: proj.Slug,
-		Body: projectSettingsData{
-			Project: proj,
-			Status:  status,
-			Submitted: projectSettingsSubmitted{
-				Name:          proj.Name,
-				Description:   proj.Description,
-				EmbedProvider: status.ExpectedProvider,
-				EmbedModel:    status.ExpectedModel,
-			},
+	}, projectspg.Settings(settingsToProps(projectSettingsData{
+		Project: proj,
+		Status:  status,
+		Submitted: projectSettingsSubmitted{
+			Name:          proj.Name,
+			Description:   proj.Description,
+			EmbedProvider: status.ExpectedProvider,
+			EmbedModel:    status.ExpectedModel,
 		},
-	})
+	}, a.summaryCSRF(r))))
+}
+
+// settingsToProps converts the web-package's projectSettingsData into the
+// projects-package mirror.
+func settingsToProps(d projectSettingsData, csrf string) projectspg.SettingsProps {
+	return projectspg.SettingsProps{
+		Project:   d.Project,
+		FormError: d.FormError,
+		Submitted: projectspg.SettingsSubmitted{
+			Name:          d.Submitted.Name,
+			Description:   d.Submitted.Description,
+			EmbedProvider: d.Submitted.EmbedProvider,
+			EmbedModel:    d.Submitted.EmbedModel,
+		},
+		Status: projectspg.EmbedStatus{
+			SidecarPresent:   d.Status.SidecarPresent,
+			SidecarProvider:  d.Status.SidecarProvider,
+			SidecarModel:     d.Status.SidecarModel,
+			SidecarDim:       d.Status.SidecarDim,
+			ExpectedProvider: d.Status.ExpectedProvider,
+			ExpectedModel:    d.Status.ExpectedModel,
+		},
+		CSRF: csrf,
+	}
 }
 
 // handleProjectSettingsUpdate handles POST /p/{slug}/settings. Calls
@@ -131,16 +155,15 @@ func (a *app) handleProjectSettingsUpdate(w http.ResponseWriter, r *http.Request
 	if _, err := a.deps.Service.UpdateProject(r.Context(), slug, updateIn); err != nil {
 		status := classifyServiceError(err)
 		w.WriteHeader(status)
-		a.renderer.Page(w, r, "projects/settings", PageOpts{
+		a.renderer.RenderTempl(w, r, PageOpts{
 			Title:       "Settings · " + proj.Name + " · tickets_please",
 			CurrentSlug: proj.Slug,
-			Body: projectSettingsData{
-				Project:   proj,
-				FormError: err.Error(),
-				Submitted: in,
-				Status:    a.readEmbedStatus(r.Context(), proj.Slug),
-			},
-		})
+		}, projectspg.Settings(settingsToProps(projectSettingsData{
+			Project:   proj,
+			FormError: err.Error(),
+			Submitted: in,
+			Status:    a.readEmbedStatus(r.Context(), proj.Slug),
+		}, a.summaryCSRF(r))))
 		return
 	}
 	SetFlash(w, r, "success", "Project settings saved.")

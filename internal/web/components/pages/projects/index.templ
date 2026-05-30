@@ -1,0 +1,42 @@
+package projects
+
+// Index is the project list page (1:1 port of
+// templates/pages/projects/index.tmpl). Same class names, same table shape,
+// same empty-state copy.
+templ Index(props IndexProps) {
+	<section class="project-index">
+		<header class="page-header">
+			<h1>Projects</h1>
+			<p class="subtitle">All projects mounted on this server. Pick one to see its board, phases, or summary.</p>
+			<div class="page-actions">
+				<a class="btn btn-primary" href="/p/new">New project</a>
+				<a class="btn" href="/p/load">Load existing</a>
+			</div>
+		</header>
+		if len(props.Projects) > 0 {
+			<table class="data-table">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Slug</th>
+						<th>Description</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, p := range props.Projects {
+						<tr>
+							<td><a href={ templ.SafeURL("/p/" + p.Slug) }>{ p.Name }</a></td>
+							<td><code>{ p.Slug }</code></td>
+							<td class="muted">{ p.Description }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		} else {
+			<div class="empty-state">
+				<h1>No projects mounted</h1>
+				<p class="subtitle">Create a fresh project for this server's data dir, or load an existing one from a repo on disk.</p>
+			</div>
+		}
+	</section>
+}

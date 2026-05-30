@@ -1,0 +1,61 @@
+package projects
+
+// New is the create-project form (1:1 port of
+// templates/pages/projects/new.tmpl). The Slug input keeps the same
+// `pattern="[a-z0-9][a-z0-9-]*"` regex the legacy template enforces; the
+// summary textarea keeps the same minlength="200" hard floor.
+templ New(props NewProps) {
+	<section class="form-page">
+		<header class="page-header">
+			<h1>New project</h1>
+			<p class="subtitle">Creates a project in the host data dir. To add more projects to this server, mount their repos via <a href="/p/load">Load existing</a>.</p>
+		</header>
+		if props.FormError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { props.FormError }</div>
+		}
+		<form method="post" action="/p" class="stack">
+			<label for="slug">Slug <span class="muted">(URL-safe, immutable)</span></label>
+			<input
+				type="text"
+				id="slug"
+				name="slug"
+				required
+				class="short"
+				pattern="[a-z0-9][a-z0-9-]*"
+				placeholder="my-project"
+				value={ props.Submitted.Slug }
+			/>
+			<label for="name">Name</label>
+			<input
+				type="text"
+				id="name"
+				name="name"
+				required
+				placeholder="My Project"
+				value={ props.Submitted.Name }
+			/>
+			<label for="description">Description <span class="muted">(short, optional)</span></label>
+			<input
+				type="text"
+				id="description"
+				name="description"
+				placeholder="One-line summary for the project list"
+				value={ props.Submitted.Description }
+			/>
+			<label for="summary">Summary <span class="muted">(markdown, &ge;200 chars; load-bearing — agents read this first)</span></label>
+			<textarea
+				id="summary"
+				name="summary"
+				rows="12"
+				required
+				minlength="200"
+				placeholder="What is this project? What's the goal? What constraints matter? This text is embedded and surfaced to LLMs as the first context they see."
+			>{ props.Submitted.Summary }</textarea>
+			<input type="hidden" name="_csrf" value={ props.CSRF }/>
+			<div class="form-actions">
+				<button type="submit">Create project</button>
+				<a class="btn-link" href="/p">Cancel</a>
+			</div>
+		</form>
+	</section>
+}

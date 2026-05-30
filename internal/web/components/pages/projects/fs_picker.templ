@@ -1,0 +1,84 @@
+package projects
+
+// FSPicker is the file-system picker partial used by Load — 1:1 port of
+// partials/fs_picker.tmpl. Lives in the projects package (rather than a
+// shared partials location) because Load is the only Wave 1 consumer; a
+// later cleanup ticket can promote it once the FS handler also goes templ.
+templ FSPicker(data FSPickerData) {
+	<div id="picker" class="fs-picker">
+		<nav class="fs-breadcrumb" aria-label="Current path">
+			for i, c := range data.Crumbs {
+				if i > 0 {
+					<span class="fs-sep">›</span>
+				}
+				<a
+					href="#"
+					hx-get={ "/api/fs?path=" + c.Path }
+					hx-target="#picker"
+					hx-swap="outerHTML"
+				>{ c.Label }</a>
+			}
+		</nav>
+		<div class="fs-actions">
+			<input type="hidden" name="path" value={ data.Cwd } form="load-form"/>
+			if data.HasMarker {
+				<button type="submit" form="load-form" class="btn-primary">Load this directory</button>
+				<span class="hint marker-hint">&check; this directory contains a tickets_please project</span>
+			} else {
+				<button
+					type="submit"
+					form="load-form"
+					class="btn"
+					disabled
+					title="Pick a directory containing .tickets_please/project.yaml"
+				>Load this directory</button>
+				<span class="hint">Navigate into a folder marked <span class="marker-badge inline-badge">project</span> to enable.</span>
+			}
+		</div>
+		if data.Error != "" {
+			<div class="form-error" role="alert"><strong>{ data.Error }</strong></div>
+		} else {
+			<ul class="fs-listing">
+				if data.Parent != "" {
+					<li class="fs-row">
+						<a
+							href="#"
+							hx-get={ "/api/fs?path=" + data.Parent }
+							hx-target="#picker"
+							hx-swap="outerHTML"
+						>..</a>
+						<span class="muted">parent</span>
+					</li>
+				}
+				for _, e := range data.Entries {
+					<li class={ entryRowClass(e) }>
+						<a
+							href="#"
+							hx-get={ "/api/fs?path=" + data.Cwd + "/" + e.Name }
+							hx-target="#picker"
+							hx-swap="outerHTML"
+						>{ e.Name + "/" }</a>
+						if e.HasMarker {
+							<span class="marker-badge">project</span>
+						}
+					</li>
+				}
+				if len(data.Entries) == 0 && data.Parent != "" {
+					<li class="fs-empty muted">— no subdirectories —</li>
+				}
+				if data.Truncated {
+					<li class="fs-empty muted">More than 500 entries — listing truncated.</li>
+				}
+			</ul>
+		}
+	</div>
+}
+
+// entryRowClass returns the CSS class for one filesystem row; matches the
+// legacy template's `fs-row{{if .HasMarker}} fs-row-marker{{end}}` shape.
+func entryRowClass(e FSEntry) string {
+	if e.HasMarker {
+		return "fs-row fs-row-marker"
+	}
+	return "fs-row"
+}

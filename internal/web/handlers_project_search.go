@@ -7,6 +7,7 @@ import (
 
 	"tickets_please/internal/domain"
 	"tickets_please/internal/svc"
+	projectspg "tickets_please/internal/web/components/pages/projects"
 )
 
 // Per-project semantic search. One GET /p/{slug}/search route fans out to
@@ -79,16 +80,51 @@ func (a *app) handleProjectSearch(w http.ResponseWriter, r *http.Request) {
 		body = a.runProjectSearch(r, body)
 	}
 
+	props := searchToProps(body)
 	if r.Header.Get("HX-Request") == "true" {
-		a.renderer.Partial(w, r, "project_search_results", body)
+		a.renderer.RenderTemplPartial(w, r, projectspg.SearchResults(props))
 		return
 	}
 
-	a.renderer.Page(w, r, "projects/search", PageOpts{
+	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       "Search · " + proj.Name + " · tickets_please",
 		CurrentSlug: proj.Slug,
-		Body:        body,
-	})
+	}, projectspg.Search(props))
+}
+
+// searchToProps converts the web-package's projectSearchData into the
+// projects-package mirror. svc.* hit types come over field-by-field so the
+// templ page never imports svc.
+func searchToProps(d projectSearchData) projectspg.SearchProps {
+	out := projectspg.SearchProps{
+		Project: d.Project,
+		Query:   d.Query,
+		Kind:    d.Kind,
+		Limit:   d.Limit,
+		Err:     d.Err,
+	}
+	out.TicketHits = make([]projectspg.TicketHit, len(d.TicketHits))
+	for i, h := range d.TicketHits {
+		out.TicketHits[i] = projectspg.TicketHit{Ticket: h.Ticket, Score: h.Score}
+	}
+	out.CommentHits = make([]projectspg.CommentHit, len(d.CommentHits))
+	for i, h := range d.CommentHits {
+		out.CommentHits[i] = projectspg.CommentHit{
+			Comment:     h.Comment,
+			TicketTitle: h.TicketTitle,
+			Score:       h.Score,
+		}
+	}
+	out.LearningHits = make([]projectspg.LearningHit, len(d.LearningHits))
+	for i, h := range d.LearningHits {
+		out.LearningHits[i] = projectspg.LearningHit{
+			TicketID:  h.TicketID,
+			Title:     h.Title,
+			Learnings: h.Learnings,
+			Score:     h.Score,
+		}
+	}
+	return out
 }
 
 // runProjectSearch dispatches to the right Service method based on kind.
