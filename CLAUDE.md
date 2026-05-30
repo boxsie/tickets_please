@@ -14,21 +14,23 @@ This repo **dogfoods its own development**. Its tickets are tracked by a
 `.tickets_please/` (project slug **`tickets-please`**, id
 `920db607-6449-4019-826c-28ba39b6a8d0`, ollama/`bge-m3` embeddings).
 
-- **Do NOT use the remote `http://instance/mcp` instance for
-  this repo.** That remote hosts the *other* projects (ensemble, jobsworth,
-  pug, jukebox-jeff, serves). Filing tickets_please's own bugs/features there is
-  wrong — they belong in this repo's in-tree store. (The global `~/.claude.md`
-  says "use the tickets_please MCP"; for THIS repo that means the **local**
-  instance pointed at this repo, not the remote server.)
+- **Drive this repo's tickets through a tickets_please MCP pointed at this
+  repo's own binary** (typically `http://127.0.0.1:8765/mcp`, served by
+  `tickets_please serve` from this checkout). If you also have a tickets_please
+  MCP configured against a remote/shared host for unrelated projects, register
+  the local one under a distinct name (e.g. `tickets_please_local`) so the two
+  don't shadow each other — file this repo's own bugs/features through the
+  local one only.
 - The store is git-tracked (`.tickets_please/**`); `*.embedding.json` and
   `.staging/` are gitignored. Tickets are directories: `ticket.yaml` +
   `body.md` + `comments/` + `completion.md` (+ embedding sidecars). They live
   under `.tickets_please/tickets/` and `.tickets_please/phases/<phase>/...`.
   Ticket numbers are global (max wins); allocate next = highest + 1.
-- Prefer driving the local MCP (the binary built from this repo) so number
+- Prefer driving the MCP (the binary built from this repo) so number
   allocation, ids, embeddings, and the agent registry stay consistent. Only
-  hand-edit the file store when the MCP isn't reachable — and if you do, note it
-  on the ticket and expect to reindex embeddings so semantic search finds it.
+  hand-edit the file store when the MCP isn't reachable — and if you do, note
+  it on the ticket and expect to reindex embeddings so semantic search finds
+  it.
 
 ## Build / run / test
 
