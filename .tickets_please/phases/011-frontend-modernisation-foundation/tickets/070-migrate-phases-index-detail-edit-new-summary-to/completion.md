@@ -1,0 +1,8 @@
+## Testing evidence
+go build clean. go vet clean. go test ./internal/web/... PASS including TestPhases_Summary_HxEdit and phase smoke tests.
+
+## Work summary
+Created internal/web/components/pages/phases/ with index, detail, edit, new, summary (hosting SummaryView + SummaryEdit), assign_phase_form, and a shared WaveSection templ component. Added phases/data.go with mirror types + toIndexProps/toWaveProps mappers. Switched handlers_phases.go to RenderTempl / RenderTemplPartial.
+
+## Learnings
+templ style={...} needs templ.SafeCSS, NOT a raw string — bare string fails the style-attribute sanitiser. Generated _templ.go auto-adds the templ import; adding it again in .templ source causes redeclared-import error — keep helper funcs and the templ import in a sibling .go. For onsubmit="return confirm(...)" use templ.JSUnsafeFuncCall(js) — script foo() {} blocks become named functions and don't fit return-expression slots. To dodge web→components→web cycles when a templ page renders markdown, render in the handler and pass template.HTML through props; templ renders via @templ.Raw(string(html)). Extracted a WaveSection component that both phase-index and phase-detail call — clean dedupe. Keep handler-side data shapes separate from templ prop shapes; the toXProps mapper is a healthy seam.
