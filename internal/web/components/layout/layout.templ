@@ -1,0 +1,48 @@
+package layout
+
+// Layout wraps a page's body in the global chrome: <head>, optional localhost
+// banner, top nav, optional flash, sidebar, and the <main> slot rendered from
+// children. Mirrors the legacy templates/_layout.tmpl 1:1 — same class
+// names, same script tags, same body structure.
+//
+// Use via Renderer.RenderTempl, which builds the PageData per request from
+// its ChromeProvider and then composes Layout(data) around the page's templ
+// Component.
+templ Layout(data PageData) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>
+				if data.Title != "" {
+					{ data.Title }
+				} else {
+					tickets_please
+				}
+			</title>
+			<link rel="stylesheet" href="/static/app.css"/>
+			<script src="/static/htmx.min.js" defer></script>
+			<script type="module" src="/static/datastar.js"></script>
+		</head>
+		<body>
+			if data.Chrome.ShowLocalBanner {
+				<div class="banner-warn" role="alert">
+					<strong>Heads up:</strong>
+					tickets_please serves with no auth. You're hitting it from a non-loopback host —
+					put authentication in front of <code>:8765</code> before exposing it to a network.
+				</div>
+			}
+			@TopBar(data)
+			if data.Chrome.Flash != nil {
+				@FlashBanner(data.Chrome.Flash)
+			}
+			<div class="layout">
+				@Sidebar(data)
+				<main id="content">
+					{ children... }
+				</main>
+			</div>
+		</body>
+	</html>
+}

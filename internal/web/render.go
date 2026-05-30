@@ -13,7 +13,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/a-h/templ"
+
 	"tickets_please/internal/domain"
+	"tickets_please/internal/web/components/layout"
 )
 
 // PageOpts is the per-call slice of PageData a handler fills in. Title is the
@@ -152,6 +155,86 @@ func (r *Renderer) Partial(w http.ResponseWriter, _ *http.Request, name string, 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, name+".tmpl", data); err != nil {
 		r.renderErrorFallback(w, http.StatusInternalServerError, fmt.Errorf("execute partial %q: %w", name, err))
+	}
+}
+
+// RenderTempl renders a templ component wrapped in the new templ layout, with
+// per-request chrome assembled the same way Page does for html/template. If
+// the request carries `HX-Request: true`, only the page component is rendered
+// — no chrome — matching Page's HX fall-through. Helpers that need to swap a
+// fragment outside of pages use RenderTemplPartial.
+//
+// This is the entry point every templ-backed page goes through during the
+// Wave 1 migration. Each new page replaces a Page("name", ...) call with
+// RenderTempl(w, r, opts, pages.X(...)).
+func (r *Renderer) RenderTempl(w http.ResponseWriter, req *http.Request, opts PageOpts, page templ.Component) {
+	var chrome Chrome
+	if r.chrome != nil {
+		chrome = r.chrome.Chrome(w, req)
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	if req.Header.Get("HX-Request") == "true" {
+		if err := page.Render(req.Context(), w); err != nil {
+			r.renderErrorFallback(w, http.StatusInternalServerError, fmt.Errorf("render templ page (hx): %w", err))
+		}
+		return
+	}
+
+	data := layout.PageData{
+		Title:       opts.Title,
+		CurrentSlug: opts.CurrentSlug,
+		Chrome:      chromeToLayout(chrome),
+	}
+	// templ.WithChildren attaches the page component as the layout's
+	// `{ children... }` slot — Layout renders the chrome around it.
+	ctx := templ.WithChildren(req.Context(), page)
+	if err := layout.Layout(data).Render(ctx, w); err != nil {
+		r.renderErrorFallback(w, http.StatusInternalServerError, fmt.Errorf("render templ layout: %w", err))
+	}
+}
+
+// RenderTemplPartial renders a single templ component with no layout. Used
+// for htmx partial swaps (e.g. the sidebar refresh endpoint) — the response
+// replaces a fragment of the page, so chrome would double-render.
+func (r *Renderer) RenderTemplPartial(w http.ResponseWriter, req *http.Request, comp templ.Component) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := comp.Render(req.Context(), w); err != nil {
+		r.renderErrorFallback(w, http.StatusInternalServerError, fmt.Errorf("render templ partial: %w", err))
+	}
+}
+
+// chromeToLayout converts the renderer's private web.Chrome into the
+// layout-package mirror. The mirror exists so the templ chrome can name its
+// payload type without importing web (which would cycle web→layout→web).
+func chromeToLayout(c Chrome) layout.Chrome {
+	out := layout.Chrome{
+		Projects:        c.Projects,
+		AgentLabel:      c.AgentLabel,
+		CSRF:            c.CSRF,
+		ShowLocalBanner: c.ShowLocalBanner,
+		URL:             c.URL,
+	}
+	if c.Flash != nil {
+		out.Flash = &layout.Flash{Kind: c.Flash.Kind, Message: c.Flash.Message}
+	}
+	return out
+}
+
+// LayoutPageData builds a layout.PageData from the renderer's chrome plus the
+// caller-supplied opts. Exposed (alongside chromeToLayout) so handlers that
+// need to drive a templ partial with the same chrome shape Page would build
+// — e.g. handleSidebarPartial — can do so without re-implementing the
+// conversion.
+func (r *Renderer) LayoutPageData(w http.ResponseWriter, req *http.Request, opts PageOpts) layout.PageData {
+	var chrome Chrome
+	if r.chrome != nil {
+		chrome = r.chrome.Chrome(w, req)
+	}
+	return layout.PageData{
+		Title:       opts.Title,
+		CurrentSlug: opts.CurrentSlug,
+		Chrome:      chromeToLayout(chrome),
 	}
 }
 

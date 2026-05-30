@@ -1,0 +1,16 @@
+package layout
+
+// FlashBanner renders the one-shot flash banner above the main content. The
+// Layout includes it automatically when PageData.Chrome.Flash != nil;
+// handlers don't invoke it directly.
+//
+// Named FlashBanner (not Flash) so it doesn't collide with the Flash data
+// type declared in data.go — Go forbids reusing the identifier for both a
+// type and a function.
+templ FlashBanner(f *Flash) {
+	if f != nil {
+		<div class={ "flash", "flash-" + f.Kind } role="status" data-kind={ f.Kind }>
+			{ f.Message }
+		</div>
+	}
+}

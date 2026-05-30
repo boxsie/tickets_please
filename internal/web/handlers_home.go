@@ -3,15 +3,18 @@ package web
 import (
 	"net/http"
 	"sort"
+
+	"tickets_please/internal/web/components/pages"
 )
 
 // handleHome handles GET /. Behaviour:
 //
 //   - If any projects are mounted, redirect to /p/<first-slug> (alphabetical
 //     for determinism — first-mount-wins would surprise on restart).
-//   - Otherwise render pages/home.tmpl with an empty-state hint pointing at
-//     /p/load and /p/new (those routes ship in ticket 3; until then the
-//     links 404, which is fine for the foundation).
+//   - Otherwise render the templ Home page with an empty-state hint pointing
+//     at /p/load and /p/new. The templ version composes the new layout +
+//     sidebar chrome; the legacy pages/home.tmpl stays on disk until the
+//     "delete old html/template plumbing" ticket retires it.
 //
 // Future tickets will register more specific patterns (/p/, /tickets/) on
 // the mux; those preempt this catch-all for their prefixes.
@@ -41,7 +44,7 @@ func (a *app) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.renderer.Page(w, r, "home", PageOpts{Title: "tickets_please"})
+	a.renderer.RenderTempl(w, r, PageOpts{Title: "tickets_please"}, pages.Home())
 }
 
 type errNotFound struct{ path string }

@@ -1,0 +1,62 @@
+package layout
+
+// Sidebar is the left rail: the project switcher on top + the per-project nav
+// below. The whole <aside> re-fetches itself from /_partials/sidebar on the
+// body-scoped `sidebar-refresh` event — handlers that mutate the project set
+// emit that via HX-Trigger to keep the picker in sync.
+//
+// Behaviour mirrors the legacy partials/sidebar.tmpl 1:1 — class names,
+// element ids, hx-* attributes, and active-link rules are all preserved so
+// htmx and CSS keep working unchanged.
+templ Sidebar(data PageData) {
+	<aside
+		id="sidebar"
+		class="sidebar"
+		hx-get="/_partials/sidebar"
+		hx-trigger="sidebar-refresh from:body"
+		hx-swap="outerHTML"
+	>
+		@ProjectPicker(data)
+		if p := activeProject(data); p != nil {
+			{{ overview := "/p/" + data.CurrentSlug }}
+			{{ boardURL := "/p/" + data.CurrentSlug + "/board" }}
+			{{ phasesURL := "/p/" + data.CurrentSlug + "/phases" }}
+			{{ summaryURL := "/p/" + data.CurrentSlug + "/summary" }}
+			{{ newTicketURL := "/p/" + data.CurrentSlug + "/tickets/new" }}
+			{{ settingsURL := "/p/" + data.CurrentSlug + "/settings" }}
+			<nav class="project-nav" aria-label={ p.Name + " navigation" }>
+				<h2 class="sidebar-heading">{ p.Name }</h2>
+				@navLink(navLinkProps{Class: "project-nav-link", Href: overview, Active: linkIsActive(data.Chrome.URL, overview, true), Label: "Overview"})
+				@navLink(navLinkProps{Class: "project-nav-link", Href: boardURL, Active: linkIsActive(data.Chrome.URL, "/board", false), Label: "Board"})
+				@navLink(navLinkProps{Class: "project-nav-link", Href: phasesURL, Active: linkIsActive(data.Chrome.URL, "/phases", false), Label: "Phases"})
+				@navLink(navLinkProps{Class: "project-nav-link", Href: summaryURL, Active: linkIsActive(data.Chrome.URL, "/summary", false), Label: "Summary"})
+				<hr class="project-nav-sep"/>
+				@navLink(navLinkProps{Class: "project-nav-cta", Href: newTicketURL, Active: linkIsActive(data.Chrome.URL, "/tickets/new", false), Label: "+ New ticket"})
+				@navLink(navLinkProps{Class: "project-nav-link muted", Href: settingsURL, Active: linkIsActive(data.Chrome.URL, "/settings", false), Label: "Settings"})
+			</nav>
+		} else {
+			<p class="sidebar-empty">No project selected. Pick one from the dropdown above or create a new one.</p>
+		}
+	</aside>
+}
+
+// navLinkProps is the typed input for navLink. Kept as a struct (rather than
+// six positional args) so the templ call sites at the top of Sidebar stay
+// readable.
+type navLinkProps struct {
+	Class  string
+	Href   string
+	Active bool
+	Label  string
+}
+
+// navLink renders a single sidebar nav anchor. When Active, the class string
+// gains `active` and the element carries aria-current="page". Splitting this
+// out keeps the Sidebar template free of the same six-line block per link.
+templ navLink(p navLinkProps) {
+	if p.Active {
+		<a class={ p.Class + " active" } href={ templ.SafeURL(p.Href) } aria-current="page">{ p.Label }</a>
+	} else {
+		<a class={ p.Class } href={ templ.SafeURL(p.Href) }>{ p.Label }</a>
+	}
+}

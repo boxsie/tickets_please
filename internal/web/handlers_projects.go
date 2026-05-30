@@ -12,6 +12,7 @@ import (
 
 	"tickets_please/internal/domain"
 	"tickets_please/internal/svc"
+	"tickets_please/internal/web/components/layout"
 )
 
 // Projects CRUD handlers — wraps the eight project-related Service methods
@@ -675,10 +676,11 @@ func (a *app) handleSidebarPartial(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	a.renderer.Partial(w, r, "sidebar", PageData{
-		Chrome:      chrome,
+	data := layout.PageData{
 		CurrentSlug: currentSlug,
-	})
+		Chrome:      chromeToLayout(chrome),
+	}
+	a.renderer.RenderTemplPartial(w, r, layout.Sidebar(data))
 }
 
 // slugFromPath extracts the project slug from a /p/{slug}/... URL path.
