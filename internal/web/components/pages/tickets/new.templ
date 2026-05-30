@@ -1,0 +1,43 @@
+package tickets
+
+// New renders the create-ticket form. 1:1 port of
+// templates/pages/tickets/new.tmpl — same field names, same action URL,
+// same comma-separated inline inputs for depends_on / parallelizable_with.
+templ New(props FormProps) {
+	<section class="form-page">
+		<header class="page-header">
+			<h1>New ticket</h1>
+			<p class="subtitle"><a href={ templ.SafeURL(boardHref(props.Project.Slug)) }>{ props.Project.Name }</a></p>
+			<p class="hint">New tickets land in <code>todo</code>. Wave 0 means "unassigned".</p>
+		</header>
+		if props.FormError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { props.FormError }</div>
+		}
+		<form method="post" action={ templ.SafeURL(createHref(props.Project.Slug)) } class="stack">
+			<label for="title">Title</label>
+			<input type="text" id="title" name="title" required value={ props.Submitted.Title } placeholder="What needs doing?"/>
+			<label for="body">Body <span class="muted">(markdown)</span></label>
+			<textarea id="body" name="body" rows="14" placeholder="Goal, scope, constraints, key files. Markdown welcome.">{ props.Submitted.Body }</textarea>
+			if len(props.Phases) > 0 {
+				<label for="phase">Phase <span class="muted">(optional)</span></label>
+				<select id="phase" name="phase">
+					<option value="">— no phase —</option>
+					for _, p := range props.Phases {
+						<option value={ p.Slug } selected?={ p.Slug == props.Submitted.PhaseSlug }>{ p.Name }</option>
+					}
+				</select>
+			}
+			<label for="wave">Wave <span class="muted">(integer, 0 = unassigned)</span></label>
+			<input type="number" id="wave" name="wave" min="0" class="short" value={ formatWave(props.Submitted.Wave) }/>
+			<label for="depends_on_inline">Depends on <span class="muted">(ticket ids, comma-separated)</span></label>
+			<input type="text" id="depends_on_inline" name="depends_on_inline" placeholder="abcd-1234, efgh-5678" value={ joinIDs(props.Submitted.DependsOn) }/>
+			<label for="parallelizable_with_inline">Parallelizable with <span class="muted">(ticket ids, comma-separated)</span></label>
+			<input type="text" id="parallelizable_with_inline" name="parallelizable_with_inline" placeholder="abcd-1234, efgh-5678" value={ joinIDs(props.Submitted.Parallelizable) }/>
+			<input type="hidden" name="_csrf" value={ props.CSRF }/>
+			<div class="form-actions">
+				<button type="submit">Create ticket</button>
+				<a class="btn-link" href={ templ.SafeURL(boardHref(props.Project.Slug)) }>Cancel</a>
+			</div>
+		</form>
+	</section>
+}

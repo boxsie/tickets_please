@@ -1,0 +1,24 @@
+package tickets
+
+// CommentForm renders the append-only comment textarea + submit. Same field
+// names, action URL, and htmx wiring as the legacy
+// templates/partials/comment_form.tmpl — handlers stay untouched.
+templ CommentForm(props CommentsThreadProps) {
+	<form
+		class="comment-form"
+		method="post"
+		action={ templ.SafeURL(commentsHref(props.TicketID, props.ProjectSlug)) }
+		hx-post={ commentsHref(props.TicketID, props.ProjectSlug) }
+		hx-target="#comments-list"
+		hx-swap="beforeend"
+		hx-on::after-request="if (event.detail.successful) this.reset()"
+	>
+		<label for="comment-body">New comment</label>
+		<textarea id="comment-body" name="body" rows="3" required minlength="1" placeholder="Add a note — markdown welcome."></textarea>
+		<input type="hidden" name="_csrf" value={ props.CSRF }/>
+		<div class="form-actions">
+			<button type="submit">Add comment</button>
+			<span class="hint">Comments are append-only — no edits, no deletes.</span>
+		</div>
+	</form>
+}

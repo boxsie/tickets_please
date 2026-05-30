@@ -1,0 +1,26 @@
+package tickets
+
+// CommentsThread renders the full comments section: the immutable list of
+// rows plus the append-only form. 1:1 port of
+// templates/partials/comments_thread.tmpl — same #comments anchor, same
+// #comments-list ul, same empty-state hint.
+//
+// Empty thread still emits the <ul> shell so htmx swaps that target
+// `#comments-list` with `beforeend` work on first comment.
+templ CommentsThread(props CommentsThreadProps) {
+	<section id="comments" class="comments-section">
+		<h2>Comments</h2>
+		if len(props.Rows) > 0 {
+			<ul id="comments-list" class="comments-list">
+				for _, row := range props.Rows {
+					@CommentRow(row)
+				}
+			</ul>
+		} else {
+			<ul id="comments-list" class="comments-list">
+				<li class="hint comments-empty">No comments yet. Be the first.</li>
+			</ul>
+		}
+		@CommentForm(props)
+	</section>
+}
