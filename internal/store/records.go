@@ -99,6 +99,63 @@ type CommentRecord struct {
 	CreatedAt     time.Time          `yaml:"created_at"`
 }
 
+// UserRecord is the on-disk yaml at `<DataRoot>/users/<id>.yaml`. The record
+// IS the full domain shape — users have no sidecar files. Provider fields
+// (GitHubLogin, GoogleSub) are pointers so a user with only one linked
+// provider round-trips without an empty placeholder key.
+type UserRecord struct {
+	ID          string    `yaml:"id"`
+	Email       string    `yaml:"email"`
+	GitHubLogin *string   `yaml:"github_login,omitempty"`
+	GoogleSub   *string   `yaml:"google_sub,omitempty"`
+	DisplayName string    `yaml:"display_name"`
+	AvatarURL   string    `yaml:"avatar_url,omitempty"`
+	CreatedAt   time.Time `yaml:"created_at"`
+	LastLoginAt time.Time `yaml:"last_login_at"`
+}
+
+// ToDomain converts a UserRecord to its domain equivalent.
+func (r *UserRecord) ToDomain() *domain.User {
+	if r == nil {
+		return nil
+	}
+	return &domain.User{
+		ID:          r.ID,
+		Email:       r.Email,
+		GitHubLogin: r.GitHubLogin,
+		GoogleSub:   r.GoogleSub,
+		DisplayName: r.DisplayName,
+		AvatarURL:   r.AvatarURL,
+		CreatedAt:   r.CreatedAt,
+		LastLoginAt: r.LastLoginAt,
+	}
+}
+
+// MembershipRecord is the on-disk yaml at
+// `<DataRoot>/memberships/<project_id>/<user_id>.yaml`. Per-project subdir
+// so deleting a project cleans up its memberships with one `os.RemoveAll`.
+type MembershipRecord struct {
+	UserID    string      `yaml:"user_id"`
+	ProjectID string      `yaml:"project_id"`
+	Role      domain.Role `yaml:"role"`
+	GrantedBy string      `yaml:"granted_by,omitempty"`
+	GrantedAt time.Time   `yaml:"granted_at"`
+}
+
+// ToDomain converts a MembershipRecord to its domain equivalent.
+func (r *MembershipRecord) ToDomain() *domain.Membership {
+	if r == nil {
+		return nil
+	}
+	return &domain.Membership{
+		UserID:    r.UserID,
+		ProjectID: r.ProjectID,
+		Role:      r.Role,
+		GrantedBy: r.GrantedBy,
+		GrantedAt: r.GrantedAt,
+	}
+}
+
 // AgentRecord is the full agent yaml at `agents/<session-uuid>.yaml`. Agents
 // have no sidecar files — the record IS the full domain shape.
 type AgentRecord struct {

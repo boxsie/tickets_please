@@ -118,6 +118,44 @@ type Ticket struct {
 	ArchivedAt *time.Time
 }
 
+// Role is the per-project access level a User holds via a Membership.
+// `owner` controls project settings + grant; `member` reads + mutates
+// tickets/comments; `viewer` is read-only. Enforcement is done by the
+// route-guard middleware in W2; the data layer just stores the string.
+type Role string
+
+const (
+	RoleOwner  Role = "owner"
+	RoleMember Role = "member"
+	RoleViewer Role = "viewer"
+)
+
+// User is a registered human identity. Provider fields (GitHubLogin,
+// GoogleSub) are pointers because a user may have only one linked
+// initially and a subsequent OAuth flow can attach the other.
+type User struct {
+	ID          string
+	Email       string
+	GitHubLogin *string
+	GoogleSub   *string
+	DisplayName string
+	AvatarURL   string
+	CreatedAt   time.Time
+	LastLoginAt time.Time
+}
+
+// Membership grants a User a Role on a Project. The pair (UserID, ProjectID)
+// is the natural key — at most one Membership per pair. GrantedBy is the
+// user id of whoever performed the grant; empty for bootstrap grants the
+// system performed itself (first-login-wins / env override).
+type Membership struct {
+	UserID    string
+	ProjectID string
+	Role      Role
+	GrantedBy string
+	GrantedAt time.Time
+}
+
 // WaveSummary describes a single wave inside a phase or the phase-less area
 // of a project.
 type WaveSummary struct {
