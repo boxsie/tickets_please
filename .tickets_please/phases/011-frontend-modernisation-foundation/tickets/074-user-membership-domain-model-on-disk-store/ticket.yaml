@@ -2,9 +2,9 @@ id: b4c3fa13-95b3-47bb-a36a-137a1418db03
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 74
 title: User + Membership domain model + on-disk store
-column: in_progress
+column: testing
 phase_id: 60c4d889-a15e-48d2-b319-4447ad5b716d
 wave: 2
 created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
 created_at: 2026-05-30T22:03:51.67972449+01:00
-updated_at: 2026-05-31T10:06:36.654699487+01:00
+updated_at: 2026-05-31T10:11:10.461022178+01:00
