@@ -2,9 +2,9 @@ id: 3e3c942c-ee79-4a03-ad91-79c97fe4460f
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 76
 title: Auth middleware, route guards, CSRF reconciliation
-column: todo
+column: in_progress
 phase_id: 60c4d889-a15e-48d2-b319-4447ad5b716d
 wave: 2
 created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
 created_at: 2026-05-30T22:04:14.273189867+01:00
-updated_at: 2026-05-30T22:04:14.273189867+01:00
+updated_at: 2026-05-31T12:24:24.525143469+01:00
