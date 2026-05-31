@@ -265,20 +265,57 @@ func TestMoveTicket_RequiresSession(t *testing.T) {
 	}
 }
 
-func TestCompleteTicket_RejectsShortFields(t *testing.T) {
+// TestCompleteTicket_RejectsShortLearnings: only `learnings` is length-gated
+// at ≥10 chars after trim. testing_evidence and work_summary are optional and
+// accept empty / arbitrary-length strings — see TestCompleteTicket_LearningsOnly.
+func TestCompleteTicket_RejectsShortLearnings(t *testing.T) {
 	s, ctx, _, tk := moveCompleteScenario(t, config.Config{})
-	cases := []struct {
-		te, ws, ln string
-	}{
-		{".", "decent work summary here", "decent learnings here"},
-		{"decent testing here yes", ".", "decent learnings here"},
-		{"decent testing here yes", "decent work summary", "."},
+	_, err := s.CompleteTicket(ctx, tk.ID, "decent testing here yes", "decent work summary", ".")
+	if !errors.Is(err, domain.ErrInvalidArgument) {
+		t.Fatalf("expected ErrInvalidArgument for short learnings, got %v", err)
 	}
-	for i, c := range cases {
-		_, err := s.CompleteTicket(ctx, tk.ID, c.te, c.ws, c.ln)
-		if !errors.Is(err, domain.ErrInvalidArgument) {
-			t.Fatalf("case %d: expected ErrInvalidArgument, got %v", i, err)
-		}
+	if err != nil && !strings.Contains(err.Error(), "learnings") {
+		t.Fatalf("error should name `learnings`, got %v", err)
+	}
+}
+
+// TestCompleteTicket_LearningsOnly verifies the relaxed schema: only learnings
+// is required, and completion.md omits the Testing evidence / Work summary
+// sections entirely when those fields are empty rather than rendering blank-
+// bodied headings.
+func TestCompleteTicket_LearningsOnly(t *testing.T) {
+	s, ctx, _, tk := moveCompleteScenario(t, config.Config{})
+	ln := "skipped testing_evidence and work_summary on a trivial typo fix"
+	got, err := s.CompleteTicket(ctx, tk.ID, "", "", ln)
+	if err != nil {
+		t.Fatalf("CompleteTicket learnings-only: %v", err)
+	}
+	if got.Column != domain.ColumnDone {
+		t.Fatalf("column=%s, want done", got.Column)
+	}
+	if got.Learnings == nil || *got.Learnings != ln {
+		t.Fatalf("Learnings not populated: %+v", got.Learnings)
+	}
+	if got.TestingEvidence == nil || *got.TestingEvidence != "" {
+		t.Fatalf("TestingEvidence: want pointer to \"\", got %+v", got.TestingEvidence)
+	}
+	if got.WorkSummary == nil || *got.WorkSummary != "" {
+		t.Fatalf("WorkSummary: want pointer to \"\", got %+v", got.WorkSummary)
+	}
+
+	dir := filepath.Join(s.Store.Root, "tickets", "001-implement-feature")
+	completion, err := os.ReadFile(filepath.Join(dir, "completion.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(completion), "## Learnings") {
+		t.Fatalf("completion.md missing Learnings section: %s", completion)
+	}
+	if strings.Contains(string(completion), "## Testing evidence") {
+		t.Fatalf("completion.md should omit Testing evidence section when empty: %s", completion)
+	}
+	if strings.Contains(string(completion), "## Work summary") {
+		t.Fatalf("completion.md should omit Work summary section when empty: %s", completion)
 	}
 }
 

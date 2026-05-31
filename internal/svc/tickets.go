@@ -430,9 +430,9 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 	return cp, nil
 }
 
-// completionMinLen is the SPEC-mandated minimum length (after trim) for each
-// of the three CompleteTicket fields — testing_evidence, work_summary,
-// learnings. Prevents a one-character "." from satisfying the rule.
+// completionMinLen is the SPEC-mandated minimum length (after trim) for the
+// `learnings` field on CompleteTicket. The other two completion fields
+// (testing_evidence, work_summary) are optional and accept empty.
 const completionMinLen = 10
 
 // MoveTicket transitions a ticket between columns under the project's flock.
@@ -599,15 +599,17 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 }
 
 // CompleteTicket is the only path that can move a ticket into ColumnDone.
-// All three structured fields (testing_evidence, work_summary, learnings) are
-// required and must be ≥10 chars after trim — SPEC §Validation prevents thin
-// "." satisfactions of the contract.
+// `learnings` is required (≥10 chars after trim) — it's the field future
+// agents search via search_learnings, so we keep a gate against thin entries.
+// `testing_evidence` and `work_summary` are optional audit-trail fields;
+// callers may pass empty strings and the corresponding sections are then
+// omitted from completion.md and the system_completion comment.
 //
 // Three files are staged in a single StageOp: the updated ticket.yaml (with
 // CompletedAt, CompletedByAgentID, populated completion strings), a fresh
-// completion.md with the canonical three-section markdown, and a
-// system_completion comment whose body inlines the same content so
-// ListComments shows it without extra plumbing.
+// completion.md (Learnings always present; the other two sections only when
+// supplied), and a system_completion comment whose body inlines the same
+// content so ListComments shows it without extra plumbing.
 //
 // "Done" is sticky — re-completing an already-done ticket returns
 // ErrFailedPrecondition (the no-reopen rule from SPEC §Design decisions).
@@ -617,12 +619,6 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		return nil, err
 	}
 	if err := requireNonEmptyTrimmed("ticket id", ticketID); err != nil {
-		return nil, err
-	}
-	if err := requireMinLen("testing_evidence", testingEvidence, completionMinLen); err != nil {
-		return nil, err
-	}
-	if err := requireMinLen("work_summary", workSummary, completionMinLen); err != nil {
 		return nil, err
 	}
 	if err := requireMinLen("learnings", learnings, completionMinLen); err != nil {
@@ -676,13 +672,19 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		return nil, err
 	}
 
-	// Canonical three-section completion.md. The cache loader's
-	// splitCompletionSections matches "## Testing evidence", "## Work summary",
-	// and "## Learnings" headings exactly.
-	completionMD := fmt.Sprintf(
-		"## Testing evidence\n%s\n\n## Work summary\n%s\n\n## Learnings\n%s\n",
-		teTrim, wsTrim, lnTrim,
-	)
+	// Canonical completion.md. The cache loader's splitCompletionSections
+	// matches "## Testing evidence", "## Work summary", and "## Learnings"
+	// headings exactly. Optional sections are omitted entirely when empty so
+	// the rendered ticket has no dangling blank-bodied headings.
+	var mdParts []string
+	if teTrim != "" {
+		mdParts = append(mdParts, "## Testing evidence\n"+teTrim)
+	}
+	if wsTrim != "" {
+		mdParts = append(mdParts, "## Work summary\n"+wsTrim)
+	}
+	mdParts = append(mdParts, "## Learnings\n"+lnTrim)
+	completionMD := strings.Join(mdParts, "\n\n") + "\n"
 
 	// system_completion comment — body is the formatted multi-section text the
 	// SPEC example shows so list_comments surfaces it inline without re-reading
@@ -700,10 +702,15 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 	}
 	shortID := hex.EncodeToString(commentID[:4])
 	commentFilename := fmt.Sprintf("%s-%s-%s.md", createdAt.Format(commentTimestampLayout), shortID, string(cRec.Kind))
-	commentBody := fmt.Sprintf(
-		"✅ Ticket completed.\n\nTesting evidence:\n%s\n\nWork summary:\n%s\n\nLearnings:\n%s\n",
-		teTrim, wsTrim, lnTrim,
-	)
+	var commentParts []string
+	if teTrim != "" {
+		commentParts = append(commentParts, "Testing evidence:\n"+teTrim)
+	}
+	if wsTrim != "" {
+		commentParts = append(commentParts, "Work summary:\n"+wsTrim)
+	}
+	commentParts = append(commentParts, "Learnings:\n"+lnTrim)
+	commentBody := "✅ Ticket completed.\n\n" + strings.Join(commentParts, "\n\n") + "\n"
 	commentBytes, err := store.EncodeMarkdown(cRec, commentBody)
 	if err != nil {
 		return nil, fmt.Errorf("encode system_completion comment: %w", err)

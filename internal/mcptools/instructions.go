@@ -14,7 +14,7 @@ const ServerInstructions = `tickets_please is a Trello-shaped, LLM-first ticketi
 - **Before starting any non-trivial ticket**, run ` + "`search_learnings`" + ` with relevant terms. Past work may have left notes about gotchas. Skipping this is the most common avoidable mistake.
 - **To find unblocked work**: ` + "`list_tickets`" + ` with ` + "`ready_only=true`" + `. This filters to tickets whose ` + "`depends_on`" + ` are all done.
 - **When picking up a ticket**, move it to ` + "`in_progress`" + ` with a brief comment via ` + "`move_ticket`" + ` explaining what you're starting on.
-- **When done**, call ` + "`complete_ticket`" + ` with substantive ` + "`testing_evidence`, `work_summary`, and `learnings`" + ` (each ≥10 chars). Learnings are searchable — write them for future-you.
+- **When done**, call ` + "`complete_ticket`" + `. Only ` + "`learnings`" + ` is required (≥10 chars) — that's the field future agents search, so write it for them. ` + "`testing_evidence`" + ` and ` + "`work_summary`" + ` are optional audit-trail fields; supply them when there's substantive content, omit on small/obvious work rather than padding.
 
 ## Hard rules (enforced server-side)
 

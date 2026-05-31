@@ -219,11 +219,11 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 	), t.handleMoveTicket)
 
 	s.AddTool(mcp.NewTool("complete_ticket",
-		mcp.WithDescription("Mark a ticket done. Requires `testing_evidence` (what you tested and how), `work_summary` (what you actually changed), `learnings` (gotchas, surprises, insights for future work). Be thorough — `learnings` are searchable by future tickets."),
+		mcp.WithDescription("Mark a ticket done. Only `learnings` is required (≥10 chars) — that's the field future agents search, so write it for them. `testing_evidence` and `work_summary` are optional audit-trail fields; supply them when there's substantive content, omit on small/obvious work."),
 		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
-		mcp.WithString("testing_evidence", mcp.Required(), mcp.Description("What you tested and how (≥10 chars)")),
-		mcp.WithString("work_summary", mcp.Required(), mcp.Description("What you actually changed (≥10 chars)")),
-		mcp.WithString("learnings", mcp.Required(), mcp.Description("Gotchas, surprises, and insights for future work (≥10 chars)")),
+		mcp.WithString("testing_evidence", mcp.Description("Optional. What you tested and how. Omit on small/obvious work rather than padding.")),
+		mcp.WithString("work_summary", mcp.Description("Optional. What you actually changed. Omit on small/obvious work rather than padding.")),
+		mcp.WithString("learnings", mcp.Required(), mcp.Description("Required (≥10 chars). Gotchas, surprises, and insights for future work — this field is searchable by future tickets.")),
 	), t.handleCompleteTicket)
 
 	s.AddTool(mcp.NewTool("assign_ticket_to_phase",
@@ -445,15 +445,9 @@ func errorResult(err error) *mcp.CallToolResult {
 // or formatting cap — long, richly-formatted markdown is exactly what the
 // completion fields are meant to carry.
 func requireStringArgs(req mcp.CallToolRequest, keys ...string) (map[string]string, error) {
-	raw := req.GetArguments()
-	if raw == nil {
-		// Arguments arrived in a non-map form (e.g. json.RawMessage). Recover
-		// it via BindArguments rather than emitting a misleading "not found".
-		recovered := map[string]any{}
-		if err := req.BindArguments(&recovered); err != nil {
-			return nil, fmt.Errorf("could not decode tool arguments: %v", err)
-		}
-		raw = recovered
+	raw, err := decodeArgEnvelope(req)
+	if err != nil {
+		return nil, err
 	}
 	out := make(map[string]string, len(keys))
 	var missing []string
@@ -473,6 +467,46 @@ func requireStringArgs(req mcp.CallToolRequest, keys ...string) (map[string]stri
 		return nil, fmt.Errorf("required argument(s) not found: %s", strings.Join(missing, ", "))
 	}
 	return out, nil
+}
+
+// optionalStringArgs decodes any of the named keys that are present, returning
+// "" for ones that aren't. Shares the same json.RawMessage envelope fallback
+// as requireStringArgs. Returns an error only if the envelope itself is
+// undecodable or a present value is the wrong type.
+func optionalStringArgs(req mcp.CallToolRequest, keys ...string) (map[string]string, error) {
+	raw, err := decodeArgEnvelope(req)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		v, ok := raw[k]
+		if !ok || v == nil {
+			out[k] = ""
+			continue
+		}
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("argument %q must be a string, got %T", k, v)
+		}
+		out[k] = s
+	}
+	return out, nil
+}
+
+// decodeArgEnvelope returns the tool-call arguments as a map[string]any,
+// recovering from the json.RawMessage envelope shape that makes GetArguments()
+// return nil (see requireStringArgs for the full bug story).
+func decodeArgEnvelope(req mcp.CallToolRequest) (map[string]any, error) {
+	raw := req.GetArguments()
+	if raw == nil {
+		recovered := map[string]any{}
+		if err := req.BindArguments(&recovered); err != nil {
+			return nil, fmt.Errorf("could not decode tool arguments: %v", err)
+		}
+		raw = recovered
+	}
+	return raw, nil
 }
 
 // ---- Projects ----
@@ -1046,15 +1080,19 @@ func (t *Tools) handleMoveTicket(ctx context.Context, req mcp.CallToolRequest) (
 }
 
 func (t *Tools) handleCompleteTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Decode all four fields through requireStringArgs so a non-map argument
-	// envelope (json.RawMessage etc.) still resolves and the error names every
-	// missing field accurately — RequireString would mis-report present-but-
-	// non-map fields as "required argument not found". See requireStringArgs.
-	args, err := requireStringArgs(req, "ticket_id", "testing_evidence", "work_summary", "learnings")
+	// Only ticket_id + learnings are required; testing_evidence and
+	// work_summary are optional audit-trail fields. Both decoders use the
+	// same json.RawMessage envelope fallback (see requireStringArgs).
+	required, err := requireStringArgs(req, "ticket_id", "learnings")
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	id, te, ws, ln := args["ticket_id"], args["testing_evidence"], args["work_summary"], args["learnings"]
+	optional, err := optionalStringArgs(req, "testing_evidence", "work_summary")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	id, ln := required["ticket_id"], required["learnings"]
+	te, ws := optional["testing_evidence"], optional["work_summary"]
 	var tk *domain.Ticket
 	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
 		out, err := t.svc.CompleteTicket(ctx, id, te, ws, ln)

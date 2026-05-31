@@ -816,7 +816,7 @@ Note the architecture shift: the embedding `Worker` and the vec indexes are **no
 - `ListTickets(ctx, in ListTicketsInput) (tickets []*domain.Ticket, nextCursor string, err error)` — supports `phase_id_or_slug`, `column`, `ready_only`, `wave` filter, pagination.
 - `UpdateTicket(ctx, id string, in UpdateTicketInput) (*domain.Ticket, error)` — title/body only; no column.
 - `MoveTicket(ctx, id string, target domain.Column, comment string) (*domain.Ticket, error)` — both required; rejects `done`.
-- `CompleteTicket(ctx, id string, testingEvidence, workSummary, learnings string) (*domain.Ticket, error)` — all three required, ≥10 chars each.
+- `CompleteTicket(ctx, id string, testingEvidence, workSummary, learnings string) (*domain.Ticket, error)` — `learnings` required (≥10 chars after trim); `testingEvidence` and `workSummary` are optional audit-trail fields (empty string accepted, no min length).
 - `AssignTicketToPhase(ctx, id string, phaseIDOrSlug *string, comment string) (*domain.Ticket, error)` — `nil` = phase-less.
 - `DeleteTicket(ctx, id string) error` — irreversibly removes a non-`done` ticket and its directory (body, comments, embedding sidecars). Refuses on `done` (preserves the no-reopen rule). Any other ticket in the same project whose `DependsOn` or `ParallelizableWith` slice contains the doomed id is rewritten in the same StageOp to drop the reference, so the cascade and the delete commit atomically — no dangling refs ever observed. Auto-commit captures the removal; no tombstone written.
 
@@ -863,7 +863,9 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target Column
 //   target must not be empty or ColumnDone; comment must be non-empty after trim.
 
 func (s *Service) CompleteTicket(ctx context.Context, ticketID string, testingEvidence, workSummary, learnings string) (*domain.Ticket, error)
-//   each of the three fields must be ≥10 chars after strings.TrimSpace.
+//   learnings must be ≥10 chars after strings.TrimSpace; testingEvidence and
+//   workSummary are optional (empty string accepted). Empty optional fields
+//   are omitted from completion.md / the system_completion comment.
 ```
 
 `MoveTicket` rejects `ColumnDone` with `ErrInvalidArgument` and a message pointing at `CompleteTicket` — self-documenting for the LLM.
@@ -872,7 +874,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID string, testingEv
 
 Two layers; server is authoritative.
 
-1. **Service-level validation** (`internal/svc/validation.go`) — every method validates first. Min lengths (10 chars) on completion fields prevent thin one-character "satisfactions" of the rule. Returns `domain.ErrInvalidArgument` with field-specific messages.
+1. **Service-level validation** (`internal/svc/validation.go`) — every method validates first. A 10-char minimum on `learnings` (the only required completion field; the other two are optional audit-trail strings) prevents thin "." satisfactions of the rule. Returns `domain.ErrInvalidArgument` with field-specific messages.
 2. **`StageOp` ordered ops + per-project flock** — both rule-enforcing operations build a single StageOp under the project's flock and apply it as one batch:
    - `MoveTicket`: stage write of updated `ticket.yaml` + write of new `system_move` comment file. Apply phase renames both into place inside the locked window.
    - `CompleteTicket`: stage write of updated `ticket.yaml` + write of `completion.md` + write of `system_completion` comment file.
@@ -995,7 +997,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `get_ticket` | Fetch a ticket by id, including its current column, completion fields if done, blockers, and who created/completed it. |
 | `update_ticket` | Edit a ticket's title or body. **Cannot** change the column — use `move_ticket` or `complete_ticket`. |
 | `move_ticket` | Move a ticket between columns. Requires a comment explaining *why* you're moving it. Cannot be used to move to `done` — use `complete_ticket` for that. |
-| `complete_ticket` | Mark a ticket done. Requires `testing_evidence` (what you tested and how), `work_summary` (what you actually changed), `learnings` (gotchas, surprises, insights for future work). Be thorough — `learnings` are searchable by future tickets. |
+| `complete_ticket` | Mark a ticket done. Only `learnings` is required (≥10 chars) — that's the field future agents search, so write it for them. `testing_evidence` and `work_summary` are optional audit-trail fields; supply them when there's substantive content, omit on small/obvious work. |
 | `assign_ticket_to_phase` | Move a ticket between phases (or to no phase). Requires a comment explaining why — same audit-trail rule as `move_ticket`. |
 | `delete_ticket` | **Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once finished, a ticket stays finished). Any other tickets that reference this one in `depends_on` or `parallelizable_with` are auto-updated to drop the reference, atomically with the delete — no dangling refs. For finished work that you regret, file a new ticket instead. |
 

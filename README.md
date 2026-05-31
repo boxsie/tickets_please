@@ -133,7 +133,7 @@ Once the MCP is wired up, ask Claude:
 
 > Use the tickets_please MCP to create a project called `demo` (set `project_path` to the absolute path of this repo) with a thoughtful 200+ char summary describing what it's for. Then call `register_agent` against the same `project_path`. Then create a ticket "Wire up the initial board". Move it to `in_progress` with a comment, then complete it with substantive testing evidence, work summary, and learnings.
 
-That single conversation exercises `create_project` (≥200-char summary enforcement, `project_path` bootstrap), `register_agent` (binds the session to the new project so subsequent tool calls don't need `project_id_or_slug`), `create_ticket`, `move_ticket` (comment required, no `done` target), and `complete_ticket` (three structured fields, each ≥10 chars), and populates `search_learnings` for the next agent. Watch `.tickets_please/` fill up with yaml + markdown you can `cat`, `grep`, and `git diff`.
+That single conversation exercises `create_project` (≥200-char summary enforcement, `project_path` bootstrap), `register_agent` (binds the session to the new project so subsequent tool calls don't need `project_id_or_slug`), `create_ticket`, `move_ticket` (comment required, no `done` target), and `complete_ticket` (`learnings` required ≥10 chars, optional `testing_evidence` and `work_summary`), and populates `search_learnings` for the next agent. Watch `.tickets_please/` fill up with yaml + markdown you can `cat`, `grep`, and `git diff`.
 
 ## Tools
 

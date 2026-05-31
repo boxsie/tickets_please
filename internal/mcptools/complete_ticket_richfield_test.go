@@ -142,10 +142,12 @@ func TestCompleteTicket_RawMessageEnvelope(t *testing.T) {
 	}
 }
 
-// TestCompleteTicket_MissingFieldAccurateError verifies the error message is
-// honest: a genuinely absent field is named, and the message is no longer the
-// misleading single-field "work_summary not found" when several are missing.
-func TestCompleteTicket_MissingFieldAccurateError(t *testing.T) {
+// TestCompleteTicket_MissingLearningsAccurateError verifies the error message
+// is honest under the relaxed schema: only `learnings` is required, so
+// omitting it (even with the optional fields supplied) surfaces a clear
+// `learnings` error — never the misleading multi-field message that the
+// json.RawMessage envelope bug used to produce.
+func TestCompleteTicket_MissingLearningsAccurateError(t *testing.T) {
 	tools, repo, _ := freshToolsForRegister(t)
 	id := seedTicketForCompletion(t, tools, repo)
 
@@ -153,17 +155,52 @@ func TestCompleteTicket_MissingFieldAccurateError(t *testing.T) {
 	req.Params.Arguments = map[string]any{
 		"ticket_id":        id,
 		"testing_evidence": "only this one is supplied, and it is long enough",
-		// work_summary and learnings deliberately omitted.
+		"work_summary":     "and this one is also supplied",
+		// learnings deliberately omitted.
 	}
 	res, err := tools.handleCompleteTicket(context.Background(), req)
 	if err != nil {
 		t.Fatalf("handleCompleteTicket: %v", err)
 	}
 	if !res.IsError {
-		t.Fatalf("expected error for missing fields, got success")
+		t.Fatalf("expected error for missing learnings, got success")
 	}
 	msg := extractText(t, res)
-	if !strings.Contains(msg, "work_summary") || !strings.Contains(msg, "learnings") {
-		t.Errorf("error should name all missing fields, got: %q", msg)
+	if !strings.Contains(msg, "learnings") {
+		t.Errorf("error should name the missing `learnings` field, got: %q", msg)
+	}
+}
+
+// TestCompleteTicket_LearningsOnlyEnvelope verifies the handler accepts a
+// payload containing only the required fields (ticket_id + learnings) — the
+// optional testing_evidence and work_summary may be omitted entirely.
+func TestCompleteTicket_LearningsOnlyEnvelope(t *testing.T) {
+	tools, repo, _ := freshToolsForRegister(t)
+	id := seedTicketForCompletion(t, tools, repo)
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"ticket_id": id,
+		"learnings": "small change so audit-trail fields were omitted intentionally",
+	}
+	res, err := tools.handleCompleteTicket(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handleCompleteTicket: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("complete_ticket rejected learnings-only payload: %s", extractText(t, res))
+	}
+	var done map[string]any
+	if err := json.Unmarshal([]byte(extractText(t, res)), &done); err != nil {
+		t.Fatalf("unmarshal completed ticket: %v", err)
+	}
+	if done["column"] != "done" {
+		t.Fatalf("ticket not done: column=%v", done["column"])
+	}
+	if ev, _ := done["testing_evidence"].(string); ev != "" {
+		t.Errorf("testing_evidence should be empty on learnings-only completion, got %q", ev)
+	}
+	if ws, _ := done["work_summary"].(string); ws != "" {
+		t.Errorf("work_summary should be empty on learnings-only completion, got %q", ws)
 	}
 }

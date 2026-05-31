@@ -50,6 +50,9 @@ Go module `tickets_please`, go 1.25.x. End-to-end tests live under `e2e/`.
 - Trello columns flow `todo` → `in_progress` → `testing` → `done`. Every column
   move requires a non-empty comment; `done` is reachable only via the dedicated
   completion path; done tickets are frozen; comments are immutable.
-- Completion is structured and sacred: `testing_evidence` + `work_summary` +
-  `learnings`, all embedded and semantically searchable — that's the point.
+- Completion is structured and sacred: `learnings` is required (≥10 chars)
+  and embedded for semantic search — write it for future agents.
+  `testing_evidence` and `work_summary` are optional audit-trail fields;
+  supply them when there's substantive content, omit on trivial work rather
+  than padding.
 - Standard Go style (`gofmt`); wrap errors with context.
