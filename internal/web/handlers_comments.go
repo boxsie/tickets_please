@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/web/components/partials"
 	pgtickets "tickets_please/internal/web/components/pages/tickets"
 )
 
@@ -43,7 +44,7 @@ func (a *app) handleCommentsList(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	comments, err := a.deps.Service.ListComments(r.Context(), id)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	body := pgtickets.CommentsThreadProps{
@@ -64,11 +65,15 @@ func (a *app) handleCommentCreate(w http.ResponseWriter, r *http.Request) {
 		// HX-Request: return the inline error fragment so the form can swap
 		// it next to itself; non-HX falls through to the generic error page.
 		if r.Header.Get("HX-Request") == "true" {
-			w.WriteHeader(classifyServiceError(err))
-			a.renderer.Partial(w, r, "error", map[string]any{"Message": err.Error()})
+			status := classifyServiceError(err)
+			w.WriteHeader(status)
+			a.renderer.RenderTemplPartial(w, r, partials.Error(partials.ErrorProps{
+				Status:  status,
+				Message: err.Error(),
+			}))
 			return
 		}
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	row := buildCommentRow(created)

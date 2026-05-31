@@ -1,9 +1,0 @@
-{{define "ticket_card.tmpl"}}{{- $t := .Ticket -}}{{- $slug := .ProjectSlug -}}<li class="ticket-card{{if $t.BlockedBy}} blocked{{end}}">
-  <a class="ticket-card-title" href="/tickets/{{$t.ID}}{{if $slug}}?slug={{$slug}}{{end}}">{{$t.Title}}</a>
-  <div class="ticket-card-meta">
-    <span class="badge badge-{{$t.Column}}">{{$t.Column}}</span>
-    {{if ne $t.Wave 0}}<span class="muted">w{{$t.Wave}}</span>{{end}}
-    {{if $t.BlockedBy}}<span class="badge-blocked" title="blocked by: {{range $i, $b := $t.BlockedBy}}{{if $i}}, {{end}}{{$b}}{{end}}">blocked</span>{{end}}
-  </div>
-</li>
-{{end}}

@@ -86,7 +86,7 @@ func (a *app) handleProjectSettings(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	status := a.readEmbedStatus(r.Context(), proj.Slug)
@@ -137,7 +137,7 @@ func (a *app) handleProjectSettingsUpdate(w http.ResponseWriter, r *http.Request
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	in := projectSettingsSubmitted{

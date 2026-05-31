@@ -14,6 +14,7 @@ import (
 	"tickets_please/internal/svc"
 	"tickets_please/internal/web/components/layout"
 	projectspg "tickets_please/internal/web/components/pages/projects"
+	"tickets_please/internal/web/components/partials"
 )
 
 // Projects CRUD handlers — wraps the eight project-related Service methods
@@ -22,7 +23,7 @@ import (
 //
 // Hard rules surfaced inline:
 //   - Summary >= 200 chars on create / update — server enforces, UI shows
-//     a 422 partial via renderer.Error when ErrInvalidArgument bubbles up.
+//     a 422 partial via renderer.RenderTemplError when ErrInvalidArgument bubbles up.
 //   - Slug unique + URL-safe — same surface path.
 //   - Slug immutable post-create — edit form has no slug field.
 //   - Delete is destructive — POST-only, requires CSRF + an X-Confirm: yes
@@ -47,7 +48,7 @@ func (a *app) handleProjectsIndex(w http.ResponseWriter, r *http.Request) {
 	projects, err := a.deps.Service.ListProjects(r.Context())
 	if err != nil {
 		a.deps.Logger.Error("projects: list", "err", err)
-		a.renderer.Error(w, r, http.StatusInternalServerError, err)
+		a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	sort.Slice(projects, func(i, j int) bool { return projects[i].Slug < projects[j].Slug })
@@ -235,26 +236,11 @@ func (a *app) renderLoadFormError(w http.ResponseWriter, r *http.Request, msg, p
 	}))
 }
 
-// fsListingToProps converts the package-private fsListing into the projects-
-// package mirror. The mirror exists so the templ page never imports the web
-// package (which would cycle).
-func fsListingToProps(l fsListing) projectspg.FSPickerData {
-	out := projectspg.FSPickerData{
-		Cwd:       l.Cwd,
-		Parent:    l.Parent,
-		Truncated: l.Truncated,
-		Error:     l.Error,
-		HasMarker: l.HasMarker,
-	}
-	out.Crumbs = make([]projectspg.FSCrumb, len(l.Crumbs))
-	for i, c := range l.Crumbs {
-		out.Crumbs[i] = projectspg.FSCrumb{Label: c.Label, Path: c.Path}
-	}
-	out.Entries = make([]projectspg.FSEntry, len(l.Entries))
-	for i, e := range l.Entries {
-		out.Entries[i] = projectspg.FSEntry{Name: e.Name, IsDir: e.IsDir, HasMarker: e.HasMarker}
-	}
-	return out
+// fsListingToProps converts the package-private fsListing into the shared
+// partials.FSPickerProps the FSPicker component renders. Both the load page
+// and the /api/fs htmx swap go through this conversion.
+func fsListingToProps(l fsListing) partials.FSPickerProps {
+	return l.toPickerProps()
 }
 
 // --- detail / edit / update / delete --------------------------------------
@@ -314,7 +300,7 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	phases, _ := a.deps.Service.ListPhases(r.Context(), proj.Slug)
@@ -556,7 +542,7 @@ func (a *app) handleProjectUpdate(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	in := projectFormSubmitted{
@@ -572,7 +558,7 @@ func (a *app) handleProjectUpdate(w http.ResponseWriter, r *http.Request) {
 		// Back-compat path — htmx in-place editors and update_project. We no
 		// longer carry a dedicated edit form template; surface validation
 		// errors via the standard error partial.
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	SetFlash(w, r, "success", "Project updated.")
@@ -586,11 +572,11 @@ func (a *app) handleProjectUpdate(w http.ResponseWriter, r *http.Request) {
 func (a *app) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if r.Form.Get("confirm") != "yes" {
-		a.renderer.Error(w, r, http.StatusBadRequest, errors.New("delete requires explicit confirmation; use the form on the project page"))
+		a.renderer.RenderTemplError(w, r, http.StatusBadRequest, errors.New("delete requires explicit confirmation; use the form on the project page"))
 		return
 	}
 	if err := a.deps.Service.DeleteProject(r.Context(), slug); err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	w.Header().Set("HX-Trigger", "sidebar-refresh")
@@ -630,7 +616,7 @@ func (a *app) handleProjectSummaryView(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	mode := "view"
@@ -681,7 +667,7 @@ func (a *app) handleProjectSummaryUpdate(w http.ResponseWriter, r *http.Request)
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	summary := r.Form.Get("summary")
@@ -712,7 +698,7 @@ func (a *app) handleProjectSummaryUpdate(w http.ResponseWriter, r *http.Request)
 	// Re-fetch so the rendered view sees the new summary.
 	updated, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 
@@ -793,7 +779,7 @@ func (a *app) withCSRF(next http.HandlerFunc) http.HandlerFunc {
 		if r.Method == http.MethodPost {
 			id, _ := svc.SessionIDFrom(r.Context())
 			if err := checkCSRF(r, a.session.secret, id); err != nil {
-				a.renderer.Error(w, r, http.StatusForbidden, err)
+				a.renderer.RenderTemplError(w, r, http.StatusForbidden, err)
 				return
 			}
 		}

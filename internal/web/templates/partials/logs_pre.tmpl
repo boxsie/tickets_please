@@ -1,8 +1,0 @@
-{{define "logs_pre.tmpl"}}
-<p class="muted logs-meta">{{.Count}} record{{if ne .Count 1}}s{{end}} buffered.</p>
-{{if .Empty}}
-<p class="muted">No log records captured yet.</p>
-{{else}}
-<pre id="logs-body" class="logs-pre">{{.Lines}}</pre>
-{{end}}
-{{end}}

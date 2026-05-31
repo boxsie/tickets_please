@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"io"
 	"log/slog"
 	"math"
@@ -23,6 +24,7 @@ import (
 	embedpkg "tickets_please/internal/embed"
 	"tickets_please/internal/store"
 	"tickets_please/internal/svc"
+	"tickets_please/internal/web/components/pages"
 )
 
 // fakeEmbedder is a minimal embed.Provider stand-in so the Service constructor
@@ -331,20 +333,18 @@ func TestCSRF_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestRenderer_Page parses and renders the embedded home page through the
-// real prod (embed.FS) path. Confirms the layout-wraps-page contract works
-// end-to-end with the templates ticket 2 ships — head + nav + sidebar + main.
+// TestRenderer_Page parses and renders the home page end-to-end through the
+// real templ render path, confirming the layout-wraps-page contract.
 func TestRenderer_Page(t *testing.T) {
-	r := NewRenderer(templatesFS(false), false, nil)
-	out, err := r.renderInline("home", PageOpts{Title: "test-title"})
-	if err != nil {
-		t.Fatalf("renderInline: %v", err)
-	}
-	s := string(out)
+	r := NewRenderer(false, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RenderTempl(rec, req, PageOpts{Title: "test-title"}, pages.Home())
+	s := rec.Body.String()
 	for _, want := range []string{
 		"<title>test-title</title>",
 		"tickets_please",            // brand link in nav
-		"id=\"sidebar\"",            // sidebar present
+		`id="sidebar"`,              // sidebar present
 		"No projects mounted",       // sidebar empty state
 		"Welcome to tickets_please", // home empty state copy
 		"/p/load",                   // sidebar action link
@@ -360,15 +360,15 @@ func TestRenderer_Page(t *testing.T) {
 // TestRenderer_Partial confirms partials render without dragging the layout.
 // Used by htmx swap responses.
 func TestRenderer_Partial(t *testing.T) {
-	r := NewRenderer(templatesFS(false), false, nil)
+	r := NewRenderer(false, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Partial(rec, req, "error", errorData{Status: 422, Message: "boom"})
+	r.RenderTemplError(rec, req, 422, errors.New("boom"))
 	body := rec.Body.String()
 	if strings.Contains(body, "<html") {
 		t.Errorf("partial leaked layout: %s", body)
 	}
-	if strings.Contains(body, "id=\"sidebar\"") {
+	if strings.Contains(body, `id="sidebar"`) {
 		t.Errorf("partial leaked sidebar: %s", body)
 	}
 	if !strings.Contains(body, "Error 422") || !strings.Contains(body, "boom") {
@@ -389,10 +389,10 @@ func TestRenderer_Sidebar_ActiveItem(t *testing.T) {
 		AgentLabel: "Web UI · abc123",
 		URL:        "/p/beta",
 	}}
-	r := NewRenderer(templatesFS(false), false, provider)
+	r := NewRenderer(false, provider)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/p/beta", nil)
-	r.Page(rec, req, "home", PageOpts{Title: "x", CurrentSlug: "beta"})
+	r.RenderTempl(rec, req, PageOpts{Title: "x", CurrentSlug: "beta"}, pages.Home())
 
 	body := rec.Body.String()
 
@@ -437,11 +437,11 @@ func TestRenderer_LocalhostBanner_Gating(t *testing.T) {
 			provider := fakeChromeProvider{chrome: Chrome{
 				ShowLocalBanner: !isLoopbackHost(tc.host),
 			}}
-			r := NewRenderer(templatesFS(false), false, provider)
+			r := NewRenderer(false, provider)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.Host = tc.host
-			r.Page(rec, req, "home", PageOpts{Title: "x"})
+			r.RenderTempl(rec, req, PageOpts{Title: "x"}, pages.Home())
 
 			has := strings.Contains(rec.Body.String(), "banner-warn")
 			if has != tc.wantBanner {
@@ -595,31 +595,17 @@ func TestFlash_RoundTrip(t *testing.T) {
 }
 
 // TestEmbeddedFS_HasExpectedAssets is a paranoia check that go:embed picked
-// up the right files. Catches typos in the embed directive at compile time
-// is great, but a runtime smoke is cheap and surfaces missing files clearly.
+// up the right static files. Templates are no longer embedded — they're
+// templ-generated Go code compiled directly into the binary — so this test
+// only covers the static FS.
 func TestEmbeddedFS_HasExpectedAssets(t *testing.T) {
 	want := []string{
-		"templates/_layout.tmpl",
-		"templates/_nav.tmpl",
-		"templates/pages/home.tmpl",
-		"templates/pages/projects/load.tmpl",
-		"templates/partials/error.tmpl",
-		"templates/partials/flash.tmpl",
-		"templates/partials/sidebar.tmpl",
 		"static/app.css",
 		"static/htmx.min.js",
 	}
 	for _, p := range want {
-		var found bool
-		// The embed directives are split per FS; check both.
-		if _, err := embeddedTemplates.Open(p); err == nil {
-			found = true
-		}
-		if _, err := embeddedStatic.Open(p); err == nil {
-			found = true
-		}
-		if !found {
-			t.Errorf("missing embedded asset %q", p)
+		if _, err := embeddedStatic.Open(p); err != nil {
+			t.Errorf("missing embedded asset %q: %v", p, err)
 		}
 	}
 

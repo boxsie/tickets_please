@@ -23,14 +23,14 @@ func (a *app) handleHome(w http.ResponseWriter, r *http.Request) {
 	// so requests for, say, /favicon.ico or /robots.txt don't render the
 	// home page with a 200.
 	if r.URL.Path != "/" {
-		a.renderer.Error(w, r, http.StatusNotFound, errNotFound{path: r.URL.Path})
+		a.renderer.RenderTemplError(w, r, http.StatusNotFound, errNotFound{path: r.URL.Path})
 		return
 	}
 
 	projects, err := a.deps.Service.ListProjects(r.Context())
 	if err != nil {
 		a.deps.Logger.Error("home: list projects", "err", err)
-		a.renderer.Error(w, r, http.StatusInternalServerError, err)
+		a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 

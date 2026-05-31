@@ -72,8 +72,7 @@ type DetailProps struct {
 	// templ children context doesn't carry it — handler passes it explicitly.
 	CSRF string
 	// SummaryHTML is the pre-rendered markdown of phase.Summary. The handler
-	// renders it via web.renderMarkdown before constructing this struct —
-	// importing the renderer here would cycle web → components → web.
+	// renders it via the components/md package before constructing this struct.
 	SummaryHTML template.HTML
 }
 

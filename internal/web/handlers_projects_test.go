@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"tickets_please/internal/web/components/md"
 )
 
 // TestProjects_IndexEmpty: GET /p with no projects renders the empty hint
@@ -385,9 +387,9 @@ func TestProjects_Sidebar_Partial(t *testing.T) {
 	}
 }
 
-// TestMarkdown_EscapesRawHTML covers the renderMarkdown safety contract:
-// raw HTML tags in source must NOT survive in the output. Goldmark's default
-// config (no html.WithUnsafe) replaces each raw HTML tag with
+// TestMarkdown_EscapesRawHTML covers the md.Render safety contract: raw HTML
+// tags in source must NOT survive in the output. Goldmark's default config
+// (no html.WithUnsafe) replaces each raw HTML tag with
 // `<!-- raw HTML omitted -->`. The text between tags survives as inert text
 // — not a security issue (it's not inside a <script> tag any more) but worth
 // being clear about in the assertion.
@@ -403,7 +405,7 @@ func TestMarkdown_EscapesRawHTML(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out := string(renderMarkdown(tc.src))
+			out := string(md.Render(tc.src))
 			for _, banned := range []string{
 				"<script", "<iframe", "onerror=", `href="javascript:`,
 			} {
@@ -417,7 +419,7 @@ func TestMarkdown_EscapesRawHTML(t *testing.T) {
 
 // TestMarkdown_RendersHeadingsAndLinks: sanity check that GFM features work.
 func TestMarkdown_RendersHeadingsAndLinks(t *testing.T) {
-	out := string(renderMarkdown("# Heading\n\n[link](https://example.com)\n"))
+	out := string(md.Render("# Heading\n\n[link](https://example.com)\n"))
 	if !strings.Contains(out, "<h1") || !strings.Contains(out, "Heading") {
 		t.Errorf("heading not rendered: %q", out)
 	}

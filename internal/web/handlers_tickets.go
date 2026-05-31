@@ -55,7 +55,7 @@ func (a *app) handleBoard(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	phases, err := a.deps.Service.ListPhases(r.Context(), slug)
@@ -73,7 +73,7 @@ func (a *app) handleBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	tickets, _, err := a.deps.Service.ListTickets(r.Context(), in)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	cols := []boardColumn{
@@ -130,7 +130,7 @@ func (a *app) handleTicketNewForm(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	phases, err := a.deps.Service.ListPhases(r.Context(), slug)
@@ -153,7 +153,7 @@ func (a *app) handleTicketCreate(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	in := parseTicketForm(r)
@@ -251,14 +251,14 @@ func (a *app) handleTicketDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	tkt, err := a.deps.Service.GetTicket(r.Context(), id)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	// Resolve project from the ticket's ProjectID. ListProjects then match
 	// — cheap because the resident registry is in-memory.
 	projects, err := a.deps.Service.ListProjects(r.Context())
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	var proj *domain.Project
@@ -269,7 +269,7 @@ func (a *app) handleTicketDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if proj == nil {
-		a.renderer.Error(w, r, http.StatusNotFound, errors.New("ticket's project is not mounted"))
+		a.renderer.RenderTemplError(w, r, http.StatusNotFound, errors.New("ticket's project is not mounted"))
 		return
 	}
 	phases, err := a.deps.Service.ListPhases(r.Context(), proj.Slug)
@@ -361,11 +361,11 @@ func (a *app) handleTicketEditForm(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	tkt, err := a.deps.Service.GetTicket(r.Context(), id)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	if tkt.Column == domain.ColumnDone {
-		a.renderer.Error(w, r, http.StatusUnprocessableEntity, errors.New("done tickets are frozen — create a new ticket instead"))
+		a.renderer.RenderTemplError(w, r, http.StatusUnprocessableEntity, errors.New("done tickets are frozen — create a new ticket instead"))
 		return
 	}
 	projects, _ := a.deps.Service.ListProjects(r.Context())
@@ -377,7 +377,7 @@ func (a *app) handleTicketEditForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if proj == nil {
-		a.renderer.Error(w, r, http.StatusNotFound, errors.New("ticket's project is not mounted"))
+		a.renderer.RenderTemplError(w, r, http.StatusNotFound, errors.New("ticket's project is not mounted"))
 		return
 	}
 	phases, _ := a.deps.Service.ListPhases(r.Context(), proj.Slug)
@@ -411,7 +411,7 @@ func (a *app) handleTicketUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	tkt, err := a.deps.Service.UpdateTicket(r.Context(), id, upd)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	slug := r.URL.Query().Get("slug")
@@ -433,11 +433,11 @@ func (a *app) handleTicketMove(w http.ResponseWriter, r *http.Request) {
 		// UI shouldn't put `done` in the move dropdown; if a stale form
 		// or a hand-rolled POST tries it, send the user to the completion
 		// form instead of leaking the service-level rejection.
-		a.renderer.Error(w, r, http.StatusUnprocessableEntity, errors.New("done is reachable only via the Complete form, not Move"))
+		a.renderer.RenderTemplError(w, r, http.StatusUnprocessableEntity, errors.New("done is reachable only via the Complete form, not Move"))
 		return
 	}
 	if _, err := a.deps.Service.MoveTicket(r.Context(), id, domain.Column(target), comment); err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	slug := r.URL.Query().Get("slug")
@@ -455,7 +455,7 @@ func (a *app) handleTicketComplete(w http.ResponseWriter, r *http.Request) {
 	ws := r.Form.Get("work_summary")
 	ln := r.Form.Get("learnings")
 	if _, err := a.deps.Service.CompleteTicket(r.Context(), id, te, ws, ln); err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	slug := r.URL.Query().Get("slug")
@@ -475,7 +475,7 @@ func (a *app) handleTicketDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	slug := strings.TrimSpace(r.URL.Query().Get("slug"))
 	if err := a.deps.Service.DeleteTicket(r.Context(), id); err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	loc := "/"

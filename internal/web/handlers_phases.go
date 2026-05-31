@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/web/components/md"
 	phasescomp "tickets_please/internal/web/components/pages/phases"
 )
 
@@ -52,8 +53,8 @@ type waveSection struct {
 	IsUnassigned bool
 }
 
-// phaseDist counts tickets per kanban column for one phase. The template
-// reads percentage segments off it via the percentOf helper.
+// phaseDist counts tickets per kanban column for one phase. The templ page
+// renders percentage segments off it.
 type phaseDist struct {
 	Todo, InProgress, Testing, Done int
 }
@@ -62,12 +63,12 @@ func (a *app) handlePhasesIndex(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	phases, err := a.deps.Service.ListPhases(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
@@ -223,7 +224,7 @@ func (a *app) handlePhaseNewForm(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	a.renderer.RenderTempl(w, r, PageOpts{
@@ -240,7 +241,7 @@ func (a *app) handlePhaseCreate(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	in := phaseFormSubmitted{
@@ -291,12 +292,12 @@ func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
 	phaseSlug := r.PathValue("phase")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	// Pull tickets scoped to this phase, then bucket by wave the same way the
@@ -320,7 +321,7 @@ func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
 		Phase:       phase,
 		Waves:       toWaveProps(proj.Slug, waves),
 		CSRF:        a.summaryCSRF(r),
-		SummaryHTML: renderMarkdown(phase.Summary),
+		SummaryHTML: md.Render(phase.Summary),
 	}))
 }
 
@@ -329,12 +330,12 @@ func (a *app) handlePhaseEditForm(w http.ResponseWriter, r *http.Request) {
 	phaseSlug := r.PathValue("phase")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	a.renderer.RenderTempl(w, r, PageOpts{
@@ -358,12 +359,12 @@ func (a *app) handlePhaseUpdate(w http.ResponseWriter, r *http.Request) {
 	phaseSlug := r.PathValue("phase")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	in := phaseFormSubmitted{
@@ -384,11 +385,11 @@ func (a *app) handlePhaseDelete(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	phaseSlug := r.PathValue("phase")
 	if r.Form.Get("confirm") != "yes" {
-		a.renderer.Error(w, r, http.StatusBadRequest, errors.New("delete requires explicit confirmation; use the form on the phase page"))
+		a.renderer.RenderTemplError(w, r, http.StatusBadRequest, errors.New("delete requires explicit confirmation; use the form on the phase page"))
 		return
 	}
 	if err := a.deps.Service.DeletePhase(r.Context(), slug, phaseSlug); err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	SetFlash(w, r, "success", "Phase "+phaseSlug+" deleted.")
@@ -402,12 +403,12 @@ func (a *app) handlePhaseSummaryView(w http.ResponseWriter, r *http.Request) {
 	phaseSlug := r.PathValue("phase")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	mode := "view"
@@ -419,7 +420,7 @@ func (a *app) handlePhaseSummaryView(w http.ResponseWriter, r *http.Request) {
 		Phase:       phase,
 		Mode:        mode,
 		Summary:     phase.Summary,
-		SummaryHTML: renderMarkdown(phase.Summary),
+		SummaryHTML: md.Render(phase.Summary),
 		CSRF:        a.summaryCSRF(r),
 	}
 	if r.Header.Get("HX-Request") == "true" {
@@ -441,12 +442,12 @@ func (a *app) handlePhaseSummaryUpdate(w http.ResponseWriter, r *http.Request) {
 	phaseSlug := r.PathValue("phase")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	phase, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	summary := r.Form.Get("summary")
@@ -455,7 +456,7 @@ func (a *app) handlePhaseSummaryUpdate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(classifyServiceError(err))
 		props := phasescomp.SummaryProps{
 			Project: proj, Phase: phase, Mode: "edit",
-			Summary: summary, SummaryHTML: renderMarkdown(summary),
+			Summary: summary, SummaryHTML: md.Render(summary),
 			FormError: err.Error(), CSRF: csrf,
 		}
 		if r.Header.Get("HX-Request") == "true" {
@@ -469,7 +470,7 @@ func (a *app) handlePhaseSummaryUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, err := a.deps.Service.GetPhase(r.Context(), slug, phaseSlug)
 	if err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 	props := phasescomp.SummaryProps{
@@ -477,7 +478,7 @@ func (a *app) handlePhaseSummaryUpdate(w http.ResponseWriter, r *http.Request) {
 		Phase:       updated,
 		Mode:        "view",
 		Summary:     updated.Summary,
-		SummaryHTML: renderMarkdown(updated.Summary),
+		SummaryHTML: md.Render(updated.Summary),
 		CSRF:        csrf,
 	}
 	if r.Header.Get("HX-Request") == "true" {
@@ -509,7 +510,7 @@ func (a *app) handleAssignTicketToPhase(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if _, err := a.deps.Service.AssignTicketToPhase(r.Context(), id, phasePtr, comment); err != nil {
-		a.renderer.Error(w, r, classifyServiceError(err), err)
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
 		return
 	}
 

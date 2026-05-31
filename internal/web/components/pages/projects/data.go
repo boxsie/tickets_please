@@ -10,7 +10,10 @@
 // existing internal types into these mirrors at the render boundary.
 package projects
 
-import "tickets_please/internal/domain"
+import (
+	"tickets_please/internal/domain"
+	"tickets_please/internal/web/components/partials"
+)
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
@@ -136,39 +139,14 @@ type EmbedStatus struct {
 	ExpectedModel    string
 }
 
-// LoadProps is the payload for the Load page (mount existing repo).
-// Picker is the fs picker listing, passed through to the FSPicker partial as
-// an opaque value (the templ file type-asserts to the fields it needs).
+// LoadProps is the payload for the Load page (mount existing repo). Picker
+// is reused from the shared partials package — the load page and the
+// /api/fs htmx swap render the same component.
 type LoadProps struct {
 	FormError string
 	Path      string
-	Picker    FSPickerData
+	Picker    partials.FSPickerProps
 	CSRF      string
-}
-
-// FSPickerData mirrors web.fsListing. Fields kept structurally identical so
-// the FSPicker templ component is a 1:1 port of partials/fs_picker.tmpl.
-type FSPickerData struct {
-	Cwd       string
-	Parent    string
-	Crumbs    []FSCrumb
-	Entries   []FSEntry
-	Truncated bool
-	Error     string
-	HasMarker bool
-}
-
-// FSCrumb is one segment in the breadcrumb of the current path.
-type FSCrumb struct {
-	Label string
-	Path  string
-}
-
-// FSEntry is one directory row inside the picker.
-type FSEntry struct {
-	Name      string
-	IsDir     bool
-	HasMarker bool
 }
 
 // NewProps is the payload for the create-project page.

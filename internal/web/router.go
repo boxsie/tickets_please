@@ -152,7 +152,7 @@ func newApp(deps Deps) *app {
 	a.session = newSessionManager(deps)
 	// Renderer holds a back-reference to a so it can fetch chrome (sidebar
 	// projects, agent label, flash, csrf) per request.
-	a.renderer = NewRenderer(templatesFS(deps.Dev), deps.Dev, a)
+	a.renderer = NewRenderer(deps.Dev, a)
 	return a
 }
 
