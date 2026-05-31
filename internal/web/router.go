@@ -7,7 +7,6 @@ import (
 
 	"tickets_please/internal/auth"
 	"tickets_please/internal/domain"
-	"tickets_please/internal/svc"
 )
 
 // Mount wires the web UI routes onto an existing http.ServeMux. Designed to
@@ -32,19 +31,38 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// No session middleware — assets don't need identity.
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServerFS(staticFS(deps.Dev))))
 
-	// Project routes. wrap = session middleware + (POST → CSRF check).
-	wrap := func(h http.HandlerFunc) http.Handler {
-		return a.session.middleware(http.HandlerFunc(a.withCSRF(h)))
+	// Route wrappers (W2-3). Base chain: session (agent attribution) → auth
+	// (hydrate the logged-in user) → optional per-project role guard → CSRF
+	// (POST only) → handler. Auth/role enforcement is a no-op unless OAuth is
+	// configured, preserving the localhost no-auth mode.
+	sess := a.session.middleware
+	// authed: any logged-in user, no per-project role requirement.
+	authed := func(h http.HandlerFunc) http.Handler {
+		return sess(a.authMiddleware(http.HandlerFunc(a.withCSRF(h))))
 	}
+	// pub: public route — session + CSRF, but no login required.
+	pub := func(h http.HandlerFunc) http.Handler {
+		return sess(http.HandlerFunc(a.withCSRF(h)))
+	}
+	// slugRole: /p/{slug}/... guarded by a minimum role on that project.
+	slugRole := func(min domain.Role, h http.HandlerFunc) http.Handler {
+		return sess(a.authMiddleware(a.requireSlugRole(min, http.HandlerFunc(a.withCSRF(h)))))
+	}
+	// tktRole: /tickets/{id}... guarded by a minimum role on the ticket's project.
+	tktRole := func(min domain.Role, h http.HandlerFunc) http.Handler {
+		return sess(a.authMiddleware(a.requireTicketRole(min, http.HandlerFunc(a.withCSRF(h)))))
+	}
+	// wrap is an alias for authed so the non-slug routes below read cleanly.
+	wrap := authed
 
 	// Auth (W2-2). Run through the same session wrap so the legacy tp_sid
 	// agent cookie + CSRF context still exist (withCSRF only enforces on
 	// POST, so the GET login/start/callback routes are effectively public;
 	// logout is the one POST and gets CSRF). OAuth state is carried in its
 	// own signed short-lived cookie, not the CSRF token.
-	mux.Handle("GET /auth/login", wrap(a.handleLoginPage))
-	mux.Handle("GET /auth/{provider}/start", wrap(a.handleAuthStart))
-	mux.Handle("GET /auth/{provider}/callback", wrap(a.handleAuthCallback))
+	mux.Handle("GET /auth/login", pub(a.handleLoginPage))
+	mux.Handle("GET /auth/{provider}/start", pub(a.handleAuthStart))
+	mux.Handle("GET /auth/{provider}/callback", pub(a.handleAuthCallback))
 	mux.Handle("POST /auth/logout", wrap(a.handleLogout))
 
 	// Sidebar swap endpoint: returns just the <aside id="sidebar"> fragment.
@@ -61,49 +79,49 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /p/new", wrap(a.handleProjectNewForm))
 	mux.Handle("GET /p/load", wrap(a.handleLoadProjectForm))
 	mux.Handle("POST /p/load", wrap(a.handleLoadProjectMount))
-	mux.Handle("GET /p/{slug}", wrap(a.handleProjectDetail))
-	mux.Handle("POST /p/{slug}", wrap(a.handleProjectUpdate))
-	mux.Handle("POST /p/{slug}/delete", wrap(a.handleProjectDelete))
-	mux.Handle("GET /p/{slug}/summary", wrap(a.handleProjectSummaryView))
-	mux.Handle("POST /p/{slug}/summary", wrap(a.handleProjectSummaryUpdate))
-	mux.Handle("GET /p/{slug}/search", wrap(a.handleProjectSearch))
-	mux.Handle("GET /p/{slug}/settings", wrap(a.handleProjectSettings))
-	mux.Handle("POST /p/{slug}/settings", wrap(a.handleProjectSettingsUpdate))
-	mux.Handle("POST /p/{slug}/reembed", wrap(a.handleProjectReembed))
+	mux.Handle("GET /p/{slug}", slugRole(domain.RoleViewer, a.handleProjectDetail))
+	mux.Handle("POST /p/{slug}", slugRole(domain.RoleOwner, a.handleProjectUpdate))
+	mux.Handle("POST /p/{slug}/delete", slugRole(domain.RoleOwner, a.handleProjectDelete))
+	mux.Handle("GET /p/{slug}/summary", slugRole(domain.RoleViewer, a.handleProjectSummaryView))
+	mux.Handle("POST /p/{slug}/summary", slugRole(domain.RoleMember, a.handleProjectSummaryUpdate))
+	mux.Handle("GET /p/{slug}/search", slugRole(domain.RoleViewer, a.handleProjectSearch))
+	mux.Handle("GET /p/{slug}/settings", slugRole(domain.RoleOwner, a.handleProjectSettings))
+	mux.Handle("POST /p/{slug}/settings", slugRole(domain.RoleOwner, a.handleProjectSettingsUpdate))
+	mux.Handle("POST /p/{slug}/reembed", slugRole(domain.RoleOwner, a.handleProjectReembed))
 
 	// Phase routes. Same wrap (session + CSRF on POST). Literal segments
 	// (/phases, /new) take precedence over the {phase} wildcard.
-	mux.Handle("GET /p/{slug}/phases", wrap(a.handlePhasesIndex))
-	mux.Handle("POST /p/{slug}/phases", wrap(a.handlePhaseCreate))
-	mux.Handle("GET /p/{slug}/phases/new", wrap(a.handlePhaseNewForm))
-	mux.Handle("GET /p/{slug}/phases/{phase}", wrap(a.handlePhaseDetail))
-	mux.Handle("POST /p/{slug}/phases/{phase}", wrap(a.handlePhaseUpdate))
-	mux.Handle("GET /p/{slug}/phases/{phase}/edit", wrap(a.handlePhaseEditForm))
-	mux.Handle("POST /p/{slug}/phases/{phase}/delete", wrap(a.handlePhaseDelete))
-	mux.Handle("GET /p/{slug}/phases/{phase}/summary", wrap(a.handlePhaseSummaryView))
-	mux.Handle("POST /p/{slug}/phases/{phase}/summary", wrap(a.handlePhaseSummaryUpdate))
+	mux.Handle("GET /p/{slug}/phases", slugRole(domain.RoleViewer, a.handlePhasesIndex))
+	mux.Handle("POST /p/{slug}/phases", slugRole(domain.RoleMember, a.handlePhaseCreate))
+	mux.Handle("GET /p/{slug}/phases/new", slugRole(domain.RoleMember, a.handlePhaseNewForm))
+	mux.Handle("GET /p/{slug}/phases/{phase}", slugRole(domain.RoleViewer, a.handlePhaseDetail))
+	mux.Handle("POST /p/{slug}/phases/{phase}", slugRole(domain.RoleMember, a.handlePhaseUpdate))
+	mux.Handle("GET /p/{slug}/phases/{phase}/edit", slugRole(domain.RoleMember, a.handlePhaseEditForm))
+	mux.Handle("POST /p/{slug}/phases/{phase}/delete", slugRole(domain.RoleMember, a.handlePhaseDelete))
+	mux.Handle("GET /p/{slug}/phases/{phase}/summary", slugRole(domain.RoleViewer, a.handlePhaseSummaryView))
+	mux.Handle("POST /p/{slug}/phases/{phase}/summary", slugRole(domain.RoleMember, a.handlePhaseSummaryUpdate))
 
 	// Cross-cutting: reassign a ticket between phases. /tickets/{id} is
 	// owned by ticket 5; the assign-phase POST lives here under the phases
 	// owner (ticket 4).
-	mux.Handle("POST /tickets/{id}/assign-phase", wrap(a.handleAssignTicketToPhase))
+	mux.Handle("POST /tickets/{id}/assign-phase", tktRole(domain.RoleMember, a.handleAssignTicketToPhase))
 
 	// Tickets: board, create form, create POST, detail, edit form, update,
 	// move (comment-required), complete (3 textareas). All ticket-mutation
 	// URLs accept an optional ?slug= hint to skip hostStoreForTicket.
-	mux.Handle("GET /p/{slug}/board", wrap(a.handleBoard))
-	mux.Handle("GET /p/{slug}/tickets/new", wrap(a.handleTicketNewForm))
-	mux.Handle("POST /p/{slug}/tickets", wrap(a.handleTicketCreate))
-	mux.Handle("GET /tickets/{id}", wrap(a.handleTicketDetail))
-	mux.Handle("GET /tickets/{id}/edit", wrap(a.handleTicketEditForm))
-	mux.Handle("POST /tickets/{id}", wrap(a.handleTicketUpdate))
-	mux.Handle("POST /tickets/{id}/move", wrap(a.handleTicketMove))
-	mux.Handle("POST /tickets/{id}/complete", wrap(a.handleTicketComplete))
-	mux.Handle("POST /tickets/{id}/delete", wrap(a.handleTicketDelete))
+	mux.Handle("GET /p/{slug}/board", slugRole(domain.RoleViewer, a.handleBoard))
+	mux.Handle("GET /p/{slug}/tickets/new", slugRole(domain.RoleMember, a.handleTicketNewForm))
+	mux.Handle("POST /p/{slug}/tickets", slugRole(domain.RoleMember, a.handleTicketCreate))
+	mux.Handle("GET /tickets/{id}", tktRole(domain.RoleViewer, a.handleTicketDetail))
+	mux.Handle("GET /tickets/{id}/edit", tktRole(domain.RoleMember, a.handleTicketEditForm))
+	mux.Handle("POST /tickets/{id}", tktRole(domain.RoleMember, a.handleTicketUpdate))
+	mux.Handle("POST /tickets/{id}/move", tktRole(domain.RoleMember, a.handleTicketMove))
+	mux.Handle("POST /tickets/{id}/complete", tktRole(domain.RoleMember, a.handleTicketComplete))
+	mux.Handle("POST /tickets/{id}/delete", tktRole(domain.RoleMember, a.handleTicketDelete))
 
 	// Comments thread: list (htmx refresh) + create (htmx append).
-	mux.Handle("GET /tickets/{id}/comments", wrap(a.handleCommentsList))
-	mux.Handle("POST /tickets/{id}/comments", wrap(a.handleCommentCreate))
+	mux.Handle("GET /tickets/{id}/comments", tktRole(domain.RoleViewer, a.handleCommentsList))
+	mux.Handle("POST /tickets/{id}/comments", tktRole(domain.RoleMember, a.handleCommentCreate))
 
 	// Filesystem picker for /p/load. Read-only directory listing. JSON for
 	// API clients, HTML partial for the htmx-driven /p/load picker.
@@ -145,7 +163,7 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// Root: home handler. http.ServeMux's "/" pattern catches every path not
 	// matched by a more specific handler, so the more-specific /p/* patterns
 	// above preempt it.
-	mux.Handle("/", a.session.middleware(http.HandlerFunc(a.handleHome)))
+	mux.Handle("/", authed(a.handleHome))
 }
 
 // app bundles the per-mount construction (renderer, session manager) so
@@ -157,12 +175,17 @@ type app struct {
 	renderer  *Renderer
 	session   *sessionManager
 	providers map[string]auth.Provider
+	// authEnabled flips on the W2-3 login + per-project role enforcement. It's
+	// true exactly when at least one OAuth provider is configured; otherwise
+	// the web UI runs in the legacy localhost-only no-auth mode.
+	authEnabled bool
 }
 
 func newApp(deps Deps) *app {
 	a := &app{deps: deps}
 	a.session = newSessionManager(deps)
 	a.providers = buildProviders(deps.Cfg.Auth)
+	a.authEnabled = len(a.providers) > 0
 	// Renderer holds a back-reference to a so it can fetch chrome (sidebar
 	// projects, agent label, flash, csrf) per request.
 	a.renderer = NewRenderer(deps.Dev, a)
@@ -179,7 +202,7 @@ func newApp(deps Deps) *app {
 func (a *app) Chrome(w http.ResponseWriter, r *http.Request) Chrome {
 	projects := a.sidebarProjects(r.Context())
 	csrf := ""
-	if id, ok := svc.SessionIDFrom(r.Context()); ok {
+	if id := a.csrfID(r.Context()); id != "" {
 		csrf = csrfToken(a.session.secret, id)
 	}
 	return Chrome{

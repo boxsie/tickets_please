@@ -99,8 +99,12 @@ type Service struct {
 	// store's data root + global lock; consumed by the OAuth login flow to
 	// upsert users on successful authentication.
 	UserStore *store.UserStore
-	Logger    *slog.Logger
-	Cfg       config.Config
+	// MembershipStore is the per-project (user, project) → role registry (W2).
+	// Read by the web layer's route guards to authorize access; written by the
+	// invitation / role-management flows (W2-4) and bootstrap admin (W2-6).
+	MembershipStore *store.MembershipStore
+	Logger          *slog.Logger
+	Cfg             config.Config
 
 	// Cache is the in-memory project cache (T04). Lazy-loads project trees
 	// off disk, sliding-TTL evicts, and listens for cross-process file
@@ -261,6 +265,10 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 	if err != nil {
 		return nil, fmt.Errorf("svc: build user store: %w", err)
 	}
+	ms, err := store.NewMembershipStore(dataRoot, cfg.LockTimeoutSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("svc: build membership store: %w", err)
+	}
 
 	st, err := store.New(cfg)
 	if err != nil {
@@ -279,20 +287,21 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 	backfillCtx, cancelBackfill := context.WithCancel(context.Background())
 
 	s := &Service{
-		Store:          st,
-		AgentStore:     as,
-		UserStore:      us,
-		Logger:         logger,
-		Cfg:            cfg,
-		Embed:          provider,
-		EmbedDim:       embedDim,
-		EmbedNew:       factory,
-		defaultIndexes: indexes,
-		cacheCancel:    cancelCache,
-		backfillCancel: cancelBackfill,
-		bgCtx:          backfillCtx,
-		touchOnce:      make(map[string]time.Time),
-		projectMounts:  make(map[string]*ProjectMount),
+		Store:           st,
+		AgentStore:      as,
+		UserStore:       us,
+		MembershipStore: ms,
+		Logger:          logger,
+		Cfg:             cfg,
+		Embed:           provider,
+		EmbedDim:        embedDim,
+		EmbedNew:        factory,
+		defaultIndexes:  indexes,
+		cacheCancel:     cancelCache,
+		backfillCancel:  cancelBackfill,
+		bgCtx:           backfillCtx,
+		touchOnce:       make(map[string]time.Time),
+		projectMounts:   make(map[string]*ProjectMount),
 	}
 
 	// Cache resolves Stores via service-owned closures so a single ProjectCache

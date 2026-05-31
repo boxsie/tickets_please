@@ -198,6 +198,23 @@ func (m *MembershipStore) RevokeMembership(ctx context.Context, projectID, userI
 	return removed, err
 }
 
+// GetMembership returns the (project, user) membership record, or a
+// domain.ErrNotFound-wrapped error when the user holds no membership on the
+// project. Used by the web route guards to authorize per-project access.
+func (m *MembershipStore) GetMembership(projectID, userID string) (*MembershipRecord, error) {
+	if projectID == "" || userID == "" {
+		return nil, fmt.Errorf("GetMembership: project_id and user_id required")
+	}
+	rec, err := m.readRecord(projectID, userID)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%w: membership %s/%s", domain.ErrNotFound, projectID, userID)
+		}
+		return nil, err
+	}
+	return rec, nil
+}
+
 // readRecord is the unlocked single-record reader used by the grant flow's
 // existence check. Callers needing safety against concurrent writes must hold
 // the global lock around the read+write pair.
