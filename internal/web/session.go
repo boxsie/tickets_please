@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -143,9 +142,7 @@ func (m *sessionManager) writeCookie(w http.ResponseWriter, r *http.Request, age
 
 // sign returns hmac(agentID) for cookie signature verification.
 func (m *sessionManager) sign(agentID string) []byte {
-	mac := hmac.New(sha256.New, m.secret)
-	mac.Write([]byte(cookiePurpose + "|" + agentID))
-	return mac.Sum(nil)
+	return hmacSig(m.secret, cookiePurpose, agentID)
 }
 
 // agentLabel returns a short human-readable label for the agent ID, suitable

@@ -12,13 +12,21 @@ import (
 // with the cookie signature (different purpose, same secret root).
 const csrfPurpose = "tp-csrf-v1"
 
+// hmacSig returns hmac-sha256(purpose|msg) under the given secret. Every signed
+// value in the web layer (cookie, CSRF token, OAuth state) goes through this so
+// a single purpose-prefixed construction is used everywhere — distinct purpose
+// labels keep otherwise-identical messages from cross-validating.
+func hmacSig(secret []byte, purpose, msg string) []byte {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(purpose + "|" + msg))
+	return mac.Sum(nil)
+}
+
 // csrfToken returns the per-session CSRF token: base64(hmac(agentID, key)).
 // Stable for the lifetime of the cookie so refreshing a form page produces
 // the same hidden field value.
 func csrfToken(secret []byte, agentID string) string {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte(csrfPurpose + "|" + agentID))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return base64.RawURLEncoding.EncodeToString(hmacSig(secret, csrfPurpose, agentID))
 }
 
 // checkCSRF verifies the request's `_csrf` form field against the expected

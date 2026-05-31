@@ -1,0 +1,37 @@
+package pages
+
+// Login is a standalone (chrome-less) sign-in page. Unlike the in-app pages it
+// does NOT wrap in layout.Layout — a pre-auth visitor shouldn't see the
+// project sidebar/nav — so it renders its own minimal document and is served
+// via Renderer.RenderTemplPartial.
+templ Login(buttons []ProviderButton) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>Sign in · tickets_please</title>
+			<link rel="stylesheet" href="/static/app.css"/>
+		</head>
+		<body>
+			<section class="empty-state">
+				<h1>Sign in</h1>
+				if len(buttons) == 0 {
+					<p class="subtitle">
+						No auth providers are configured. Add an <code>auth.providers</code>
+						block to <code>~/.tickets_please/config.yaml</code> and restart the server.
+					</p>
+				} else {
+					<p class="subtitle">Choose a provider to continue.</p>
+					<div class="page-actions">
+						for _, b := range buttons {
+							<a class="btn btn-primary" href={ templ.SafeURL(b.StartURL) }>
+								Continue with { b.Label }
+							</a>
+						}
+					</div>
+				}
+			</section>
+		</body>
+	</html>
+}

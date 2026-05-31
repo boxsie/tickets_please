@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 
+	"tickets_please/internal/auth"
 	"tickets_please/internal/domain"
 	"tickets_please/internal/svc"
 )
@@ -35,6 +36,16 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	wrap := func(h http.HandlerFunc) http.Handler {
 		return a.session.middleware(http.HandlerFunc(a.withCSRF(h)))
 	}
+
+	// Auth (W2-2). Run through the same session wrap so the legacy tp_sid
+	// agent cookie + CSRF context still exist (withCSRF only enforces on
+	// POST, so the GET login/start/callback routes are effectively public;
+	// logout is the one POST and gets CSRF). OAuth state is carried in its
+	// own signed short-lived cookie, not the CSRF token.
+	mux.Handle("GET /auth/login", wrap(a.handleLoginPage))
+	mux.Handle("GET /auth/{provider}/start", wrap(a.handleAuthStart))
+	mux.Handle("GET /auth/{provider}/callback", wrap(a.handleAuthCallback))
+	mux.Handle("POST /auth/logout", wrap(a.handleLogout))
 
 	// Sidebar swap endpoint: returns just the <aside id="sidebar"> fragment.
 	// Wired by templates/partials/sidebar.tmpl's hx-get; triggered on the
@@ -142,14 +153,16 @@ func Mount(mux *http.ServeMux, deps Deps) {
 // through every signature. *app also satisfies ChromeProvider — the renderer
 // calls back into it on every Page render to assemble per-request chrome.
 type app struct {
-	deps     Deps
-	renderer *Renderer
-	session  *sessionManager
+	deps      Deps
+	renderer  *Renderer
+	session   *sessionManager
+	providers map[string]auth.Provider
 }
 
 func newApp(deps Deps) *app {
 	a := &app{deps: deps}
 	a.session = newSessionManager(deps)
+	a.providers = buildProviders(deps.Cfg.Auth)
 	// Renderer holds a back-reference to a so it can fetch chrome (sidebar
 	// projects, agent label, flash, csrf) per request.
 	a.renderer = NewRenderer(deps.Dev, a)

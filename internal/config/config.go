@@ -52,9 +52,31 @@ type Config struct {
 	FsnotifyEnabled        bool   `koanf:"fsnotify_enabled"`
 	EnforceDependencies    bool   `koanf:"enforce_dependencies"`
 
+	// Auth holds the optional web-UI OAuth configuration (W2). When no
+	// providers are configured the login page renders an "unconfigured" hint
+	// and the rest of the web UI keeps working under the legacy
+	// localhost-only agent-cookie model. File-only config — secrets don't
+	// belong in env vars, so the env layer's allowlist deliberately omits it.
+	Auth AuthConfig `koanf:"auth"`
+
 	// Source describes where the config came from for logging.
 	// Either "defaults" or the absolute path to the loaded yaml file.
 	Source string `koanf:"-"`
+}
+
+// AuthConfig is the `auth:` block of config.yaml. BaseURL is used to construct
+// the OAuth redirect URL (`<base_url>/auth/<provider>/callback`); when empty
+// the web layer infers it from the request Host (dev mode). Providers maps a
+// provider name ("github", "google") to its OAuth client credentials.
+type AuthConfig struct {
+	BaseURL   string                        `koanf:"base_url"`
+	Providers map[string]AuthProviderConfig `koanf:"providers"`
+}
+
+// AuthProviderConfig is a single OAuth app's credentials.
+type AuthProviderConfig struct {
+	ClientID     string `koanf:"client_id"`
+	ClientSecret string `koanf:"client_secret"`
 }
 
 // Defaults mirrors examples/config.yaml. Keep them in lockstep.

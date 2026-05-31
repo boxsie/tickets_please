@@ -95,8 +95,12 @@ type Service struct {
 	// canonical lookup; per-call routing should go through ResolveProjectStore.
 	Store      *store.Store
 	AgentStore *store.AgentStore
-	Logger     *slog.Logger
-	Cfg        config.Config
+	// UserStore is the central web-UI user registry (W2). Shares the agent
+	// store's data root + global lock; consumed by the OAuth login flow to
+	// upsert users on successful authentication.
+	UserStore *store.UserStore
+	Logger    *slog.Logger
+	Cfg       config.Config
 
 	// Cache is the in-memory project cache (T04). Lazy-loads project trees
 	// off disk, sliding-TTL evicts, and listens for cross-process file
@@ -253,6 +257,10 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 	if err != nil {
 		return nil, fmt.Errorf("svc: build agent store: %w", err)
 	}
+	us, err := store.NewUserStore(dataRoot, cfg.LockTimeoutSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("svc: build user store: %w", err)
+	}
 
 	st, err := store.New(cfg)
 	if err != nil {
@@ -273,6 +281,7 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 	s := &Service{
 		Store:          st,
 		AgentStore:     as,
+		UserStore:      us,
 		Logger:         logger,
 		Cfg:            cfg,
 		Embed:          provider,
