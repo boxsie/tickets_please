@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"tickets_please/internal/domain"
-	"tickets_please/internal/web/components/partials"
 	pgtickets "tickets_please/internal/web/components/pages/tickets"
+	"tickets_please/internal/web/components/partials"
 )
 
 // Comments handlers — the immutable audit trail UI on the ticket detail
@@ -110,6 +110,17 @@ func buildCommentRow(c *domain.Comment) commentRowData {
 		// Fall back to an id stub so the audit trail still references the
 		// agent — beats showing "unknown" when the agent record is gone.
 		label = c.Author.ID[:min(8, len(c.Author.ID))]
+	}
+	// "Claude (for Dan)" when the authoring agent was acting on behalf of a
+	// registered user. The clickable user-page / agent-page links are a
+	// Phase-2 W3 deliverable (those routes don't exist yet), so today the
+	// acting-for relationship renders as plain text.
+	if c.AuthorFor != nil {
+		forName := c.AuthorFor.DisplayName
+		if forName == "" {
+			forName = c.AuthorFor.UserID[:min(8, len(c.AuthorFor.UserID))]
+		}
+		label = label + " (for " + forName + ")"
 	}
 	return commentRowData{
 		Comment:     c,

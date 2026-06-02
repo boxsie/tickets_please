@@ -49,7 +49,7 @@ func TestRegisterAgent_WritesYAMLWithExpectedFields(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
 
-	id, expiresAt, err := s.RegisterAgent(ctx, "claude:run-a", "Claude A", map[string]string{"model": "sonnet-4.7"}, 0)
+	id, expiresAt, err := s.RegisterAgent(ctx, "claude:run-a", "Claude A", map[string]string{"model": "sonnet-4.7"}, 0, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -83,10 +83,10 @@ func TestRegisterAgent_WritesYAMLWithExpectedFields(t *testing.T) {
 func TestRegisterAgent_RejectsBlank(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
-	if _, _, err := s.RegisterAgent(ctx, "", "name", nil, 0); !errors.Is(err, domain.ErrInvalidArgument) {
+	if _, _, err := s.RegisterAgent(ctx, "", "name", nil, 0, ""); !errors.Is(err, domain.ErrInvalidArgument) {
 		t.Fatalf("expected ErrInvalidArgument for empty key, got %v", err)
 	}
-	if _, _, err := s.RegisterAgent(ctx, "k", "  ", nil, 0); !errors.Is(err, domain.ErrInvalidArgument) {
+	if _, _, err := s.RegisterAgent(ctx, "k", "  ", nil, 0, ""); !errors.Is(err, domain.ErrInvalidArgument) {
 		t.Fatalf("expected ErrInvalidArgument for blank name, got %v", err)
 	}
 }
@@ -95,7 +95,7 @@ func TestRegisterAgent_TTLCappedByMax(t *testing.T) {
 	s := freshService(t)
 	s.Cfg.AgentSessionMaxMinutes = 60
 	ctx := context.Background()
-	_, expiresAt, err := s.RegisterAgent(ctx, "k", "n", nil, 10*time.Hour)
+	_, expiresAt, err := s.RegisterAgent(ctx, "k", "n", nil, 10*time.Hour, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,10 +108,10 @@ func TestRegisterAgent_DuplicateKeyWhileActive(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
 
-	if _, _, err := s.RegisterAgent(ctx, "claude:run-1", "A", nil, 0); err != nil {
+	if _, _, err := s.RegisterAgent(ctx, "claude:run-1", "A", nil, 0, ""); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := s.RegisterAgent(ctx, "claude:run-1", "B", nil, 0)
+	_, _, err := s.RegisterAgent(ctx, "claude:run-1", "B", nil, 0, "")
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("expected ErrAlreadyExists, got %v", err)
 	}
@@ -121,7 +121,7 @@ func TestRegisterAgent_ReusableAfterExpiry(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
 
-	id, _, err := s.RegisterAgent(ctx, "claude:run-1", "A", nil, 0)
+	id, _, err := s.RegisterAgent(ctx, "claude:run-1", "A", nil, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestRegisterAgent_ReusableAfterExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := s.RegisterAgent(ctx, "claude:run-1", "B", nil, 0); err != nil {
+	if _, _, err := s.RegisterAgent(ctx, "claude:run-1", "B", nil, 0, ""); err != nil {
 		t.Fatalf("expected re-registration after expiry to succeed, got %v", err)
 	}
 }
@@ -164,7 +164,7 @@ func TestRequireSession_UnknownID(t *testing.T) {
 func TestRequireSession_ExpiredID(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
-	id, _, err := s.RegisterAgent(ctx, "k", "n", nil, 0)
+	id, _, err := s.RegisterAgent(ctx, "k", "n", nil, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestRequireSession_ExpiredID(t *testing.T) {
 func TestRequireSession_AttachesAgentToContext(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
-	id, _, err := s.RegisterAgent(ctx, "k", "Claude X", nil, 0)
+	id, _, err := s.RegisterAgent(ctx, "k", "Claude X", nil, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestRequireSession_AttachesAgentToContext(t *testing.T) {
 func TestHeartbeat_UpdatesLastSeenButNotExpiry(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
-	id, originalExpiry, err := s.RegisterAgent(ctx, "k", "n", nil, 0)
+	id, originalExpiry, err := s.RegisterAgent(ctx, "k", "n", nil, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestHeartbeat_UpdatesLastSeenButNotExpiry(t *testing.T) {
 func TestHeartbeat_ExpiredSession(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
-	id, _, err := s.RegisterAgent(ctx, "k", "n", nil, 0)
+	id, _, err := s.RegisterAgent(ctx, "k", "n", nil, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestHeartbeat_UnknownSession(t *testing.T) {
 func TestGetAgent_ReturnsDomainAgent(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
-	id, _, err := s.RegisterAgent(ctx, "k", "Claude Z", map[string]string{"x": "y"}, 0)
+	id, _, err := s.RegisterAgent(ctx, "k", "Claude Z", map[string]string{"x": "y"}, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestGetAgent_NotFound(t *testing.T) {
 func TestTouchDebounce_SecondCallSkipsRewrite(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
-	id, _, err := s.RegisterAgent(ctx, "k", "n", nil, 0)
+	id, _, err := s.RegisterAgent(ctx, "k", "n", nil, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestSessionIDFrom_AbsentReturnsFalse(t *testing.T) {
 func TestGetAgent_MirrorsRecord(t *testing.T) {
 	s := freshService(t)
 	ctx := context.Background()
-	id, _, err := s.RegisterAgent(ctx, "k", "n", nil, 0)
+	id, _, err := s.RegisterAgent(ctx, "k", "n", nil, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}

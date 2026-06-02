@@ -491,7 +491,7 @@ func TestIntegration_AgentSessionExpiry(t *testing.T) {
 		t.Fatalf("bootstrap CreateProject: %v", err)
 	}
 
-	id, _, err := s.RegisterAgent(ctx, "expiring-key", "ExpiringAgent", nil, 0)
+	id, _, err := s.RegisterAgent(ctx, "expiring-key", "ExpiringAgent", nil, 0, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -522,10 +522,10 @@ func TestIntegration_AgentSessionExpiry(t *testing.T) {
 func TestIntegration_ActiveKeyUniqueness(t *testing.T) {
 	s := freshServiceWithCfg(t, config.Config{})
 	ctx := context.Background()
-	if _, _, err := s.RegisterAgent(ctx, "shared-key", "First", nil, 0); err != nil {
+	if _, _, err := s.RegisterAgent(ctx, "shared-key", "First", nil, 0, ""); err != nil {
 		t.Fatalf("first RegisterAgent: %v", err)
 	}
-	_, _, err := s.RegisterAgent(ctx, "shared-key", "Second", nil, 0)
+	_, _, err := s.RegisterAgent(ctx, "shared-key", "Second", nil, 0, "")
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("expected ErrAlreadyExists for duplicate active key, got %v", err)
 	}

@@ -48,6 +48,12 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		return nil, err
 	}
 
+	// Acting-for agents must have membership on this project (key-only agents
+	// are unrestricted — no-op).
+	if err := s.authorizeActingFor(agent, lp.Project.ID, true); err != nil {
+		return nil, err
+	}
+
 	// Resolve the host store for this project once — every BeginOp / path
 	// build below must target it, not s.Store, so per-repo mounts write back
 	// to the correct on-disk location.
@@ -121,6 +127,7 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		DependsOn:          append([]string(nil), in.DependsOn...),
 		ParallelizableWith: append([]string(nil), in.ParallelizableWith...),
 		CreatedByAgentID:   &agent.ID,
+		CreatedForUserID:   actingForUserID(agent),
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
@@ -169,6 +176,7 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		DependsOn:          append([]string(nil), rec.DependsOn...),
 		ParallelizableWith: append([]string(nil), rec.ParallelizableWith...),
 		CreatedBy:          &domain.AgentRef{ID: agent.ID, Name: agent.Name},
+		CreatedFor:         actingForRef(agent),
 		CreatedAt:          rec.CreatedAt,
 		UpdatedAt:          rec.UpdatedAt,
 	}
@@ -332,6 +340,10 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 		return nil, err
 	}
 
+	if err := s.authorizeActingFor(agent, lp.Project.ID, true); err != nil {
+		return nil, err
+	}
+
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -473,6 +485,10 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 		return nil, err
 	}
 
+	if err := s.authorizeActingFor(agent, lp.Project.ID, true); err != nil {
+		return nil, err
+	}
+
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -528,13 +544,14 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 	commentID := uuid.New()
 	createdAt := now.UTC()
 	cRec := &store.CommentRecord{
-		ID:            commentID.String(),
-		TicketID:      ticketID,
-		Kind:          domain.CommentKindSystemMove,
-		AuthorAgentID: &agent.ID,
-		FromColumn:    &oldColumn,
-		ToColumn:      &target,
-		CreatedAt:     createdAt,
+		ID:              commentID.String(),
+		TicketID:        ticketID,
+		Kind:            domain.CommentKindSystemMove,
+		AuthorAgentID:   &agent.ID,
+		AuthorForUserID: actingForUserID(agent),
+		FromColumn:      &oldColumn,
+		ToColumn:        &target,
+		CreatedAt:       createdAt,
 	}
 	shortID := hex.EncodeToString(commentID[:4])
 	commentFilename := fmt.Sprintf("%s-%s-%s.md", createdAt.Format(commentTimestampLayout), shortID, string(cRec.Kind))
@@ -589,6 +606,7 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 		FromColumn: cRec.FromColumn,
 		ToColumn:   cRec.ToColumn,
 		Author:     hydrateAgentRef(s.AgentStore, agent.ID, agent.Name),
+		AuthorFor:  actingForRef(agent),
 		CreatedAt:  cRec.CreatedAt,
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
@@ -634,6 +652,10 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		return nil, err
 	}
 
+	if err := s.authorizeActingFor(agent, lp.Project.ID, true); err != nil {
+		return nil, err
+	}
+
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -666,6 +688,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 	rec.Column = domain.ColumnDone
 	rec.CompletedAt = &now
 	rec.CompletedByAgentID = &agent.ID
+	rec.CompletedForUserID = actingForUserID(agent)
 	rec.UpdatedAt = now
 	yamlBytes, err := store.MarshalYAML(rec)
 	if err != nil {
@@ -692,13 +715,14 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 	commentID := uuid.New()
 	createdAt := now.UTC()
 	cRec := &store.CommentRecord{
-		ID:            commentID.String(),
-		TicketID:      ticketID,
-		Kind:          domain.CommentKindSystemCompletion,
-		AuthorAgentID: &agent.ID,
-		FromColumn:    nil,
-		ToColumn:      nil,
-		CreatedAt:     createdAt,
+		ID:              commentID.String(),
+		TicketID:        ticketID,
+		Kind:            domain.CommentKindSystemCompletion,
+		AuthorAgentID:   &agent.ID,
+		AuthorForUserID: actingForUserID(agent),
+		FromColumn:      nil,
+		ToColumn:        nil,
+		CreatedAt:       createdAt,
 	}
 	shortID := hex.EncodeToString(commentID[:4])
 	commentFilename := fmt.Sprintf("%s-%s-%s.md", createdAt.Format(commentTimestampLayout), shortID, string(cRec.Kind))
@@ -766,6 +790,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 	t.Learnings = strPtr(lnTrim)
 	t.CompletedAt = &now
 	t.CompletedBy = hydrateAgentRef(s.AgentStore, agent.ID, agent.Name)
+	t.CompletedFor = actingForRef(agent)
 	t.UpdatedAt = rec.UpdatedAt
 	domComment := &domain.Comment{
 		ID:         cRec.ID,
@@ -775,6 +800,7 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		FromColumn: cRec.FromColumn,
 		ToColumn:   cRec.ToColumn,
 		Author:     hydrateAgentRef(s.AgentStore, agent.ID, agent.Name),
+		AuthorFor:  actingForRef(agent),
 		CreatedAt:  cRec.CreatedAt,
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
@@ -817,6 +843,10 @@ func (s *Service) DeleteTicket(ctx context.Context, id string) error {
 	}
 	lp, _, err := s.Cache.Get(ctx, hostSlug)
 	if err != nil {
+		return err
+	}
+
+	if err := s.authorizeActingFor(agent, lp.Project.ID, true); err != nil {
 		return err
 	}
 
@@ -1178,4 +1208,3 @@ func cloneTicket(t *domain.Ticket) *domain.Ticket {
 	cp.BlockedBy = append([]string(nil), t.BlockedBy...)
 	return &cp
 }
-

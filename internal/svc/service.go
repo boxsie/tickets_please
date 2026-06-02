@@ -311,7 +311,7 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 		ResolveStore:    s.cacheResolveStore,
 		WalkAllStores:   s.cacheWalkAllStores,
 		FsnotifyEnabled: cfg.FsnotifyEnabled,
-	}, as, cfg)
+	}, as, us, cfg)
 	pc.Logger = logger
 	s.Cache = pc
 

@@ -34,6 +34,10 @@ type Session struct {
 	// Kept alongside ProjectSlug so the project can be re-resolved if the
 	// project store cache evicts the slug.
 	ProjectPath string
+	// ActingForUserID, when non-empty, is the registered user this session is
+	// acting on behalf of. Cached here so an auto-refresh (refreshSession)
+	// re-mints the svc session with the same binding.
+	ActingForUserID string
 	// ExpiresAt is when the underlying svc session expires.
 	ExpiresAt time.Time
 }

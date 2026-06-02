@@ -69,6 +69,10 @@ func (s *Service) flipArchive(ctx context.Context, ticketID, comment string, wan
 		return nil, err
 	}
 
+	if err := s.authorizeActingFor(agent, lp.Project.ID, true); err != nil {
+		return nil, err
+	}
+
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -118,11 +122,12 @@ func (s *Service) flipArchive(ctx context.Context, ticketID, comment string, wan
 	commentID := uuid.New()
 	createdAt := now.UTC()
 	cRec := &store.CommentRecord{
-		ID:            commentID.String(),
-		TicketID:      ticketID,
-		Kind:          kind,
-		AuthorAgentID: &agent.ID,
-		CreatedAt:     createdAt,
+		ID:              commentID.String(),
+		TicketID:        ticketID,
+		Kind:            kind,
+		AuthorAgentID:   &agent.ID,
+		AuthorForUserID: actingForUserID(agent),
+		CreatedAt:       createdAt,
 	}
 	shortID := hex.EncodeToString(commentID[:4])
 	commentFilename := fmt.Sprintf("%s-%s-%s.md",
@@ -174,6 +179,7 @@ func (s *Service) flipArchive(ctx context.Context, ticketID, comment string, wan
 		Kind:      cRec.Kind,
 		Body:      commentBody,
 		Author:    hydrateAgentRef(s.AgentStore, agent.ID, agent.Name),
+		AuthorFor: actingForRef(agent),
 		CreatedAt: cRec.CreatedAt,
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
@@ -255,9 +261,9 @@ func (s *Service) ApplyArchivePolicy(ctx context.Context, in ApplyPolicyInput) (
 	// every ticket is cheap (pure function), and we want to release the lock
 	// before calling ArchiveTicket below (which takes the cache WRITE lock).
 	type candidate struct {
-		id     string
-		title  string
-		dec    ArchiveDecision
+		id    string
+		title string
+		dec   ArchiveDecision
 	}
 	var candidates []candidate
 	lp.Lock.RLock()

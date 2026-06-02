@@ -54,6 +54,10 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 		return nil, err
 	}
 
+	if err := s.authorizeActingFor(agent, lp.Project.ID, true); err != nil {
+		return nil, err
+	}
+
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -68,13 +72,14 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 	now := time.Now().UTC()
 	commentID := uuid.New()
 	rec := &store.CommentRecord{
-		ID:            commentID.String(),
-		TicketID:      ticketID,
-		Kind:          domain.CommentKindUser,
-		AuthorAgentID: &agent.ID,
-		FromColumn:    nil,
-		ToColumn:      nil,
-		CreatedAt:     now,
+		ID:              commentID.String(),
+		TicketID:        ticketID,
+		Kind:            domain.CommentKindUser,
+		AuthorAgentID:   &agent.ID,
+		AuthorForUserID: actingForUserID(agent),
+		FromColumn:      nil,
+		ToColumn:        nil,
+		CreatedAt:       now,
 	}
 
 	// Filename: <ts>-<short-id>-<kind>.md.
@@ -142,6 +147,7 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 		FromColumn: rec.FromColumn,
 		ToColumn:   rec.ToColumn,
 		Author:     hydrateAgentRef(s.AgentStore, agent.ID, agent.Name),
+		AuthorFor:  actingForRef(agent),
 		CreatedAt:  rec.CreatedAt,
 	}
 

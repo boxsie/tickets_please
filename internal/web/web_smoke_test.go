@@ -300,7 +300,7 @@ func TestSmoke_ProjectSearch_TwoProject(t *testing.T) {
 	}
 	// CreateTicket requires an authenticated agent.
 	id, _, err := deps.Service.RegisterAgent(context.Background(), "two-proj-fixture", "two-proj",
-		map[string]string{"client_name": "test"}, 5*time.Minute)
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}

@@ -85,6 +85,7 @@ type Resolvers struct {
 type ProjectCache struct {
 	resolvers  Resolvers
 	agentStore *store.AgentStore
+	userStore  *store.UserStore
 	idleTTL    time.Duration
 	maxLoaded  int
 
@@ -111,7 +112,11 @@ type ProjectCache struct {
 //
 // as is the central AgentStore used for agent-ref hydration (lookupAgentRef).
 // It may be nil; when nil, lookupAgentRef returns a thin ref with only the id.
-func New(resolvers Resolvers, as *store.AgentStore, cfg config.Config) *ProjectCache {
+//
+// us is the central UserStore used for user-ref hydration (lookupUserRef) of
+// the acting-for / created_for / completed_for links. Like as it may be nil,
+// in which case lookupUserRef returns a thin ref with only the id.
+func New(resolvers Resolvers, as *store.AgentStore, us *store.UserStore, cfg config.Config) *ProjectCache {
 	idle := time.Duration(cfg.ProjectIdleMinutes) * time.Minute
 	if idle <= 0 {
 		idle = 15 * time.Minute
@@ -123,6 +128,7 @@ func New(resolvers Resolvers, as *store.AgentStore, cfg config.Config) *ProjectC
 	return &ProjectCache{
 		resolvers:  resolvers,
 		agentStore: as,
+		userStore:  us,
 		idleTTL:    idle,
 		maxLoaded:  max,
 		Logger:     slog.Default(),
@@ -152,7 +158,7 @@ func NewWithStore(st *store.Store, as *store.AgentStore, cfg config.Config) *Pro
 		},
 		FsnotifyEnabled: st != nil && st.FsnotifyEnabled,
 	}
-	return New(resolvers, as, cfg)
+	return New(resolvers, as, nil, cfg)
 }
 
 // Len returns the number of currently-loaded projects. Test helper.
@@ -671,6 +677,12 @@ func (c *ProjectCache) hydrateTicket(st *store.Store, ticketDir string, tr *stor
 	if tr.CompletedByAgentID != nil {
 		t.CompletedBy = c.lookupAgentRef(*tr.CompletedByAgentID)
 	}
+	if tr.CreatedForUserID != nil {
+		t.CreatedFor = c.lookupUserRef(*tr.CreatedForUserID)
+	}
+	if tr.CompletedForUserID != nil {
+		t.CompletedFor = c.lookupUserRef(*tr.CompletedForUserID)
+	}
 
 	if tr.Column == domain.ColumnDone {
 		comp, err := readFileIfExists(filepath.Join(ticketDir, "completion.md"))
@@ -703,6 +715,9 @@ func (c *ProjectCache) hydrateTicket(st *store.Store, ticketDir string, tr *stor
 		if cr.AuthorAgentID != nil {
 			dc.Author = c.lookupAgentRef(*cr.AuthorAgentID)
 		}
+		if cr.AuthorForUserID != nil {
+			dc.AuthorFor = c.lookupUserRef(*cr.AuthorForUserID)
+		}
 		cs = append(cs, dc)
 		return nil
 	}); err != nil {
@@ -728,6 +743,24 @@ func (c *ProjectCache) lookupAgentRef(id string) *domain.AgentRef {
 		return &domain.AgentRef{ID: id}
 	}
 	return &domain.AgentRef{ID: rec.ID, Name: rec.Name}
+}
+
+// lookupUserRef returns a flat UserRef for the given user id, mirroring
+// lookupAgentRef: nil for the zero id, an id-only thin ref when no UserStore
+// is configured or the user file is missing (soft fail — a dangling
+// created_for shouldn't break a project load), else id + display name.
+func (c *ProjectCache) lookupUserRef(id string) *domain.UserRef {
+	if id == "" {
+		return nil
+	}
+	if c.userStore == nil {
+		return &domain.UserRef{UserID: id}
+	}
+	rec, err := c.userStore.ReadUser(id)
+	if err != nil {
+		return &domain.UserRef{UserID: id}
+	}
+	return &domain.UserRef{UserID: rec.ID, DisplayName: rec.DisplayName}
 }
 
 // splitCompletionSections parses a completion.md into its three headed

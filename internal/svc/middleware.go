@@ -37,6 +37,7 @@ func (s *Service) requireSession(ctx context.Context) (context.Context, *domain.
 		return ctx, nil, fmt.Errorf("%w: session expired; re-register", domain.ErrUnauthenticated)
 	}
 	a := rec.ToDomain()
+	s.hydrateActingFor(a)
 	s.touchAgentDebounced(a.ID)
 	return WithAgent(ctx, a), a, nil
 }
@@ -67,6 +68,7 @@ func (s *Service) optionalSession(ctx context.Context) (context.Context, *domain
 		return ctx, nil, nil
 	}
 	a := rec.ToDomain()
+	s.hydrateActingFor(a)
 	s.touchAgentDebounced(a.ID)
 	return WithAgent(ctx, a), a, nil
 }

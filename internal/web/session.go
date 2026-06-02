@@ -93,7 +93,9 @@ func (m *sessionManager) mintAgent(w http.ResponseWriter, r *http.Request) (stri
 		"ua":          truncate(r.UserAgent(), 200),
 		"remote_addr": r.RemoteAddr,
 	}
-	id, _, err := m.deps.Service.RegisterAgent(r.Context(), key, "Web UI", meta, agentTTL)
+	// Web-UI cookie agents are key-only; the user identity rides in the
+	// signed cookie, not an acting-for binding (that's an MCP-agent concept).
+	id, _, err := m.deps.Service.RegisterAgent(r.Context(), key, "Web UI", meta, agentTTL, "")
 	if err != nil {
 		return "", fmt.Errorf("mint agent: register: %w", err)
 	}

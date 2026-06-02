@@ -19,7 +19,7 @@ func seedProjectAndPhase(t *testing.T, deps Deps, projectSlug, phaseName string)
 	t.Helper()
 	ctx := context.Background()
 	id, _, err := deps.Service.RegisterAgent(ctx, "test-fixture-"+projectSlug, "test-fixture",
-		map[string]string{"client_name": "test"}, 5*time.Minute)
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestAssignTicketToPhase_RequiresComment(t *testing.T) {
 	// Need a ticket. Seed one via Service.
 	ctx := context.Background()
 	id, _, err := deps.Service.RegisterAgent(ctx, "atp-agent", "atp",
-		map[string]string{"client_name": "test"}, 5*time.Minute)
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestAssignTicketToPhase_Happy(t *testing.T) {
 
 	ctx := context.Background()
 	id, _, err := deps.Service.RegisterAgent(ctx, "ath-agent", "ath",
-		map[string]string{"client_name": "test"}, 5*time.Minute)
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestPhasesIndex_EnrichesWithWaves(t *testing.T) {
 
 	ctx := context.Background()
 	id, _, err := deps.Service.RegisterAgent(ctx, "ewp-agent", "ewp",
-		map[string]string{"client_name": "test"}, 5*time.Minute)
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -490,7 +490,7 @@ func TestPhasesIndex_PhaseLessTicketsExcluded(t *testing.T) {
 
 	ctx := context.Background()
 	id, _, err := deps.Service.RegisterAgent(ctx, "plx-agent", "plx",
-		map[string]string{"client_name": "test"}, 5*time.Minute)
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}

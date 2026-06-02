@@ -27,6 +27,11 @@ var (
 	// ErrUnauthenticated is returned when a mutating method is called
 	// without a valid agent session in the context.
 	ErrUnauthenticated = errors.New("unauthenticated")
+
+	// ErrForbidden is returned when the caller is authenticated but lacks
+	// authorization for the action — e.g. an agent acting for a user who has
+	// no membership on the target project, or whose role is too low to mutate.
+	ErrForbidden = errors.New("forbidden")
 )
 
 // IsNotFound reports whether err matches ErrNotFound.
@@ -43,3 +48,6 @@ func IsFailedPrecondition(err error) bool { return errors.Is(err, ErrFailedPreco
 
 // IsUnauthenticated reports whether err matches ErrUnauthenticated.
 func IsUnauthenticated(err error) bool { return errors.Is(err, ErrUnauthenticated) }
+
+// IsForbidden reports whether err matches ErrForbidden.
+func IsForbidden(err error) bool { return errors.Is(err, ErrForbidden) }

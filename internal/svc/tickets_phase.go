@@ -48,6 +48,10 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 		return nil, err
 	}
 
+	if err := s.authorizeActingFor(agent, lp.Project.ID, true); err != nil {
+		return nil, err
+	}
+
 	lp.Lock.Lock()
 	defer lp.Lock.Unlock()
 
@@ -119,13 +123,14 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 	commentBody = ensureTrailingNewline(commentBody)
 
 	commentRec := &store.CommentRecord{
-		ID:            commentID.String(),
-		TicketID:      rec.ID,
-		Kind:          domain.CommentKindSystemMove,
-		AuthorAgentID: &agent.ID,
-		FromColumn:    nil,
-		ToColumn:      nil,
-		CreatedAt:     commentNow,
+		ID:              commentID.String(),
+		TicketID:        rec.ID,
+		Kind:            domain.CommentKindSystemMove,
+		AuthorAgentID:   &agent.ID,
+		AuthorForUserID: actingForUserID(agent),
+		FromColumn:      nil,
+		ToColumn:        nil,
+		CreatedAt:       commentNow,
 	}
 	commentBytes, err := store.EncodeMarkdown(commentRec, commentBody)
 	if err != nil {
@@ -182,6 +187,7 @@ func (s *Service) AssignTicketToPhase(ctx context.Context, ticketID string, phas
 		FromColumn: nil,
 		ToColumn:   nil,
 		Author:     hydrateAgentRef(s.AgentStore, agent.ID, agent.Name),
+		AuthorFor:  actingForRef(agent),
 		CreatedAt:  commentRec.CreatedAt,
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], dc)
@@ -216,4 +222,3 @@ func samePhase(a, b *string) bool {
 	}
 	return *a == *b
 }
-

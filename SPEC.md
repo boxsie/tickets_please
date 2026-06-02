@@ -187,9 +187,11 @@ Each active or expired session is a yaml file at `.tickets_please/agents/<sessio
 Attribution refs on other entities are nullable string fields in their yaml:
 
 - `project.yaml` → `created_by: <agent-uuid>` (or `null`)
-- `tickets/<NNN>-…/ticket.yaml` → `created_by`, `completed_by` (each nullable)
+- `tickets/<NNN>-…/ticket.yaml` → `created_by`, `completed_by` (each nullable), plus `created_for`, `completed_for` (`<user-uuid>`, set when the authoring agent was acting for a registered user)
 - `phases/<NNN>-…/phase.yaml` → `created_by` (nullable)
-- comment frontmatter → `author_id: <agent-uuid>` (or `null`)
+- comment frontmatter → `author_id: <agent-uuid>` (or `null`), plus `author_for: <user-uuid>` when acting-for
+
+An agent may bind its session to a registered user via `register_agent`'s `acting_for_user_id`. When bound, the agent inherits that user's per-project membership (it may only mutate projects the user can access; viewers are read-only — failures return `forbidden`), and the `*_for` fields above record the human on whose behalf each write happened. Plain key-only agents leave all `*_for` fields `null` and are unrestricted — the default.
 
 These ref fields are nullable so projects/tickets/comments can be created or hand-edited before T15's middleware is enforcing. Once T15 lands and the middleware runs, every newly-created row populates its attribution. Pre-existing entities keep `null` — no backfill, since there's no identity to backfill *to*. The integrity check (T02) warns on dangling refs (an `agent_id` that doesn't resolve to a file in `agents/`) but doesn't fail boot.
 

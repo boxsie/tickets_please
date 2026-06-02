@@ -39,7 +39,7 @@ func newGuardFixture(t *testing.T) *guardFixture {
 	a.authEnabled = true
 
 	// A project to guard. CreateProject needs an authenticated agent session.
-	agentID, _, err := s.RegisterAgent(context.Background(), "guard-fixture", "Guard Fixture", nil, 5*time.Minute)
+	agentID, _, err := s.RegisterAgent(context.Background(), "guard-fixture", "Guard Fixture", nil, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("register agent: %v", err)
 	}

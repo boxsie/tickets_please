@@ -336,6 +336,7 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("project_path", mcp.Description("Absolute path to the repo whose .tickets_please/project.yaml binds this session. Required for stdio clients; remote clients should prefer project_slug.")),
 		mcp.WithString("agent_key", mcp.Description("Optional unique agent key; defaults to <client>:<rand>")),
 		mcp.WithString("agent_name", mcp.Description("Optional display name; defaults to client_name")),
+		mcp.WithString("acting_for_user_id", mcp.Description("Optional id of a registered user this agent acts on behalf of. When set, the agent inherits that user's per-project membership: it may only mutate projects the user has access to, and tickets it creates/completes record created_for/completed_for. The user must already exist. Omit for a plain key-only agent.")),
 	), t.handleRegisterAgent)
 }
 
@@ -395,18 +396,19 @@ func (t *Tools) callWithRetry(ctx context.Context, fn func(ctx context.Context) 
 // project mount lives in svc memory and survives the in-process retry, so
 // no re-mount is needed.
 func (t *Tools) refreshSession(ctx context.Context, sessionID string, prev *Session) (*Session, error) {
-	agentID, expiresAt, err := t.svc.RegisterAgent(ctx, prev.AgentKey, prev.AgentName, prev.Metadata, 0)
+	agentID, expiresAt, err := t.svc.RegisterAgent(ctx, prev.AgentKey, prev.AgentName, prev.Metadata, 0, prev.ActingForUserID)
 	if err != nil {
 		return nil, err
 	}
 	next := &Session{
-		AgentID:     agentID,
-		AgentKey:    prev.AgentKey,
-		AgentName:   prev.AgentName,
-		Metadata:    prev.Metadata,
-		ProjectSlug: prev.ProjectSlug,
-		ProjectPath: prev.ProjectPath,
-		ExpiresAt:   expiresAt,
+		AgentID:         agentID,
+		AgentKey:        prev.AgentKey,
+		AgentName:       prev.AgentName,
+		Metadata:        prev.Metadata,
+		ProjectSlug:     prev.ProjectSlug,
+		ProjectPath:     prev.ProjectPath,
+		ActingForUserID: prev.ActingForUserID,
+		ExpiresAt:       expiresAt,
 	}
 	if err := t.registry.Register(sessionID, next); err != nil {
 		return nil, err
@@ -1628,6 +1630,9 @@ func (t *Tools) handleWhoAmI(ctx context.Context, _ mcp.CallToolRequest) (*mcp.C
 	if sess.ProjectPath != "" {
 		out["project_path"] = sess.ProjectPath
 	}
+	if sess.ActingForUserID != "" {
+		out["acting_for_user_id"] = sess.ActingForUserID
+	}
 	return jsonResult(out)
 }
 
@@ -1714,6 +1719,7 @@ func (t *Tools) handleRegisterAgent(ctx context.Context, req mcp.CallToolRequest
 	clientVersion := strings.TrimSpace(req.GetString("client_version", ""))
 	agentKey := strings.TrimSpace(req.GetString("agent_key", ""))
 	agentName := strings.TrimSpace(req.GetString("agent_name", ""))
+	actingForUserID := strings.TrimSpace(req.GetString("acting_for_user_id", ""))
 
 	if agentKey == "" {
 		slug := strings.ToLower(strings.ReplaceAll(clientName, " ", "_"))
@@ -1738,26 +1744,27 @@ func (t *Tools) handleRegisterAgent(ctx context.Context, req mcp.CallToolRequest
 		metadata["hostname"] = host
 	}
 
-	agentID, expiresAt, err := t.svc.RegisterAgent(ctx, agentKey, agentName, metadata, 0)
+	agentID, expiresAt, err := t.svc.RegisterAgent(ctx, agentKey, agentName, metadata, 0, actingForUserID)
 	if err != nil {
 		return errorResult(err), nil
 	}
 
 	sessionID := t.sessionIDFromContext(ctx)
 	sess := &Session{
-		AgentID:     agentID,
-		AgentKey:    agentKey,
-		AgentName:   agentName,
-		Metadata:    metadata,
-		ProjectSlug: projectRec.Slug,
-		ProjectPath: projectPath,
-		ExpiresAt:   expiresAt,
+		AgentID:         agentID,
+		AgentKey:        agentKey,
+		AgentName:       agentName,
+		Metadata:        metadata,
+		ProjectSlug:     projectRec.Slug,
+		ProjectPath:     projectPath,
+		ActingForUserID: actingForUserID,
+		ExpiresAt:       expiresAt,
 	}
 	if err := t.registry.Register(sessionID, sess); err != nil {
 		return mcp.NewToolResultError("internal: register session: " + err.Error()), nil
 	}
 
-	return jsonResult(map[string]any{
+	out := map[string]any{
 		"session_id":   sessionID,
 		"agent_id":     agentID,
 		"agent_key":    agentKey,
@@ -1765,7 +1772,11 @@ func (t *Tools) handleRegisterAgent(ctx context.Context, req mcp.CallToolRequest
 		"project_slug": projectRec.Slug,
 		"project_path": projectPath,
 		"expires_at":   expiresAt.UTC().Format(time.RFC3339),
-	})
+	}
+	if actingForUserID != "" {
+		out["acting_for_user_id"] = actingForUserID
+	}
+	return jsonResult(out)
 }
 
 // ---------------------------------------------------------------------------

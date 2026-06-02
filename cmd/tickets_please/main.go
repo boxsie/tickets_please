@@ -154,7 +154,7 @@ func runMCP(cfg config.Config, log *slog.Logger) error {
 	sess := mcptools.DefaultStdioSession(cfg)
 
 	// Register the agent in the svc layer to get a real agent session ID.
-	agentID, expiresAt, err := s.RegisterAgent(ctx, sess.AgentKey, sess.AgentName, sess.Metadata, 0)
+	agentID, expiresAt, err := s.RegisterAgent(ctx, sess.AgentKey, sess.AgentName, sess.Metadata, 0, "")
 	if err != nil {
 		return fmt.Errorf("register mcp agent: %w", err)
 	}

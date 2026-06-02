@@ -90,7 +90,7 @@ func TestListTickets_UsesSessionProjectSlug(t *testing.T) {
 		ProjectSlug: rec.Slug,
 		ProjectPath: repo,
 	}
-	agentID, expiresAt, err := tools.svc.RegisterAgent(context.Background(), sess.AgentKey, sess.AgentName, nil, 0)
+	agentID, expiresAt, err := tools.svc.RegisterAgent(context.Background(), sess.AgentKey, sess.AgentName, nil, 0, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}

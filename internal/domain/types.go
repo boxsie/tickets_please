@@ -24,11 +24,11 @@ const (
 type CommentKind string
 
 const (
-	CommentKindUser              CommentKind = "user"
-	CommentKindSystemMove        CommentKind = "system_move"
-	CommentKindSystemCompletion  CommentKind = "system_completion"
-	CommentKindSystemArchive     CommentKind = "system_archive"
-	CommentKindSystemUnarchive   CommentKind = "system_unarchive"
+	CommentKindUser             CommentKind = "user"
+	CommentKindSystemMove       CommentKind = "system_move"
+	CommentKindSystemCompletion CommentKind = "system_completion"
+	CommentKindSystemArchive    CommentKind = "system_archive"
+	CommentKindSystemUnarchive  CommentKind = "system_unarchive"
 )
 
 // AgentRef is the flat attribution summary attached to entities that were
@@ -39,13 +39,28 @@ type AgentRef struct {
 	Name string
 }
 
+// UserRef is the flat attribution summary for a registered human a record is
+// linked to — an agent acting on their behalf, or the user a ticket was
+// created/completed "for". Carries just enough to render "<DisplayName>" and
+// link to `/u/{UserID}` without dragging the full User blob through reads.
+type UserRef struct {
+	UserID      string
+	DisplayName string
+}
+
 // Agent is the full record of a registered agent session. Agents
 // self-identify; the system records their claim, it does not authenticate it.
+//
+// ActingFor, when non-nil, links the agent's MCP-key identity to a registered
+// human: the agent's actions are taken on that user's behalf and inherit the
+// user's per-project membership for authorization. Nil means a plain
+// key-only agent (today's default) with no membership constraint.
 type Agent struct {
 	ID         string
 	Key        string
 	Name       string
 	Metadata   map[string]string
+	ActingFor  *UserRef
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
 	LastSeenAt time.Time
@@ -88,19 +103,26 @@ type Phase struct {
 // Wave is a soft integer grouping inside a phase or project. 0 means
 // "unassigned" — the default when no wave was specified.
 type Ticket struct {
-	ID                 string
-	ProjectID          string
-	Title              string
-	Body               string
-	Column             Column
-	TestingEvidence    *string
-	WorkSummary        *string
-	Learnings          *string
-	CompletedAt        *time.Time
-	CreatedBy          *AgentRef
-	CompletedBy        *AgentRef
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	ID              string
+	ProjectID       string
+	Title           string
+	Body            string
+	Column          Column
+	TestingEvidence *string
+	WorkSummary     *string
+	Learnings       *string
+	CompletedAt     *time.Time
+	CreatedBy       *AgentRef
+	CompletedBy     *AgentRef
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	// CreatedFor / CompletedFor link the ticket to the human an acting-for
+	// agent was bound to when it created / completed the ticket. Nil for
+	// tickets authored by plain key-only agents (the common case and every
+	// pre-bridge ticket). Distinct from CreatedBy/CompletedBy, which always
+	// name the agent.
+	CreatedFor         *UserRef
+	CompletedFor       *UserRef
 	DependsOn          []string
 	ParallelizableWith []string
 	// BlockedBy is computed at read time: the subset of DependsOn whose
@@ -174,5 +196,8 @@ type Comment struct {
 	FromColumn *Column
 	ToColumn   *Column
 	Author     *AgentRef
-	CreatedAt  time.Time
+	// AuthorFor links the comment to the human an acting-for agent was bound
+	// to when it authored the comment. Nil for plain key-only authorship.
+	AuthorFor *UserRef
+	CreatedAt time.Time
 }

@@ -18,7 +18,7 @@ func seedProjectAndTicket(t *testing.T, deps Deps, projectSlug, title string) (s
 	t.Helper()
 	ctx := context.Background()
 	id, _, err := deps.Service.RegisterAgent(ctx, "tk-fixture-"+projectSlug, "tk-fixture",
-		map[string]string{"client_name": "test"}, 5*time.Minute)
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestTicket_FrozenAfterComplete(t *testing.T) {
 
 	// Complete it directly via Service.
 	ctx := context.Background()
-	aid, _, err := deps.Service.RegisterAgent(ctx, "fa-completer", "fa", map[string]string{"client_name": "t"}, 5*time.Minute)
+	aid, _, err := deps.Service.RegisterAgent(ctx, "fa-completer", "fa", map[string]string{"client_name": "t"}, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestTicket_EditDoneRefused(t *testing.T) {
 	_, tid := seedProjectAndTicket(t, deps, "edr", "Edit Done")
 
 	ctx := context.Background()
-	aid, _, err := deps.Service.RegisterAgent(ctx, "edr-c", "edr", map[string]string{"client_name": "t"}, 5*time.Minute)
+	aid, _, err := deps.Service.RegisterAgent(ctx, "edr-c", "edr", map[string]string{"client_name": "t"}, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}

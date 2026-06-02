@@ -66,7 +66,7 @@ func validSummary() string {
 func authedCtx(t *testing.T, s *Service) (context.Context, *domain.Agent) {
 	t.Helper()
 	ctx := context.Background()
-	id, _, err := s.RegisterAgent(ctx, "test:agent-"+uuid.NewString()[:6], "Tester", nil, 0)
+	id, _, err := s.RegisterAgent(ctx, "test:agent-"+uuid.NewString()[:6], "Tester", nil, 0, "")
 	if err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}

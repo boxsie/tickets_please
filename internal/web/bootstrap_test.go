@@ -22,7 +22,7 @@ func newBootstrapApp(t *testing.T) (*app, string, string) {
 	a.providers = map[string]auth.Provider{"github": &fakeProvider{name: "github", claims: &auth.Claims{}}}
 	a.authEnabled = true
 
-	agentID, _, err := deps.Service.RegisterAgent(context.Background(), "bootstrap-fixture", "Bootstrap Fixture", nil, 5*time.Minute)
+	agentID, _, err := deps.Service.RegisterAgent(context.Background(), "bootstrap-fixture", "Bootstrap Fixture", nil, 5*time.Minute, "")
 	if err != nil {
 		t.Fatalf("register agent: %v", err)
 	}

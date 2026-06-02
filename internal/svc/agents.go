@@ -2,6 +2,7 @@ package svc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -20,12 +21,31 @@ import (
 // or negative requestedTTL falls back to Cfg.AgentSessionTTLMinutes. Returns
 // domain.ErrAlreadyExists if another agent's active session already holds
 // the same key.
-func (s *Service) RegisterAgent(ctx context.Context, key, name string, metadata map[string]string, requestedTTL time.Duration) (string, time.Time, error) {
+//
+// actingForUserID optionally binds the session to a registered user; when
+// non-empty the user must already exist (else domain.ErrInvalidArgument) and
+// the agent thereafter inherits that user's per-project membership for
+// authorization. Empty means a plain key-only agent — the default.
+func (s *Service) RegisterAgent(ctx context.Context, key, name string, metadata map[string]string, requestedTTL time.Duration, actingForUserID string) (string, time.Time, error) {
 	if strings.TrimSpace(key) == "" {
 		return "", time.Time{}, fmt.Errorf("%w: agent key required", domain.ErrInvalidArgument)
 	}
 	if strings.TrimSpace(name) == "" {
 		return "", time.Time{}, fmt.Errorf("%w: agent name required", domain.ErrInvalidArgument)
+	}
+
+	var actingForPtr *string
+	if af := strings.TrimSpace(actingForUserID); af != "" {
+		if s.UserStore == nil {
+			return "", time.Time{}, fmt.Errorf("%w: acting_for_user_id given but no user store configured", domain.ErrInvalidArgument)
+		}
+		if _, err := s.UserStore.ReadUser(af); err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return "", time.Time{}, fmt.Errorf("%w: acting_for_user_id %q is not a registered user", domain.ErrInvalidArgument, af)
+			}
+			return "", time.Time{}, fmt.Errorf("validate acting_for user: %w", err)
+		}
+		actingForPtr = &af
 	}
 
 	defaultTTL := time.Duration(s.Cfg.AgentSessionTTLMinutes) * time.Minute
@@ -45,13 +65,14 @@ func (s *Service) RegisterAgent(ctx context.Context, key, name string, metadata 
 
 	now := time.Now()
 	rec := &store.AgentRecord{
-		ID:         uuid.NewString(),
-		Key:        key,
-		Name:       name,
-		Metadata:   metadata,
-		CreatedAt:  now,
-		ExpiresAt:  now.Add(ttl),
-		LastSeenAt: now,
+		ID:              uuid.NewString(),
+		Key:             key,
+		Name:            name,
+		Metadata:        metadata,
+		ActingForUserID: actingForPtr,
+		CreatedAt:       now,
+		ExpiresAt:       now.Add(ttl),
+		LastSeenAt:      now,
 	}
 
 	if err := s.AgentStore.RegisterAgent(ctx, rec); err != nil {
@@ -92,5 +113,7 @@ func (s *Service) GetAgent(ctx context.Context, id string) (*domain.Agent, error
 	if err != nil {
 		return nil, err
 	}
-	return rec.ToDomain(), nil
+	a := rec.ToDomain()
+	s.hydrateActingFor(a)
+	return a, nil
 }
