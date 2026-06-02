@@ -6,6 +6,9 @@
 //	init             — create the .tickets_please/ data dir scaffold.
 //	migrate <repo>   — flatten a v0.1 layout (.tickets_please/projects/<slug>/*)
 //	                  to the v0.2 single-project shape (.tickets_please/*).
+//	grant-owner      — grant a user a role on a project directly (recovery).
+//	list-users       — list the central user registry.
+//	list-memberships — list memberships on a project.
 package main
 
 import (
@@ -101,10 +104,25 @@ func main() {
 			logger.Error("init failed", "err", err)
 			os.Exit(1)
 		}
+	case "grant-owner":
+		if err := runGrantOwner(os.Args[2:], cfg, logger); err != nil {
+			logger.Error("grant-owner failed", "err", err)
+			os.Exit(1)
+		}
+	case "list-users":
+		if err := runListUsers(os.Args[2:], cfg, logger); err != nil {
+			logger.Error("list-users failed", "err", err)
+			os.Exit(1)
+		}
+	case "list-memberships":
+		if err := runListMemberships(os.Args[2:], cfg, logger); err != nil {
+			logger.Error("list-memberships failed", "err", err)
+			os.Exit(1)
+		}
 	case "help", "-h", "--help":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown subcommand %q (use one of: mcp, serve, check, init, migrate)\n", sub)
+		fmt.Fprintf(os.Stderr, "unknown subcommand %q (use one of: mcp, serve, check, init, migrate, grant-owner, list-users, list-memberships)\n", sub)
 		os.Exit(2)
 	}
 }
@@ -582,6 +600,11 @@ Subcommands:
   migrate Flatten a legacy projects/<slug>/ layout into the v0.2 shape,
           and move per-repo agents to the central data root (~/.tickets_please/).
           Usage: tickets_please migrate <repo-path> [--dry-run] [--data-root <path>]
+  grant-owner       Grant a user a role on a project directly (lock-out recovery).
+          Usage: tickets_please grant-owner --user-id <id> --project <id|slug> [--role owner]
+  list-users        List the central user registry (id, name, email, providers).
+  list-memberships  List every membership on a project.
+          Usage: tickets_please list-memberships --project <id|slug>
   help    Show this message.
 
 See SPEC.md and README.md (Wiring up MCP) for setup details.`)

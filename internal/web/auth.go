@@ -147,6 +147,10 @@ func (a *app) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// First-run owner promotion (W2-6): env override or first-login-wins.
+	// Never blocks login — failures are logged inside.
+	a.maybeBootstrapAdmin(r.Context(), claims, userID)
+
 	a.writeUserCookie(w, r, userID)
 	a.deps.Logger.Info("auth: login", "provider", name, "user_id", userID, "subject", claims.Subject)
 	http.Redirect(w, r, sanitizeNext(target), http.StatusSeeOther)
