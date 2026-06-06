@@ -1,0 +1,28 @@
+## Testing evidence
+`go build ./...` clean, `gofmt -l` clean, full `go test ./...` green. New TestSSE_PhasesPageLivePatches drives a real svc through sseTestServerDeps (SetPublisher(bus)): connects to project:{id}, moves a phased ticket and asserts a datastar-patch-elements frame inner-morphing #phase-waves-{phaseID} containing the moved #ticket-row-{id} with badge-in_progress, plus a #phase-meta-{phaseID} frame whose bar carries phase-row-bar-in_progress; then creates a second ticket in the phase and asserts it streams into the wave list. Existing svc/web suites (incl. events_test, handlers_phases_test) still pass with the new KindTicketCreated publish.
+
+Manual two-tab test plan (for the running server after rebuild+restart): open /p/{slug}/phases in tab A and the same page (or a phase-detail) in tab B. In tab B (or via MCP) move a ticket in some phase todo→in_progress: tab A's dot recolours, the badge flips, and that phase's mini bar + active/total counts rebalance live. Complete a ticket: dot/badge go to done and the bar's done segment grows. Archive a ticket: its row vanishes from the wave list and counts drop. Create a new ticket in a phase: a row appears in the right wave section (including the first ticket of a previously-empty phase, since the #phase-waves container is always rendered).
+
+## Work summary
+Realtime on the phases-index and phase-detail pages, on the #080-#082 eventbus/SSE backbone.
+
+svc: added eventbus.KindTicketCreated and published it from CreateTicket (topics = ticket+project+phase) so new rows stream in.
+
+templates (phases/): index subscribes via data-on-load=@get('/sse?topics=project:{id}'); detail subscribes to phase:{id}+project:{id}. Extracted two new shared/stable morph targets — PhaseWaves(projectSlug, waves) (the wave list, now ALWAYS rendered inside #phase-waves-{phaseID}, empty-state included, so an empty phase still has a container) and PhaseMeta(row) (the mini status bar + active/total counts inside #phase-meta-{phaseID}). Added id=ticket-row-{id} to each wave-ticket <li>.
+
+web: new sse_patch_phase.go — renderPhasePatch(ctx, ev) handles create/move/complete/archive/unarchive, re-reads authoritative state (GetProject/GetPhase/ListTickets), reuses the index handler's bucketTicketsByPhaseAndWave + toWaveProps so streamed markup is byte-identical to a server render, and emits two inner-morphs (#phase-waves-… and #phase-meta-…). sse_render.go now passes ctx into renderPhasePatch and the old stub is gone.
+
+## Learnings
+Re-rendering the whole wave list + meta cell per phase event (two inner-morphs) is far simpler and more robust than the per-row dot/badge swaps the ticket envisioned — phases are small, idiomorph diffs cheaply, and one re-render covers dot/badge/insert/remove/count-rebalance uniformly. The KEY enabler: always render the #phase-waves-{phaseID} container (with the empty-state moved INSIDE it via the new PhaseWaves component) instead of branching container-vs-empty-state in the page — otherwise an empty phase has no morph target and its first ticket can't stream in. Same trick as the #082 always-emit-the-archived-badge-wrapper pattern: the morph target must exist before the event fires.
+
+Deviated from the ticket's suggested selectors: used phaseID not slug (#phase-waves-{phaseID}/#phase-meta-{phaseID}) because the event + ticket carry phaseID for free, while slug needs an extra lookup; IDs are equally stable. Dropped the per-section #wave-section-{phase}-{wave} idea — re-rendering the whole list is cleaner than tracking which section changed (and handles a ticket's wave changing, which a single-section patch would miss).
+
+Reuse across the seam just works because sse_patch_phase.go is package web, same as handlers_phases.go — so bucketTicketsByPhaseAndWave/toWaveProps are directly callable; no duplication. bucketTicketsByPhaseAndWave([]*Phase{phase}, tickets) conveniently computes dist+total+waves for one phase in a single call.
+
+Archive needs no special-casing: ListTickets without IncludeArchived already drops archived tickets, so re-rendering the phase naturally removes the row and rebalances counts — the "row filters out when hidden" acceptance falls out for free.
+
+Duplicate-delivery is harmless here: phase-detail subscribes to BOTH phase: and project:, so a phased-ticket event arrives twice and renderPhasePatch runs twice — but both are idempotent inner-morphs to the same selectors, so the double-apply is a no-op the second time. (Would NOT be safe for append-mode patches — those must stay on a single topic, as comments do on ticket:.)
+
+readUntil() in sse_test.go stops at the FIRST line containing the substring, so to assert on a patch's `elements` payload you must search for a token that's actually in the HTML body, not the `selector`/`mode` framing line — searching for the selector returns before the elements are read.
+
+Known gap left for later: phase reassignment (AssignTicketToPhase) is not wired live — it'd need both old+new phase to reconcile two wave lists; rare op, reload covers it. If wired later, publish an event carrying both phase ids and patch both #phase-waves targets.
