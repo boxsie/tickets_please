@@ -256,6 +256,8 @@ type projectDetailData struct {
 	ReadyTickets    []*domain.Ticket
 	RecentActivity  []activityItem
 	RecentLearnings []learningExcerpt
+	ShowArchived    bool
+	ToggleHref      string
 }
 
 // dashboardMetrics is the row of stat cards at the top of the dashboard.
@@ -305,9 +307,11 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 	// every metric from this slice. listTickets caps at 200 by default —
 	// fine for typical project sizes; large projects get a representative
 	// sample, the board shows the rest.
+	showArchived := a.resolveShowArchived(w, r)
 	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
 		ProjectIDOrSlug: slug,
 		Limit:           200,
+		IncludeArchived: showArchived,
 	})
 	if err != nil {
 		// Best-effort: an error here degrades the dashboard to "no metrics"
@@ -330,6 +334,8 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 		ReadyTickets:    pickReady(tickets, 5),
 		RecentActivity:  pickRecentActivity(tickets, 10),
 		RecentLearnings: pickRecentLearnings(tickets, 3),
+		ShowArchived:    showArchived,
+		ToggleHref:      archivedToggleHref(r, showArchived),
 	}
 
 	a.renderer.RenderTempl(w, r, PageOpts{
@@ -353,6 +359,8 @@ func detailToProps(d projectDetailData, csrf string) projectspg.DetailProps {
 		},
 		ReadyTickets: d.ReadyTickets,
 		CSRF:         csrf,
+		ShowArchived: d.ShowArchived,
+		ToggleHref:   d.ToggleHref,
 	}
 	out.StatusSegments = make([]projectspg.StatusSegment, len(d.StatusSegments))
 	for i, s := range d.StatusSegments {

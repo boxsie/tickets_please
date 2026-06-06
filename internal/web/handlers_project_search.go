@@ -41,6 +41,8 @@ type projectSearchData struct {
 	CommentHits  []svc.CommentHit
 	LearningHits []svc.LearningHit
 	Err          string
+	ShowArchived bool
+	ToggleHref   string
 }
 
 // handleProjectSearch serves GET /p/{slug}/search. Resolves the project by
@@ -69,11 +71,14 @@ func (a *app) handleProjectSearch(w http.ResponseWriter, r *http.Request) {
 		limit = searchMaxLimit
 	}
 
+	showArchived := a.resolveShowArchived(w, r)
 	body := projectSearchData{
-		Project: proj,
-		Query:   q,
-		Kind:    kind,
-		Limit:   limit,
+		Project:      proj,
+		Query:        q,
+		Kind:         kind,
+		Limit:        limit,
+		ShowArchived: showArchived,
+		ToggleHref:   archivedToggleHref(r, showArchived),
 	}
 
 	if q != "" {
@@ -97,11 +102,13 @@ func (a *app) handleProjectSearch(w http.ResponseWriter, r *http.Request) {
 // templ page never imports svc.
 func searchToProps(d projectSearchData) projectspg.SearchProps {
 	out := projectspg.SearchProps{
-		Project: d.Project,
-		Query:   d.Query,
-		Kind:    d.Kind,
-		Limit:   d.Limit,
-		Err:     d.Err,
+		Project:      d.Project,
+		Query:        d.Query,
+		Kind:         d.Kind,
+		Limit:        d.Limit,
+		Err:          d.Err,
+		ShowArchived: d.ShowArchived,
+		ToggleHref:   d.ToggleHref,
 	}
 	out.TicketHits = make([]projectspg.TicketHit, len(d.TicketHits))
 	for i, h := range d.TicketHits {
@@ -140,6 +147,7 @@ func (a *app) runProjectSearch(r *http.Request, body projectSearchData) projectS
 			Query:           body.Query,
 			ProjectIDOrSlug: slug,
 			Limit:           body.Limit,
+			IncludeArchived: body.ShowArchived,
 		})
 		if err != nil {
 			body.Err = err.Error()
@@ -151,6 +159,7 @@ func (a *app) runProjectSearch(r *http.Request, body projectSearchData) projectS
 			Query:           body.Query,
 			ProjectIDOrSlug: slug,
 			Limit:           body.Limit,
+			IncludeArchived: body.ShowArchived,
 		})
 		if err != nil {
 			body.Err = err.Error()
@@ -163,6 +172,7 @@ func (a *app) runProjectSearch(r *http.Request, body projectSearchData) projectS
 			Query:           body.Query,
 			ProjectIDOrSlug: slug,
 			Limit:           body.Limit,
+			IncludeArchived: body.ShowArchived,
 		})
 		if err != nil {
 			body.Err = err.Error()

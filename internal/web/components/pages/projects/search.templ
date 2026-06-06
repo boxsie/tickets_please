@@ -1,6 +1,10 @@
 package projects
 
-import "strconv"
+import (
+	"strconv"
+
+	"tickets_please/internal/web/components/ui"
+)
 
 // Search is the per-project semantic search page (1:1 port of
 // templates/pages/projects/search.tmpl). The htmx hooks on the input
@@ -42,6 +46,7 @@ templ Search(props SearchProps) {
 					>{ k }</a>
 				}
 			</nav>
+			@ui.ArchivedToggle(props.ToggleHref, props.ShowArchived)
 		</form>
 		<div id="results" class="search-results">
 			@SearchResults(props)

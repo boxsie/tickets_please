@@ -419,10 +419,12 @@ func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	// Pull tickets scoped to this phase, then bucket by wave the same way the
 	// phases-index expanded view does so both pages render identically.
+	showArchived := a.resolveShowArchived(w, r)
 	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
 		ProjectIDOrSlug: slug,
 		PhaseIDOrSlug:   &phaseSlug,
 		Limit:           200,
+		IncludeArchived: showArchived,
 	})
 	if err != nil {
 		// Soft-degrade: an empty wave list still renders the rest of the page.
@@ -436,11 +438,13 @@ func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
 		waves = filterWaves(waves, focusWave)
 	}
 	props := phasescomp.DetailProps{
-		Project:     proj,
-		Phase:       phase,
-		Waves:       toWavePropsFocusable(proj.Slug, waves),
-		CSRF:        a.summaryCSRF(r),
-		SummaryHTML: md.Render(phase.Summary),
+		Project:      proj,
+		Phase:        phase,
+		Waves:        toWavePropsFocusable(proj.Slug, waves),
+		CSRF:         a.summaryCSRF(r),
+		SummaryHTML:  md.Render(phase.Summary),
+		ShowArchived: showArchived,
+		ToggleHref:   archivedToggleHref(r, showArchived),
 	}
 	if focused {
 		props.Focused = true

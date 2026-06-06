@@ -40,6 +40,8 @@ type DetailProps struct {
 	RecentActivity  []ActivityItem
 	RecentLearnings []LearningExcerpt
 	CSRF            string
+	ShowArchived    bool   // archived tickets included in the lists this render
+	ToggleHref      string // link that flips the include-archived state
 }
 
 // DashboardMetrics is the row of stat cards at the top of the dashboard.
@@ -91,6 +93,8 @@ type SearchProps struct {
 	CommentHits  []CommentHit
 	LearningHits []LearningHit
 	Err          string
+	ShowArchived bool   // archived hits included this render
+	ToggleHref   string // link that flips the include-archived state
 }
 
 // TicketHit mirrors svc.TicketHit (subset). The mirror exists so the templ

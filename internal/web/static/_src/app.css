@@ -1295,6 +1295,37 @@
   .phase-wave-ticket.archived .phase-wave-ticket-title { text-decoration: line-through; }
   .search-hit.archived { opacity: 0.6; }
   .search-hit.archived .search-hit-title { text-decoration: line-through; }
+  /* "Show archived" link-toggle (atop search / overview / phase-detail). A
+     plain anchor styled as a checkbox switch — no JS, just flips a query param. */
+  .archived-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--fg-faint);
+    text-decoration: none;
+    padding: 0.15rem 0.2rem;
+    border-radius: 6px;
+  }
+  .archived-toggle:hover { color: var(--fg); }
+  .archived-toggle-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    background: var(--bg-elev-1);
+    font-size: 0.7rem;
+    line-height: 1;
+  }
+  .archived-toggle.on .archived-toggle-box {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+  }
+  .archived-toggle.on { color: var(--fg); }
   .ticket-card-title {
     font-size: 0.88rem;
     font-weight: 500;

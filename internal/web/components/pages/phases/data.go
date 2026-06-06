@@ -120,6 +120,10 @@ type DetailProps struct {
 	Focused        bool
 	FocusWaveLabel string
 	AllWavesHref   string
+	// ShowArchived reflects whether archived tickets are included in the wave
+	// lists this render; ToggleHref flips it (preserving any ?wave focus).
+	ShowArchived bool
+	ToggleHref   string
 }
 
 // FormProps drives both phases/new and phases/edit. Mode is "new" or "edit";

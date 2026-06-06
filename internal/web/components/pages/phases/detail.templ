@@ -1,5 +1,7 @@
 package phases
 
+import "tickets_please/internal/web/components/ui"
+
 // Detail is the /p/{slug}/phases/{phase} page — a single phase with its
 // summary card, wave-bucketed tickets, and danger-zone delete form. 1:1
 // port of templates/pages/phases/detail.tmpl.
@@ -23,6 +25,7 @@ templ Detail(p DetailProps) {
 			<div class="page-actions">
 				<a class="btn btn-primary" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/summary") }>Summary</a>
 				<a class="btn" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/edit") }>Edit</a>
+				@ui.ArchivedToggle(p.ToggleHref, p.ShowArchived)
 			</div>
 		</header>
 		<section class="card">

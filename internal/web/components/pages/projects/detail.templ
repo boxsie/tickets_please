@@ -34,6 +34,7 @@ templ Detail(props DetailProps) {
 				<a class="btn" href={ templ.SafeURL("/p/" + p.Slug + "/tickets/new") }>New ticket</a>
 				<a class="btn" href={ templ.SafeURL("/p/" + p.Slug + "/settings") }>Settings</a>
 				<a class="btn" href={ templ.SafeURL("/p/" + p.Slug + "/summary") }>Summary</a>
+				@ui.ArchivedToggle(props.ToggleHref, props.ShowArchived)
 			</div>
 		</header>
 		<section class="phase-lead" aria-label="Phases">
