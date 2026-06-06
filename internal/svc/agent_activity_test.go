@@ -198,6 +198,68 @@ func TestAgentActivity_RespectsLimitAndUnknownID(t *testing.T) {
 	}
 }
 
+func TestAgentCurrentWork_InProgressByCreatorOrRecentComment(t *testing.T) {
+	s, ctx, agent, slug := freshServiceWithProject(t)
+
+	// in_progress ticket created by the agent → current.
+	mine, err := s.CreateTicket(ctx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "mine"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MoveTicket(ctx, mine.ID, domain.ColumnInProgress, "starting"); err != nil {
+		t.Fatal(err)
+	}
+
+	// todo ticket created by the agent → NOT current (wrong column).
+	if _, err := s.CreateTicket(ctx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "later"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// in_progress ticket created by a DIFFERENT agent, but our agent commented
+	// recently → current via the comment path.
+	otherCtx, _ := authedCtx(t, s)
+	others, err := s.CreateTicket(otherCtx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "theirs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MoveTicket(otherCtx, others.ID, domain.ColumnInProgress, "go"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateComment(ctx, others.ID, "I'm on it"); err != nil {
+		t.Fatal(err)
+	}
+
+	work, err := s.AgentCurrentWork(ctx, agent.ID, time.Now(), 24*time.Hour)
+	if err != nil {
+		t.Fatalf("AgentCurrentWork: %v", err)
+	}
+	got := map[string]bool{}
+	for _, tk := range work {
+		got[tk.Title] = true
+	}
+	if !got["mine"] {
+		t.Error("expected the agent's own in_progress ticket")
+	}
+	if !got["theirs"] {
+		t.Error("expected the recently-commented in_progress ticket")
+	}
+	if got["later"] {
+		t.Error("todo ticket should not count as current work")
+	}
+
+	// With a tiny window the comment path drops out, but the created-by ticket
+	// stays.
+	narrow, err := s.AgentCurrentWork(ctx, agent.ID, time.Now().Add(48*time.Hour), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tk := range narrow {
+		if tk.Title == "theirs" {
+			t.Error("stale comment should fall outside the window")
+		}
+	}
+}
+
 // countAuthoredComments tallies comments authored by agentID across every
 // ticket in the project — an independent ground truth for the ListAgents walk.
 func countAuthoredComments(t *testing.T, s *Service, ctx context.Context, slug, agentID string) int {

@@ -185,6 +185,50 @@ func (s *Service) AgentActivity(ctx context.Context, agentID string, limit int) 
 	return items, nil
 }
 
+// AgentCurrentWork returns the tickets the agent is plausibly working on right
+// now, for the detail page's "Currently working on" callout. It is a HEURISTIC:
+// there is no explicit assignment model, so a ticket counts as current when it
+// is in the in_progress column AND the agent either created it OR authored a
+// comment on it within `within` of `now`. Deduped by ticket id, most-recently-
+// updated first.
+func (s *Service) AgentCurrentWork(ctx context.Context, agentID string, now time.Time, within time.Duration) ([]*domain.Ticket, error) {
+	if agentID == "" {
+		return nil, fmt.Errorf("%w: agent id required", domain.ErrInvalidArgument)
+	}
+	seen := make(map[string]struct{})
+	out := make([]*domain.Ticket, 0)
+	if err := s.walkLoadedProjects(ctx, func(lp *cache.LoadedProject) error {
+		lp.Lock.RLock()
+		defer lp.Lock.RUnlock()
+		for id, t := range lp.Tickets {
+			if t.Column != domain.ColumnInProgress {
+				continue
+			}
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			current := t.CreatedBy != nil && t.CreatedBy.ID == agentID
+			if !current {
+				for _, c := range lp.Comments[id] {
+					if c.Author != nil && c.Author.ID == agentID && now.Sub(c.CreatedAt) <= within {
+						current = true
+						break
+					}
+				}
+			}
+			if current {
+				seen[id] = struct{}{}
+				out = append(out, t)
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
+	return out, nil
+}
+
 // walkLoadedProjects visits every project's in-memory LoadedProject exactly
 // once. It lists projects (deduped by slug across stores) and routes each
 // through Cache.Get so the tree is loaded-and-cached. fn must do its own

@@ -1,0 +1,119 @@
+package agents
+
+import (
+	"strconv"
+
+	pgtickets "tickets_please/internal/web/components/pages/tickets"
+	"tickets_please/internal/web/reltime"
+)
+
+// Detail is the /agents/{id} page: the agent's identity + aggregate counters,
+// a "Currently working on" callout (in_progress tickets it created or recently
+// commented on), and a paginated newest-first activity feed. Activity rows
+// render through the same ticket_card / comment partials the rest of the app
+// uses, so the timeline stays visually consistent.
+templ Detail(p DetailProps) {
+	<section class="agent-detail-page">
+		<header class="page-header agent-detail-header">
+			<a class="back-link" href="/agents">Agents</a>
+			<h1>{ p.Agent.Name }</h1>
+			<div class="agent-identity">
+				<span class="agent-model">{ p.Agent.Model }</span>
+				if p.Agent.Client != "" {
+					<span class="agent-client muted">{ p.Agent.Client }</span>
+				}
+				if p.Agent.ActingForName != "" {
+					<span class="agent-acting-for">acting for { p.Agent.ActingForName }</span>
+				}
+			</div>
+			<div class="agent-key-cell">
+				<code class="agent-key">{ p.Agent.Key }</code>
+				<button type="button" class="btn-copy" data-copy={ p.Agent.Key } title="Copy key" aria-label="copy agent key">⧉</button>
+			</div>
+			<dl class="agent-meta-grid">
+				<div><dt>Registered</dt><dd>@reltime.Time(p.Agent.Registered)</dd></div>
+				<div>
+					<dt>Last seen</dt>
+					<dd id={ "agent-lastseen-" + p.Agent.ID }>
+						if p.Agent.NeverSeen {
+							<span class="muted">never</span>
+						} else {
+							@reltime.Time(p.Agent.LastSeen)
+						}
+					</dd>
+				</div>
+				<div><dt>Tickets created</dt><dd>{ strconv.Itoa(p.Agent.TicketsCreated) }</dd></div>
+				<div><dt>Tickets completed</dt><dd>{ strconv.Itoa(p.Agent.TicketsCompleted) }</dd></div>
+				<div><dt>Comments</dt><dd>{ strconv.Itoa(p.Agent.CommentsAuthored) }</dd></div>
+			</dl>
+		</header>
+		if len(p.CurrentWork) > 0 {
+			<section class="card current-work">
+				<h2>Currently working on</h2>
+				<p class="hint">In-progress tickets this agent created or commented on in the last day. A heuristic — there's no formal assignment.</p>
+				<ul class="ticket-cards">
+					for _, c := range p.CurrentWork {
+						@pgtickets.TicketCard(c)
+					}
+				</ul>
+			</section>
+		}
+		<section class="card agent-activity">
+			<h2>Activity</h2>
+			if len(p.Activity) > 0 {
+				<ul class="activity-feed">
+					for _, e := range p.Activity {
+						@activityRow(e)
+					}
+				</ul>
+				if p.PrevHref != "" || p.NextHref != "" {
+					<nav class="pager" aria-label="activity pagination">
+						if p.PrevHref != "" {
+							<a class="btn btn-sm" href={ templ.SafeURL(p.PrevHref) }>← Newer</a>
+						} else {
+							<span></span>
+						}
+						<span class="muted">Page { strconv.Itoa(p.Page + 1) }</span>
+						if p.NextHref != "" {
+							<a class="btn btn-sm" href={ templ.SafeURL(p.NextHref) }>Older →</a>
+						} else {
+							<span></span>
+						}
+					</nav>
+				}
+			} else {
+				<p class="hint">No recorded activity yet.</p>
+			}
+		</section>
+	</section>
+}
+
+// activityRow renders one timeline entry: an icon + verb + project + relative
+// time header, then the native partial for the kind (a ticket card, a comment
+// row, or nothing for the registration marker).
+templ activityRow(e ActivityEntry) {
+	<li class={ "activity-item", "activity-" + e.Kind }>
+		<div class="activity-head">
+			<span class="activity-icon" aria-hidden="true">{ activityIcon(e.Kind) }</span>
+			<span class="activity-verb">{ activityVerb(e.Kind) }</span>
+			if e.ProjectSlug != "" {
+				<a class="activity-project muted" href={ templ.SafeURL("/p/" + e.ProjectSlug) }>{ e.ProjectSlug }</a>
+			}
+			<span class="activity-time muted">@reltime.Time(e.At)</span>
+		</div>
+		if e.Card != nil {
+			<ul class="ticket-cards">
+				@pgtickets.TicketCard(*e.Card)
+			</ul>
+		} else if e.Comment != nil {
+			<div class="activity-comment">
+				if e.TicketTitle != "" {
+					<a class="activity-comment-ticket muted" href={ templ.SafeURL(ticketHref(e.TicketID)) }>on { e.TicketTitle }</a>
+				}
+				<ul class="comment-thread">
+					@pgtickets.CommentRow(*e.Comment)
+				</ul>
+			</div>
+		}
+	</li>
+}

@@ -5,9 +5,12 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
+	"tickets_please/internal/domain"
+	"tickets_please/internal/svc"
 	agentspg "tickets_please/internal/web/components/pages/agents"
 )
 
@@ -92,6 +95,121 @@ func TestAgents_Index_EmptyState(t *testing.T) {
 	if strings.Contains(out, "data-agents-table") {
 		t.Errorf("empty state should not render the table:\n%s", out)
 	}
+}
+
+// seedAgentWork registers an agent, creates a project, and produces n tickets
+// (each moved to in_progress with a comment) authored by that agent. Returns the
+// deps + the agent id so a detail test can drive the HTTP path.
+func seedAgentWork(t *testing.T, n int) (*httptest.Server, *http.Client, string) {
+	t.Helper()
+	deps := freshDeps(t)
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, "test:worker", "Worker", map[string]string{"model": "opus", "client_name": "Claude Code"}, 0, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	actx := svc.WithSessionID(ctx, id)
+	if _, err := deps.Service.CreateProject(actx, "alpha", "Alpha", "", strings.Repeat("Summary content here. ", 12)); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	for i := range n {
+		tk, err := deps.Service.CreateTicket(actx, domain.CreateTicketInput{ProjectIDOrSlug: "alpha", Title: "ticket-" + strconv.Itoa(i)})
+		if err != nil {
+			t.Fatalf("CreateTicket: %v", err)
+		}
+		if _, err := deps.Service.MoveTicket(actx, tk.ID, domain.ColumnInProgress, "go"); err != nil {
+			t.Fatalf("MoveTicket: %v", err)
+		}
+	}
+
+	mux := http.NewServeMux()
+	Mount(mux, deps)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	return srv, client, id
+}
+
+func TestAgents_Detail_RendersHeaderAndActivity(t *testing.T) {
+	srv, client, id := seedAgentWork(t, 3)
+	resp, err := client.Get(srv.URL + "/agents/" + id)
+	if err != nil {
+		t.Fatalf("GET /agents/{id}: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "<h1>Worker</h1>") {
+		t.Errorf("detail missing agent name header:\n%s", body)
+	}
+	// Identity + counters.
+	for _, want := range []string{"Registered", "Last seen", "Tickets created", "agent-activity"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("detail missing %q", want)
+		}
+	}
+	// Currently-working callout (the in_progress tickets it created).
+	if !strings.Contains(body, "Currently working on") {
+		t.Errorf("detail missing current-work callout:\n%s", body)
+	}
+	// Activity feed renders the ticket-created entries through the ticket card.
+	if !strings.Contains(body, "activity-feed") || !strings.Contains(body, "created a ticket") {
+		t.Errorf("detail missing activity rows:\n%s", body)
+	}
+	if !strings.Contains(body, "registered with the server") {
+		t.Errorf("detail missing the registration anchor row:\n%s", body)
+	}
+}
+
+func TestAgents_Detail_Paginates(t *testing.T) {
+	// 60 created + 60 move-comments + 1 registration ≈ 121 activity items, so
+	// page 0 fills (50) and there's a second page.
+	srv, client, id := seedAgentWork(t, 60)
+
+	resp, err := client.Get(srv.URL + "/agents/" + id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := mustReadAll(t, resp)
+	if !strings.Contains(body, "Older →") {
+		t.Errorf("page 0 should offer an older page:\n%s", firstN(body, 4000))
+	}
+	if strings.Contains(body, "← Newer") {
+		t.Errorf("page 0 should NOT offer a newer page")
+	}
+
+	resp2, err := client.Get(srv.URL + "/agents/" + id + "?page=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body2 := mustReadAll(t, resp2)
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("page 1 status = %d", resp2.StatusCode)
+	}
+	if !strings.Contains(body2, "← Newer") {
+		t.Errorf("page 1 should offer a newer page:\n%s", firstN(body2, 4000))
+	}
+}
+
+func TestAgents_Detail_UnknownID(t *testing.T) {
+	srv, client := freshServer(t)
+	resp, err := client.Get(srv.URL + "/agents/no-such-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustReadAll(t, resp)
+	if resp.StatusCode == http.StatusOK {
+		t.Errorf("expected non-200 for unknown agent, got %d", resp.StatusCode)
+	}
+}
+
+func firstN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 func TestAgents_SidebarLink(t *testing.T) {

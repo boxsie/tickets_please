@@ -76,6 +76,7 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// off the top level rather than under /p/{slug}. /agents/{id} is the
 	// per-agent activity detail (sibling ticket).
 	mux.Handle("GET /agents", wrap(a.handleAgentsIndex))
+	mux.Handle("GET /agents/{id}", wrap(a.handleAgentDetail))
 
 	// Sidebar swap endpoint: returns just the <aside id="sidebar"> fragment.
 	// Wired by templates/partials/sidebar.tmpl's hx-get; triggered on the
