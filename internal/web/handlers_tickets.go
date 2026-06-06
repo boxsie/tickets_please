@@ -181,6 +181,7 @@ type ticketDetailData struct {
 	Ticket      *domain.Ticket
 	Depends     []*domain.Ticket
 	Blocks      []*domain.Ticket
+	Parallel    []*domain.Ticket
 	ProjectSlug string // forwarded to action URLs as the ?slug= hint
 	CSRF        string
 	IsDone      bool
@@ -226,8 +227,8 @@ func (a *app) handleTicketDetail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// Hydrate depends/blocks lists. Cheap: ListTickets once, project-scoped.
-	depends, blocks := a.dependencyLinks(r, proj.Slug, tkt)
+	// Hydrate depends/blocks/parallel lists. Cheap: ListTickets once, project-scoped.
+	depends, blocks, parallel := a.dependencyLinks(r, proj.Slug, tkt)
 
 	// Comments thread data — best-effort. ListComments failure logs and
 	// renders an empty thread; the detail page is still useful without it.
@@ -254,6 +255,7 @@ func (a *app) handleTicketDetail(w http.ResponseWriter, r *http.Request) {
 		Ticket:      tkt,
 		Depends:     depends,
 		Blocks:      blocks,
+		Parallel:    parallel,
 		ProjectSlug: proj.Slug,
 		CSRF:        csrf,
 		IsDone:      tkt.Column == domain.ColumnDone,
@@ -261,29 +263,35 @@ func (a *app) handleTicketDetail(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
-// dependencyLinks returns the ticket pointers for the rows in tkt.DependsOn
-// and the rows whose DependsOn includes tkt.ID. Best-effort: any ListTickets
-// failure degrades to empty slices since the detail page is still useful
-// without the dep panels.
-func (a *app) dependencyLinks(r *http.Request, slug string, tkt *domain.Ticket) ([]*domain.Ticket, []*domain.Ticket) {
+// dependencyLinks returns ticket pointers for (1) the rows in tkt.DependsOn,
+// (2) the rows whose DependsOn includes tkt.ID (blocks), and (3) the rows in
+// tkt.ParallelizableWith. Best-effort: any ListTickets failure degrades to
+// empty slices since the detail page is still useful without the dep panels.
+func (a *app) dependencyLinks(r *http.Request, slug string, tkt *domain.Ticket) (depends, blocks, parallel []*domain.Ticket) {
 	all, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
 		ProjectIDOrSlug: slug,
 		Limit:           200,
 	})
 	if err != nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	byID := map[string]*domain.Ticket{}
 	for _, t := range all {
 		byID[t.ID] = t
 	}
-	depends := make([]*domain.Ticket, 0, len(tkt.DependsOn))
+	depends = make([]*domain.Ticket, 0, len(tkt.DependsOn))
 	for _, id := range tkt.DependsOn {
 		if t, ok := byID[id]; ok {
 			depends = append(depends, t)
 		}
 	}
-	blocks := make([]*domain.Ticket, 0)
+	parallel = make([]*domain.Ticket, 0, len(tkt.ParallelizableWith))
+	for _, id := range tkt.ParallelizableWith {
+		if t, ok := byID[id]; ok {
+			parallel = append(parallel, t)
+		}
+	}
+	blocks = make([]*domain.Ticket, 0)
 	for _, t := range all {
 		for _, d := range t.DependsOn {
 			if d == tkt.ID {
@@ -292,7 +300,7 @@ func (a *app) dependencyLinks(r *http.Request, slug string, tkt *domain.Ticket) 
 			}
 		}
 	}
-	return depends, blocks
+	return depends, blocks, parallel
 }
 
 // --- edit form / update ---------------------------------------------------

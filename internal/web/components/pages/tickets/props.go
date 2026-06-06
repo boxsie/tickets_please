@@ -47,6 +47,7 @@ type DetailProps struct {
 	Ticket      *domain.Ticket
 	Depends     []*domain.Ticket
 	Blocks      []*domain.Ticket
+	Parallel    []*domain.Ticket
 	ProjectSlug string
 	CSRF        string
 	IsDone      bool

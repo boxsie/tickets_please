@@ -1,0 +1,108 @@
+package tickets
+
+import (
+	"tickets_please/internal/domain"
+	"tickets_please/internal/web/reltime"
+)
+
+// TicketMetadata renders the attribution + relationship panel that sits below
+// the ticket title. It surfaces fields the domain has always carried but the
+// page never showed: who created/completed the ticket and when, the human an
+// acting-for agent stood in for, archive state, dependency / parallelizable
+// relationships (as no-JS <details> popovers), and the search-feedback entry
+// key (with a copy button).
+//
+// Phase + Wave + Status live in the header breadcrumb already — deliberately
+// not repeated here. The whole block is a <details open> so it collapses to a
+// "Details" disclosure on narrow screens (CSS hides the summary when wide).
+templ TicketMetadata(props DetailProps) {
+	{{ t := props.Ticket }}
+	<details class="ticket-meta-block" open>
+		<summary class="ticket-meta-block-summary">Details</summary>
+		<dl class="ticket-metadata">
+			<div class="meta-pair">
+				<dt>Created</dt>
+				<dd>
+					{ agentName(t.CreatedBy) }{ " " }
+					@reltime.Time(t.CreatedAt)
+				</dd>
+			</div>
+			if showUpdated(t) {
+				<div class="meta-pair">
+					<dt>Updated</dt>
+					<dd>
+						@reltime.Time(t.UpdatedAt)
+					</dd>
+				</div>
+			}
+			if props.IsDone && t.CompletedAt != nil {
+				<div class="meta-pair">
+					<dt>Completed</dt>
+					<dd>
+						{ agentName(t.CompletedBy) }{ " " }
+						@reltime.Time(*t.CompletedAt)
+					</dd>
+				</div>
+			}
+			if actingForName(t) != "" {
+				<div class="meta-pair">
+					<dt>Acting for</dt>
+					<dd>{ actingForName(t) }</dd>
+				</div>
+			}
+			if t.Archived && t.ArchivedAt != nil {
+				<div class="meta-pair meta-pair-archived">
+					<dt>Archived</dt>
+					<dd>
+						@reltime.Time(*t.ArchivedAt)
+					</dd>
+				</div>
+			}
+			if len(props.Depends) > 0 {
+				<div class="meta-pair">
+					<dt>Dependencies</dt>
+					<dd>
+						@metaTicketPopover(props.ProjectSlug, countLabel(len(props.Depends), "dependency", "dependencies"), props.Depends)
+					</dd>
+				</div>
+			}
+			if len(props.Parallel) > 0 {
+				<div class="meta-pair">
+					<dt>Parallelizable with</dt>
+					<dd>
+						@metaTicketPopover(props.ProjectSlug, countLabel(len(props.Parallel), "ticket", "tickets"), props.Parallel)
+					</dd>
+				</div>
+			}
+			<div class="meta-pair">
+				<dt>Entry key</dt>
+				<dd class="entry-key-pair">
+					<code class="entry-key">{ entryKey(t.ID) }</code>
+					<button
+						type="button"
+						class="btn-copy"
+						data-copy={ entryKey(t.ID) }
+						aria-label="Copy entry key"
+					>Copy</button>
+				</dd>
+			</div>
+		</dl>
+	</details>
+}
+
+// metaTicketPopover renders a no-JS <details> disclosure: a count summary that
+// expands to a list of linked tickets, each with a status badge. Shared by the
+// Dependencies and Parallelizable-with rows.
+templ metaTicketPopover(slug, summary string, tickets []*domain.Ticket) {
+	<details class="meta-popover">
+		<summary>{ summary }</summary>
+		<ul class="bare-list">
+			for _, tk := range tickets {
+				<li>
+					<a href={ templ.SafeURL(ticketDetailHref(tk.ID, slug)) }>{ tk.Title }</a>
+					<span class={ "badge", "badge-" + columnString(tk.Column) }>{ columnString(tk.Column) }</span>
+				</li>
+			}
+		</ul>
+	</details>
+}

@@ -546,6 +546,81 @@
 
   .breadcrumb-sep::before { content: "·"; margin: 0 0.4rem; color: var(--fg-faint); }
 
+  /* ============================================================
+     Ticket metadata block (attribution + relationships)
+     Sits below the ticket title; a <details open> so it folds to a
+     "Details" disclosure on narrow screens.
+     ============================================================ */
+  .ticket-meta-block {
+    margin: 0 0 1.25rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg-elev);
+    padding: 0.4rem 1rem 0.75rem;
+  }
+  .ticket-meta-block-summary {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--fg-muted);
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0.45rem 0;
+    list-style: none;
+  }
+  .ticket-meta-block-summary::-webkit-details-marker { display: none; }
+  .ticket-metadata {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 0.5rem 1.75rem;
+    margin: 0.35rem 0 0;
+  }
+  .ticket-metadata .meta-pair { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+  .ticket-metadata dt {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-faint);
+    font-weight: 600;
+  }
+  .ticket-metadata dd { margin: 0; font-size: 0.88rem; color: var(--fg); }
+  .ticket-metadata dd time { color: var(--fg-muted); }
+  .meta-pair-archived dt, .meta-pair-archived dd { color: var(--color-badge-testing); }
+
+  /* No-JS popover: count summary expands a linked-ticket list. */
+  .meta-popover > summary { cursor: pointer; color: var(--accent); font-size: 0.88rem; }
+  .meta-popover > summary::-webkit-details-marker { color: var(--fg-faint); }
+  .meta-popover ul.bare-list { margin: 0.4rem 0 0; padding: 0; }
+  .meta-popover ul.bare-list li { display: flex; align-items: center; gap: 0.5rem; margin: 0.2rem 0; }
+
+  /* Entry-key + copy button. */
+  .entry-key-pair { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .entry-key {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.8rem;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 0.1rem 0.4rem;
+    color: var(--fg-muted);
+  }
+  .btn-copy {
+    font-size: 0.74rem;
+    padding: 0.12rem 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .btn-copy:hover { color: var(--accent); border-color: var(--accent); }
+  .btn-copy.copied { color: var(--color-badge-done); border-color: var(--color-badge-done); }
+
+  /* Wide screens: the block is always expanded; hide the toggle summary. */
+  @media (min-width: 48rem) {
+    .ticket-meta-block-summary { display: none; }
+  }
+
   /* Back link: small muted up-link above the page H1, used by sub-pages
      (phases index, board, waves, summary editors). Quieter than a button
      so it doesn't compete with the page-actions row. */
