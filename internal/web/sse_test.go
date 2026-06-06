@@ -208,6 +208,73 @@ func TestSSE_TicketDetailLivePatches(t *testing.T) {
 	}
 }
 
+func TestSSE_PhasesPageLivePatches(t *testing.T) {
+	srv, _, deps := sseTestServerDeps(t)
+	s := deps.Service
+
+	agentID, _, err := s.RegisterAgent(context.Background(), "phase-fixture", "Claude Phase", nil, time.Hour, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(context.Background(), agentID)
+	if _, err := s.CreateProject(authed, "phaselive", "Phase Live", "", strings.Repeat("z", 220)); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	phase, err := s.CreatePhase(authed, "phaselive", "Backbone", "", strings.Repeat("p", 220))
+	if err != nil {
+		t.Fatalf("CreatePhase: %v", err)
+	}
+	tk, err := s.CreateTicket(authed, domain.CreateTicketInput{
+		ProjectIDOrSlug: "phaselive",
+		Title:           "Phased ticket",
+		PhaseIDOrSlug:   &phase.Slug,
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+
+	// The phases-index page subscribes to project:{id}.
+	br, done := sseConnect(t, srv.URL, "project:"+tk.ProjectID)
+	defer done()
+
+	// Move → the phase's wave list re-renders (new dot/badge) and the meta
+	// cell (bar + counts) rebalances.
+	if _, err := s.MoveTicket(authed, tk.ID, domain.ColumnInProgress, "starting"); err != nil {
+		t.Fatalf("MoveTicket: %v", err)
+	}
+	lines := readUntil(t, br, "#phase-waves-"+phase.ID)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "datastar-patch-elements") {
+		t.Errorf("phase patch not a datastar-patch-elements frame:\n%s", joined)
+	}
+	if !strings.Contains(joined, "mode inner") {
+		t.Errorf("phase wave-list patch should inner-morph:\n%s", joined)
+	}
+	rows := readUntil(t, br, "badge-in_progress")
+	if !strings.Contains(strings.Join(rows, "\n"), "ticket-row-"+tk.ID) {
+		t.Errorf("re-rendered wave list missing the moved ticket row:\n%s", strings.Join(rows, "\n"))
+	}
+	meta := readUntil(t, br, "#phase-meta-"+phase.ID)
+	bar := readUntil(t, br, "phase-row-bar-in_progress")
+	if !strings.Contains(strings.Join(append(meta, bar...), "\n"), "phase-row-bar-in_progress") {
+		t.Errorf("phase meta bar didn't rebalance to in_progress:\n%s", strings.Join(bar, "\n"))
+	}
+
+	// Create a second ticket in the same phase → it streams into the wave list.
+	tk2, err := s.CreateTicket(authed, domain.CreateTicketInput{
+		ProjectIDOrSlug: "phaselive",
+		Title:           "Another phased ticket",
+		PhaseIDOrSlug:   &phase.Slug,
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket 2: %v", err)
+	}
+	created := readUntil(t, br, "ticket-row-"+tk2.ID)
+	if !strings.Contains(strings.Join(created, "\n"), "#phase-waves-"+phase.ID) {
+		t.Errorf("created ticket didn't ride a #phase-waves patch:\n%s", strings.Join(created, "\n"))
+	}
+}
+
 func TestSSE_CrossTenantTopicRejected(t *testing.T) {
 	deps := freshDeps(t)
 	bus := eventbus.NewBus()

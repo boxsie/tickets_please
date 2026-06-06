@@ -27,7 +27,7 @@ func (a *app) renderDelivery(ctx context.Context, d eventbus.Delivery) []sse.Eve
 	case strings.HasPrefix(d.Topic, "ticket:"):
 		frames = append(frames, a.renderTicketPatch(ctx, d.Event)...)
 	case strings.HasPrefix(d.Topic, "phase:"), strings.HasPrefix(d.Topic, "project:"):
-		frames = append(frames, a.renderPhasePatch(d.Event)...)
+		frames = append(frames, a.renderPhasePatch(ctx, d.Event)...)
 	case d.Topic == eventbus.TopicGlobalAgents, strings.HasPrefix(d.Topic, "agent:"):
 		frames = append(frames, a.renderAgentPatch(d.Event)...)
 	}
@@ -51,12 +51,6 @@ func (a *app) signalFrame(ev eventbus.Event) sse.Event {
 		return sse.PatchSignals(`{"tpEvent":{}}`)
 	}
 	return sse.PatchSignals(string(b))
-}
-
-// renderPhasePatch produces phases-page element patches. Fleshed out in #83
-// (per-row dot/badge swaps, count rebalancing).
-func (a *app) renderPhasePatch(ev eventbus.Event) []sse.Event {
-	return nil
 }
 
 // renderAgentPatch produces /agents page element patches. Fleshed out in #84

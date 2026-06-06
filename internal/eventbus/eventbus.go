@@ -30,6 +30,7 @@ import (
 type Kind string
 
 const (
+	KindTicketCreated    Kind = "ticket_created"
 	KindTicketMoved      Kind = "ticket_moved"
 	KindTicketCompleted  Kind = "ticket_completed"
 	KindCommentAdded     Kind = "comment_added"

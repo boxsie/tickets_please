@@ -7,7 +7,7 @@ package phases
 // The wave breakdown reaches for the shared WaveSection component so
 // the markup stays in sync with the phases-index expanded view.
 templ Detail(p DetailProps) {
-	<section class="phase-detail">
+	<section class="phase-detail" data-on-load={ "@get('/sse?topics=phase:" + p.Phase.ID + ",project:" + p.Project.ID + "')" }>
 		<header class="page-header">
 			<a class="back-link" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases") }>All phases</a>
 			<h1>{ p.Phase.Name }</h1>
@@ -41,18 +41,9 @@ templ Detail(p DetailProps) {
 				</p>
 			}
 		</section>
-		if len(p.Waves) > 0 {
-			<div class="phase-row-waves phase-detail-waves">
-				for _, w := range p.Waves {
-					@WaveSection(w)
-				}
-			</div>
-		} else {
-			<div class="phase-row-empty">
-				<p class="hint">No tickets in this phase yet.</p>
-				<a class="btn btn-sm" href={ templ.SafeURL("/p/" + p.Project.Slug + "/tickets/new") }>+ New ticket</a>
-			</div>
-		}
+		<div class="phase-row-waves phase-detail-waves" id={ "phase-waves-" + p.Phase.ID }>
+			@PhaseWaves(p.Project.Slug, p.Waves)
+		</div>
 		<details class="danger-zone">
 			<summary>Delete phase</summary>
 			<p class="hint">

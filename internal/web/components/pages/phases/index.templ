@@ -9,7 +9,7 @@ package phases
 // rows to drill into waves without leaving the index. Don't replace with
 // an HTMX swap — Phase 2 may revisit.
 templ Index(p IndexProps) {
-	<section class="phases-index">
+	<section class="phases-index" data-on-load={ "@get('/sse?topics=project:" + p.Project.ID + "')" }>
 		<header class="page-header">
 			<a class="back-link" href={ templ.SafeURL("/p/" + p.Project.Slug) }>{ p.Project.Name }</a>
 			<h1>Phases</h1>
@@ -51,47 +51,47 @@ templ phaseRow(projectSlug string, row PhaseRowProps) {
 					<span class="phase-row-desc">{ row.Phase.Description }</span>
 				}
 			</div>
-			<div class="phase-row-meta">
-				if row.Total > 0 {
-					<div class="phase-row-bar" title={ PhaseRowBarTitle(row.Dist) }>
-						if row.Dist.Todo > 0 {
-							<span class="phase-row-bar-seg phase-row-bar-todo" style={ BarWidthStyle(row.Dist.Todo, row.Total) }></span>
-						}
-						if row.Dist.InProgress > 0 {
-							<span class="phase-row-bar-seg phase-row-bar-in_progress" style={ BarWidthStyle(row.Dist.InProgress, row.Total) }></span>
-						}
-						if row.Dist.Testing > 0 {
-							<span class="phase-row-bar-seg phase-row-bar-testing" style={ BarWidthStyle(row.Dist.Testing, row.Total) }></span>
-						}
-						if row.Dist.Done > 0 {
-							<span class="phase-row-bar-seg phase-row-bar-done" style={ BarWidthStyle(row.Dist.Done, row.Total) }></span>
-						}
-					</div>
-				} else {
-					<div class="phase-row-bar phase-row-bar-empty" title="no tickets in this phase"></div>
-				}
-				<span class="phase-row-counts">
-					<strong>{ itoa(row.Phase.ActiveTicketCount) }</strong>
-					<span class="muted">active /</span>
-					<strong>{ itoa(row.Phase.TicketCount) }</strong>
-					<span class="muted">total</span>
-				</span>
+			<div class="phase-row-meta" id={ "phase-meta-" + row.Phase.ID }>
+				@PhaseMeta(row)
 			</div>
 		</summary>
 		<div class="phase-row-body">
-			if len(row.Waves) > 0 {
-				<div class="phase-row-waves">
-					for _, w := range row.Waves {
-						@WaveSection(w)
-					}
-				</div>
-			} else {
-				<div class="phase-row-empty">
-					<p class="hint">No tickets in this phase yet.</p>
-					<a class="btn btn-sm" href={ templ.SafeURL("/p/" + projectSlug + "/tickets/new") }>+ New ticket</a>
-				</div>
-			}
+			<div class="phase-row-waves" id={ "phase-waves-" + row.Phase.ID }>
+				@PhaseWaves(projectSlug, row.Waves)
+			</div>
 		</div>
 	</details>
+}
+
+// PhaseMeta renders the inner content of a phase row's meta cell — the mini
+// status progress-bar plus the active/total count. It's the morph target for
+// live count/segment rebalancing (#83): the SSE handler inner-morphs
+// `#phase-meta-{phaseID}` with a freshly-computed PhaseRowProps on every
+// ticket event so the bar segments and counts stay in sync with the board.
+templ PhaseMeta(row PhaseRowProps) {
+	if row.Total > 0 {
+		<div class="phase-row-bar" title={ PhaseRowBarTitle(row.Dist) }>
+			if row.Dist.Todo > 0 {
+				<span class="phase-row-bar-seg phase-row-bar-todo" style={ BarWidthStyle(row.Dist.Todo, row.Total) }></span>
+			}
+			if row.Dist.InProgress > 0 {
+				<span class="phase-row-bar-seg phase-row-bar-in_progress" style={ BarWidthStyle(row.Dist.InProgress, row.Total) }></span>
+			}
+			if row.Dist.Testing > 0 {
+				<span class="phase-row-bar-seg phase-row-bar-testing" style={ BarWidthStyle(row.Dist.Testing, row.Total) }></span>
+			}
+			if row.Dist.Done > 0 {
+				<span class="phase-row-bar-seg phase-row-bar-done" style={ BarWidthStyle(row.Dist.Done, row.Total) }></span>
+			}
+		</div>
+	} else {
+		<div class="phase-row-bar phase-row-bar-empty" title="no tickets in this phase"></div>
+	}
+	<span class="phase-row-counts">
+		<strong>{ itoa(row.Phase.ActiveTicketCount) }</strong>
+		<span class="muted">active /</span>
+		<strong>{ itoa(row.Phase.TicketCount) }</strong>
+		<span class="muted">total</span>
+	</span>
 }
 

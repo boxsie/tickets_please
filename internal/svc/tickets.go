@@ -190,6 +190,15 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		lp.Comments[t.ID] = nil
 	}
 
+	s.publish(withActor(eventbus.Event{
+		Kind:      eventbus.KindTicketCreated,
+		Topics:    ticketTopics(t.ID, lp.Project.ID, t.PhaseID),
+		TicketID:  t.ID,
+		ProjectID: lp.Project.ID,
+		PhaseID:   derefStr(t.PhaseID),
+		ToColumn:  string(t.Column),
+	}, agent))
+
 	// Return a copy so callers can't mutate cached state without a lock.
 	cp := *t
 	cp.DependsOn = append([]string(nil), t.DependsOn...)

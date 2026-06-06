@@ -22,7 +22,7 @@ templ WaveSection(p WaveSectionProps) {
 		</header>
 		<ul class="phase-wave-tickets">
 			for _, t := range p.Tickets {
-				<li class="phase-wave-ticket">
+				<li class="phase-wave-ticket" id={ "ticket-row-" + t.ID }>
 					<span class={ "dot", "dot-" + string(t.Column) } title={ string(t.Column) }></span>
 					<a class="phase-wave-ticket-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.ProjectSlug) }>{ t.Title }</a>
 					<span class={ "badge", "badge-" + string(t.Column) }>{ string(t.Column) }</span>
@@ -30,5 +30,26 @@ templ WaveSection(p WaveSectionProps) {
 			}
 		</ul>
 	</section>
+}
+
+// PhaseWaves renders the inner content of a phase's wave container — either
+// the per-wave sections or the empty-state when the phase has no tickets. It's
+// the morph target for live updates (#83): the SSE handler re-renders this for
+// `#phase-waves-{phaseID}` on any ticket event so rows, dot colours, badges,
+// and row insert/removal all reconcile in one inner-morph. Rendering the
+// empty-state here too (rather than branching in the page) keeps the container
+// — and its id — present even for an empty phase, so the first ticket created
+// in it streams in without a reload.
+templ PhaseWaves(projectSlug string, waves []WaveSectionProps) {
+	if len(waves) > 0 {
+		for _, w := range waves {
+			@WaveSection(w)
+		}
+	} else {
+		<div class="phase-row-empty">
+			<p class="hint">No tickets in this phase yet.</p>
+			<a class="btn btn-sm" href={ templ.SafeURL("/p/" + projectSlug + "/tickets/new") }>+ New ticket</a>
+		</div>
+	}
 }
 
