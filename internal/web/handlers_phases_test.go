@@ -472,6 +472,10 @@ func TestPhasesIndex_EnrichesWithWaves(t *testing.T) {
 			t.Errorf("body missing %q\n%s", want, body)
 		}
 	}
+	// Each wave-row ticket carries the author · time attribution chip.
+	if !strings.Contains(body, "ticket-attribution") {
+		t.Errorf("expected attribution chips on wave-row tickets\n%s", body)
+	}
 	// Beta's ticket must not appear inside Alpha's phase-row body. We assert
 	// this structurally: split the page on </details> and check that whichever
 	// chunk contains "Alpha" doesn't also contain "beta-w1".

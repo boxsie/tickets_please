@@ -3,6 +3,7 @@ package projects
 import (
 	"strconv"
 
+	"tickets_please/internal/web/components/attribution"
 	"tickets_please/internal/web/components/pages/phases"
 	"tickets_please/internal/web/components/ui"
 	"tickets_please/internal/web/reltime"
@@ -107,6 +108,7 @@ templ Detail(props DetailProps) {
 									if t.Wave != 0 {
 										<span class="muted">w{ strconv.Itoa(t.Wave) }</span>
 									}
+									@attribution.Chip(t)
 								</div>
 							</li>
 						}
@@ -124,7 +126,7 @@ templ Detail(props DetailProps) {
 								<div class="ticket-list-meta">
 									<span class={ "badge badge-" + string(it.Ticket.Column) }>{ string(it.Ticket.Column) }</span>
 									<span class="muted">
-									updated{ " " }
+									{ attribution.Label(it.Ticket) }{ " · updated " }
 									@reltime.Time(it.Ticket.UpdatedAt)
 								</span>
 								</div>
@@ -145,7 +147,7 @@ templ Detail(props DetailProps) {
 								<a class="learning-title" href={ templ.SafeURL("/tickets/" + l.Ticket.ID + "?slug=" + p.Slug) }>{ l.Ticket.Title }</a>
 								if l.Ticket.CompletedAt != nil {
 								<span class="muted">
-									completed{ " " }
+									{ attribution.Label(l.Ticket) }{ " · completed " }
 									@reltime.Time(*l.Ticket.CompletedAt)
 								</span>
 							}

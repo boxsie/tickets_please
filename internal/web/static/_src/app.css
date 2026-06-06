@@ -546,6 +546,20 @@
 
   .breadcrumb-sep::before { content: "·"; margin: 0 0.4rem; color: var(--fg-faint); }
 
+  /* Attribution chip: "author · relative-time" shown beside every ticket
+     reference (cards, list rows, wave rows, search hits, dep links). */
+  .ticket-attribution {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    color: var(--fg-faint);
+    white-space: nowrap;
+  }
+  .ticket-attribution .attribution-author { color: var(--fg-muted); }
+  .ticket-attribution .attribution-sep { color: var(--fg-faint); }
+  .ticket-attribution time { color: var(--fg-faint); }
+
   /* ============================================================
      Ticket metadata block (attribution + relationships)
      Sits below the ticket title; a <details open> so it folds to a

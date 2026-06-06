@@ -118,10 +118,11 @@ func searchToProps(d projectSearchData) projectspg.SearchProps {
 	out.LearningHits = make([]projectspg.LearningHit, len(d.LearningHits))
 	for i, h := range d.LearningHits {
 		out.LearningHits[i] = projectspg.LearningHit{
-			TicketID:  h.TicketID,
-			Title:     h.Title,
-			Learnings: h.Learnings,
-			Score:     h.Score,
+			TicketID:    h.TicketID,
+			Title:       h.Title,
+			Learnings:   h.Learnings,
+			Score:       h.Score,
+			CompletedAt: h.CompletedAt,
 		}
 	}
 	return out

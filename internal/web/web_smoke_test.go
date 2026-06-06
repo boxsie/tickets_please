@@ -270,6 +270,10 @@ func TestSmoke_ProjectSearch_HappyPath(t *testing.T) {
 	if !strings.Contains(s, "/tickets/"+tid) {
 		t.Errorf("hit link missing\n%s", s)
 	}
+	// Each ticket hit carries the author · time attribution chip.
+	if !strings.Contains(s, "ticket-attribution") {
+		t.Errorf("attribution chip missing from ticket search hit\n%s", s)
+	}
 	// Topbar search form should be present (CurrentSlug wired through).
 	if !strings.Contains(s, `action="/p/`+slug+`/search"`) {
 		t.Errorf("topbar search form missing on project page\n%s", s)

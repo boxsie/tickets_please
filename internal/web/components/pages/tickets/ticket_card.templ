@@ -1,5 +1,7 @@
 package tickets
 
+import "tickets_please/internal/web/components/attribution"
+
 // TicketCard renders one ticket as a list item for the board column's
 // ticket-cards list. 1:1 port of templates/partials/ticket_card.tmpl —
 // same class names, same href shape (slug hint when present), same
@@ -17,6 +19,7 @@ templ TicketCard(props TicketCardProps) {
 			if len(t.BlockedBy) > 0 {
 				<span class="badge-blocked" title={ "blocked by: " + blockedByList(t.BlockedBy) }>blocked</span>
 			}
+			@attribution.Chip(t)
 		</div>
 	</li>
 }

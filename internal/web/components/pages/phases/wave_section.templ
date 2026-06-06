@@ -1,5 +1,7 @@
 package phases
 
+import "tickets_please/internal/web/components/attribution"
+
 // WaveSection renders one wave's bucket of tickets — the chip + title +
 // count header, followed by the per-ticket list with status dot and badge.
 //
@@ -34,6 +36,7 @@ templ WaveSection(p WaveSectionProps) {
 					<span class={ "dot", "dot-" + string(t.Column) } title={ string(t.Column) }></span>
 					<a class="phase-wave-ticket-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.ProjectSlug) }>{ t.Title }</a>
 					<span class={ "badge", "badge-" + string(t.Column) }>{ string(t.Column) }</span>
+					@attribution.Chip(t)
 				</li>
 			}
 		</ul>

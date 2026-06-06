@@ -11,6 +11,8 @@
 package projects
 
 import (
+	"time"
+
 	"tickets_please/internal/domain"
 	"tickets_please/internal/web/components/pages/phases"
 	"tickets_please/internal/web/components/partials"
@@ -105,12 +107,15 @@ type CommentHit struct {
 	Score       float32
 }
 
-// LearningHit mirrors svc.LearningHit.
+// LearningHit mirrors svc.LearningHit (subset). CompletedAt drives the
+// relative-time stamp on the hit; the completing agent isn't carried on the
+// svc hit, so learning hits show time without an author.
 type LearningHit struct {
-	TicketID  string
-	Title     string
-	Learnings string
-	Score     float32
+	TicketID    string
+	Title       string
+	Learnings   string
+	Score       float32
+	CompletedAt time.Time
 }
 
 // SettingsProps is the payload for the Settings page.

@@ -1,0 +1,28 @@
+package attribution
+
+import (
+	"tickets_please/internal/domain"
+	"tickets_please/internal/web/reltime"
+)
+
+// Chip renders "author · <relative-time>" for a ticket reference. The time is
+// the ticket's creation stamp (the authoring event); hover reveals the
+// absolute ISO via the <time> title. Each piece is its own element so templ
+// doesn't glue the author to the time.
+templ Chip(t *domain.Ticket) {
+	<span class="ticket-attribution">
+		<span class="attribution-author">{ Label(t) }</span>
+		<span class="attribution-sep" aria-hidden="true">·</span>
+		@reltime.Time(t.CreatedAt)
+	</span>
+}
+
+// CommentChip is Chip's sibling for comment references (search hits): the
+// comment author and when they wrote it.
+templ CommentChip(c *domain.Comment) {
+	<span class="ticket-attribution">
+		<span class="attribution-author">{ commentLabel(c) }</span>
+		<span class="attribution-sep" aria-hidden="true">·</span>
+		@reltime.Time(c.CreatedAt)
+	</span>
+}
