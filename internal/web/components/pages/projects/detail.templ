@@ -3,6 +3,7 @@ package projects
 import (
 	"strconv"
 
+	"tickets_please/internal/web/components/pages/phases"
 	"tickets_please/internal/web/components/ui"
 )
 
@@ -33,6 +34,20 @@ templ Detail(props DetailProps) {
 				<a class="btn" href={ templ.SafeURL("/p/" + p.Slug + "/summary") }>Summary</a>
 			</div>
 		</header>
+		<section class="phase-lead" aria-label="Phases">
+			<div class="phase-lead-head">
+				<h2>Phases</h2>
+				<a class="btn btn-sm" href={ templ.SafeURL("/p/" + p.Slug + "/phases/new") }>+ New phase</a>
+			</div>
+			if len(props.PhaseLead.Phases) > 0 || props.PhaseLead.UnphasedTotal > 0 {
+				@phases.PhaseList(props.PhaseLead)
+			} else {
+				<p class="hint">
+					No phases yet.
+					<a href={ templ.SafeURL("/p/" + p.Slug + "/phases/new") }>Create the first phase &rarr;</a>
+				</p>
+			}
+		</section>
 		<section class="metric-grid" aria-label="Headline metrics">
 			<div class="metric-card">
 				<div class="metric-label">Total</div>
@@ -130,24 +145,6 @@ templ Detail(props DetailProps) {
 						</li>
 					}
 				</ul>
-			}
-		}
-		if len(props.Phases) > 0 {
-			@ui.Card(ui.CardProps{Title: "Phases"}) {
-				<table class="data-table">
-					<thead>
-						<tr><th>Name</th><th>Slug</th><th>Active / Total</th></tr>
-					</thead>
-					<tbody>
-						for _, ph := range props.Phases {
-							<tr>
-								<td><a href={ templ.SafeURL("/p/" + p.Slug + "/phases/" + ph.Slug) }>{ ph.Name }</a></td>
-								<td><code>{ ph.Slug }</code></td>
-								<td>{ strconv.Itoa(ph.ActiveTicketCount) } / { strconv.Itoa(ph.TicketCount) }</td>
-							</tr>
-						}
-					</tbody>
-				</table>
 			}
 		}
 		<details class="danger-zone">

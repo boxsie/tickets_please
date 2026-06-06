@@ -551,6 +551,36 @@ func TestPhaseDetail_WaveFocusFilter(t *testing.T) {
 	}
 }
 
+// TestProjectOverview_LeadsWithPhases: the project dashboard renders the lead
+// phases-with-waves block (reusing the index's PhaseList) with a "+ New phase"
+// action, and a phase holding open tickets defaults to expanded.
+func TestProjectOverview_LeadsWithPhases(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, _ := seedPhaseWaveTickets(t, deps, "lead") // phase "Alpha" with open tickets
+
+	resp, err := client.Get(srv.URL + "/p/" + slug)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	for _, want := range []string{`class="phase-lead"`, "+ New phase", "/p/" + slug + "/phases/new", "Alpha", "ticket-w1", "data-phase-id="} {
+		if !strings.Contains(body, want) {
+			t.Errorf("overview lead block missing %q\n%s", want, body)
+		}
+	}
+	// A phase with open tickets defaults to expanded on the overview.
+	if !strings.Contains(body, ` open><summary class="phase-row-summary"`) {
+		t.Errorf("phase with open tickets should default to expanded on overview\n%s", body)
+	}
+	// The old tiny phases <table> is gone.
+	if strings.Contains(body, `<table class="data-table">`) {
+		t.Errorf("old phases table should be removed from the overview\n%s", body)
+	}
+}
+
 // TestPhasesIndex_WaveFocusFilter: ?wave=N on the index narrows every phase
 // body to that wave and renders the rows open with the banner.
 func TestPhasesIndex_WaveFocusFilter(t *testing.T) {

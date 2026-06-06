@@ -29,16 +29,14 @@ templ Index(p IndexProps) {
 			}
 		</header>
 		if len(p.Phases) > 0 || p.UnphasedTotal > 0 {
-			<div class="phase-list" data-project-id={ p.Project.ID }>
-				if !p.OnlyUnphased {
-					for _, row := range p.Phases {
-						@phaseRow(p.Project.Slug, row, p.Focused)
-					}
-				}
-				if p.UnphasedTotal > 0 {
-					@UnphasedRow(p.Project.Slug, p.UnphasedTotal, p.Unphased, p.Focused)
-				}
-			</div>
+			@PhaseList(PhaseListProps{
+				ProjectID:     p.Project.ID,
+				ProjectSlug:   p.Project.Slug,
+				Phases:        indexLeadPhases(p),
+				Unphased:      p.Unphased,
+				UnphasedTotal: p.UnphasedTotal,
+				OpenAll:       p.Focused,
+			})
 		} else {
 			<div class="empty-state">
 				<h1>No phases yet</h1>
@@ -49,6 +47,21 @@ templ Index(p IndexProps) {
 			</div>
 		}
 	</section>
+}
+
+// PhaseList renders the shared collapsible phase rows + trailing Unphased
+// section. Both the phases index and the project-overview lead block call it so
+// the two surfaces stay byte-identical. Per-row open state = OpenAll (focus
+// mode) OR the row's DefaultOpen (overview: phases with open tickets).
+templ PhaseList(p PhaseListProps) {
+	<div class="phase-list" data-project-id={ p.ProjectID }>
+		for _, row := range p.Phases {
+			@phaseRow(p.ProjectSlug, row, p.OpenAll || row.DefaultOpen)
+		}
+		if p.UnphasedTotal > 0 {
+			@UnphasedRow(p.ProjectSlug, p.UnphasedTotal, p.Unphased, p.OpenAll)
+		}
+	</div>
 }
 
 // UnphasedRow renders the "Unphased" pseudo-phase — phase-less tickets get the

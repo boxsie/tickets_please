@@ -13,6 +13,7 @@ import (
 	"tickets_please/internal/domain"
 	"tickets_please/internal/svc"
 	"tickets_please/internal/web/components/layout"
+	phasescomp "tickets_please/internal/web/components/pages/phases"
 	projectspg "tickets_please/internal/web/components/pages/projects"
 	"tickets_please/internal/web/components/partials"
 )
@@ -251,7 +252,7 @@ func fsListingToProps(l fsListing) partials.FSPickerProps {
 // /p/{slug}/summary is the LLM-loadable canonical doc and stays separate.
 type projectDetailData struct {
 	Project         *domain.Project
-	Phases          []*domain.Phase
+	PhaseLead       phasescomp.PhaseListProps
 	Metrics         dashboardMetrics
 	StatusSegments  []statusSegment
 	ReadyTickets    []*domain.Ticket
@@ -319,9 +320,15 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 		tickets = nil
 	}
 
+	// The lead phases-with-waves block reuses the phases-index bucketing so the
+	// overview and the dedicated phases page render identically. Phases with
+	// open (non-done) tickets default to expanded.
+	enriched := bucketTicketsByPhaseAndWave(phases, tickets)
+	unphased := bucketTicketsByWave(phaseLessTickets(tickets))
+
 	data := projectDetailData{
 		Project:         proj,
-		Phases:          phases,
+		PhaseLead:       toPhaseListProps(proj, enriched, unphased, true),
 		Metrics:         computeMetrics(tickets),
 		StatusSegments:  computeStatusSegments(tickets),
 		ReadyTickets:    pickReady(tickets, 5),
@@ -340,8 +347,8 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 // package) so the projects package never imports web.
 func detailToProps(d projectDetailData, csrf string) projectspg.DetailProps {
 	out := projectspg.DetailProps{
-		Project: d.Project,
-		Phases:  d.Phases,
+		Project:   d.Project,
+		PhaseLead: d.PhaseLead,
 		Metrics: projectspg.DashboardMetrics{
 			Total:      d.Metrics.Total,
 			Active:     d.Metrics.Active,

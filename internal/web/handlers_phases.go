@@ -233,6 +233,32 @@ func toIndexProps(proj *domain.Project, phases []phaseWithWaves, unphased []wave
 	return out
 }
 
+// toPhaseListProps builds the shared phases-with-waves block reused by the
+// project-overview lead block (and available to anything else that wants the
+// index's phase list without its page chrome). It reuses toIndexProps's
+// per-phase bucketing, then — when openWithActive is set — flags every phase
+// that still has open (non-done) tickets as DefaultOpen so the overview leads
+// with live work expanded.
+func toPhaseListProps(proj *domain.Project, phases []phaseWithWaves, unphased []waveSection, openWithActive bool) phasescomp.PhaseListProps {
+	idx := toIndexProps(proj, phases, unphased)
+	out := phasescomp.PhaseListProps{
+		ProjectID:     proj.ID,
+		ProjectSlug:   proj.Slug,
+		Phases:        idx.Phases,
+		Unphased:      idx.Unphased,
+		UnphasedTotal: idx.UnphasedTotal,
+	}
+	if openWithActive {
+		for i := range out.Phases {
+			d := out.Phases[i].Dist
+			if d.Todo+d.InProgress+d.Testing > 0 {
+				out.Phases[i].DefaultOpen = true
+			}
+		}
+	}
+	return out
+}
+
 // toWaveProps converts handler waveSection → templ WaveSectionProps. The
 // project slug is the same for every wave on a page, so we splat it across
 // the bucket here rather than carrying it in every wave on the handler side.

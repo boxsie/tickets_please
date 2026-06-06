@@ -12,6 +12,7 @@ package projects
 
 import (
 	"tickets_please/internal/domain"
+	"tickets_please/internal/web/components/pages/phases"
 	"tickets_please/internal/web/components/partials"
 )
 
@@ -26,8 +27,11 @@ type IndexProps struct {
 // Mirrors web.projectDetailData plus the bits of chrome the page reaches into
 // (just CSRF, used by the danger-zone delete form).
 type DetailProps struct {
-	Project         *domain.Project
-	Phases          []*domain.Phase
+	Project *domain.Project
+	// PhaseLead is the lead phases-with-waves block — the same collapsible
+	// component the phases index renders, including the Unphased section. It
+	// replaces the old tiny phases table at the bottom of the dashboard.
+	PhaseLead       phases.PhaseListProps
 	Metrics         DashboardMetrics
 	StatusSegments  []StatusSegment
 	ReadyTickets    []*domain.Ticket

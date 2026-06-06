@@ -1635,6 +1635,21 @@
   /* ============================================================
      Dashboard (project overview)
      ============================================================ */
+  /* Lead phases-with-waves block — the dashboard's primary surface, sitting
+     directly under the header above the (now secondary) metric cards. */
+  .phase-lead { margin-bottom: 1.5rem; }
+  .phase-lead-head {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    margin-bottom: 0.75rem;
+  }
+  .phase-lead-head h2 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+  .phase-lead-head .btn { margin-left: auto; }
+
   .dashboard .metric-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

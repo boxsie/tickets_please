@@ -54,6 +54,25 @@ type PhaseRowProps struct {
 	Waves []WaveSectionProps
 	Dist  PhaseDist
 	Total int
+	// DefaultOpen renders the row's <details> expanded on first paint. The
+	// project-overview lead block sets it for phases with open (non-done)
+	// tickets; the index leaves it off (rows start collapsed, JS restores the
+	// remembered state).
+	DefaultOpen bool
+}
+
+// PhaseListProps drives the shared PhaseList block — the `.phase-list` of
+// collapsible phase rows plus the trailing Unphased section. Reused by the
+// phases index and the project-overview lead block so both render identically.
+type PhaseListProps struct {
+	ProjectID     string
+	ProjectSlug   string
+	Phases        []PhaseRowProps
+	Unphased      []WaveSectionProps
+	UnphasedTotal int
+	// OpenAll forces every row open (the index's wave-focus mode). When false a
+	// row opens iff its PhaseRowProps.DefaultOpen is set.
+	OpenAll bool
 }
 
 // PhaseDist counts tickets per kanban column for a phase. Mirrors the
@@ -195,6 +214,16 @@ func TicketCountLabel(n int) string {
 		return "1 ticket"
 	}
 	return itoa(n) + " tickets"
+}
+
+// indexLeadPhases returns the phase rows the index should render: all of them,
+// except when ?phase=unphased narrowed the view to the Unphased section only
+// (then none, so PhaseList renders just the Unphased row).
+func indexLeadPhases(p IndexProps) []PhaseRowProps {
+	if p.OnlyUnphased {
+		return nil
+	}
+	return p.Phases
 }
 
 // UnphasedCountLabel renders the count suffix on the Unphased pseudo-phase
