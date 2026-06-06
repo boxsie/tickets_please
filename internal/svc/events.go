@@ -27,6 +27,13 @@ func withActor(ev eventbus.Event, agent *domain.Agent) eventbus.Event {
 		ev.ByUserID = ref.UserID
 		ev.ByUserName = ref.DisplayName
 	}
+	// Fan the actor-attributed event out to the agent's own topic so the
+	// /agents/{id} activity feed can stream the agent's ticket/comment events
+	// live (#084). Harmless for pages not subscribed to agent:{id}, and the
+	// agents-detail renderer only acts on create/complete/comment kinds.
+	if agent.ID != "" {
+		ev.Topics = append(ev.Topics, eventbus.TopicAgent(agent.ID))
+	}
 	return ev
 }
 

@@ -13,7 +13,7 @@ import (
 // render through the same ticket_card / comment partials the rest of the app
 // uses, so the timeline stays visually consistent.
 templ Detail(p DetailProps) {
-	<section class="agent-detail-page">
+	<section class="agent-detail-page" data-on-load={ "@get('/sse?topics=agent:" + p.Agent.ID + ",global:agents')" }>
 		<header class="page-header agent-detail-header">
 			<a class="back-link" href="/agents">Agents</a>
 			<h1>{ p.Agent.Name }</h1>
@@ -60,38 +60,41 @@ templ Detail(p DetailProps) {
 		}
 		<section class="card agent-activity">
 			<h2>Activity</h2>
-			if len(p.Activity) > 0 {
-				<ul class="activity-feed">
-					for _, e := range p.Activity {
-						@activityRow(e)
-					}
-				</ul>
-				if p.PrevHref != "" || p.NextHref != "" {
-					<nav class="pager" aria-label="activity pagination">
-						if p.PrevHref != "" {
-							<a class="btn btn-sm" href={ templ.SafeURL(p.PrevHref) }>← Newer</a>
-						} else {
-							<span></span>
-						}
-						<span class="muted">Page { strconv.Itoa(p.Page + 1) }</span>
-						if p.NextHref != "" {
-							<a class="btn btn-sm" href={ templ.SafeURL(p.NextHref) }>Older →</a>
-						} else {
-							<span></span>
-						}
-					</nav>
+			// The feed list is ALWAYS rendered (even empty) so a live prepend
+			// patch (#agent-activity-feed) has a morph target. Only fresh
+			// (page 0) feeds receive prepends; older pages stay static.
+			<ul class="activity-feed" id="agent-activity-feed">
+				for _, e := range p.Activity {
+					@ActivityRow(e)
 				}
-			} else {
+			</ul>
+			if len(p.Activity) == 0 {
 				<p class="hint">No recorded activity yet.</p>
+			}
+			if p.PrevHref != "" || p.NextHref != "" {
+				<nav class="pager" aria-label="activity pagination">
+					if p.PrevHref != "" {
+						<a class="btn btn-sm" href={ templ.SafeURL(p.PrevHref) }>← Newer</a>
+					} else {
+						<span></span>
+					}
+					<span class="muted">Page { strconv.Itoa(p.Page + 1) }</span>
+					if p.NextHref != "" {
+						<a class="btn btn-sm" href={ templ.SafeURL(p.NextHref) }>Older →</a>
+					} else {
+						<span></span>
+					}
+				</nav>
 			}
 		</section>
 	</section>
 }
 
-// activityRow renders one timeline entry: an icon + verb + project + relative
+// ActivityRow renders one timeline entry: an icon + verb + project + relative
 // time header, then the native partial for the kind (a ticket card, a comment
-// row, or nothing for the registration marker).
-templ activityRow(e ActivityEntry) {
+// row, or nothing for the registration marker). Exported so the SSE renderer
+// can stream a byte-identical row on a live prepend.
+templ ActivityRow(e ActivityEntry) {
 	<li class={ "activity-item", "activity-" + e.Kind }>
 		<div class="activity-head">
 			<span class="activity-icon" aria-hidden="true">{ activityIcon(e.Kind) }</span>

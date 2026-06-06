@@ -12,7 +12,7 @@ import "strconv"
 // agents.js (loaded globally) wires the filter, the sortable headers, and the
 // whole-row click navigation off the data-* attributes below.
 templ Index(p IndexProps) {
-	<section class="agents-page">
+	<section class="agents-page" data-on-load={ "@get('/sse?topics=global:agents')" }>
 		<header class="page-header">
 			<h1>Agents</h1>
 			<p class="subtitle">Every agent that has registered with this server, and the work it has done. Self-reported identities — the system records the claim, it doesn't authenticate it.</p>
@@ -43,43 +43,9 @@ templ Index(p IndexProps) {
 						<th data-sort="num" class="num-col">Comments</th>
 					</tr>
 				</thead>
-				<tbody>
+				<tbody id="agents-tbody">
 					for _, a := range p.Agents {
-						<tr class="agents-row" data-href={ agentHref(a.ID) } data-filter={ filterKey(a) }>
-							<td class="agent-name-cell">
-								<a href={ templ.SafeURL(agentHref(a.ID)) } class="agent-name-link">{ a.Name }</a>
-							</td>
-							<td>
-								<span class="agent-model">{ a.Model }</span>
-								if a.Client != "" {
-									<span class="agent-client muted">{ a.Client }</span>
-								}
-							</td>
-							<td class="agent-key-cell">
-								<code class="agent-key">{ keyShort(a.Key) }</code>
-								<button type="button" class="btn-copy" data-copy={ a.Key } title="Copy key" aria-label="copy agent key">⧉</button>
-							</td>
-							<td data-sort-val={ sortStamp(a.Registered, false) }>
-								@reltime.Time(a.Registered)
-							</td>
-							<td id={ "agent-lastseen-" + a.ID } data-sort-val={ sortStamp(a.LastSeen, a.NeverSeen) }>
-								if a.NeverSeen {
-									<span class="muted">never</span>
-								} else {
-									@reltime.Time(a.LastSeen)
-								}
-							</td>
-							<td>
-								if a.ActingForName != "" {
-									<span class="agent-acting-for">{ a.ActingForName }</span>
-								} else {
-									<span class="muted">—</span>
-								}
-							</td>
-							<td class="num-col" data-sort-val={ strconv.Itoa(a.TicketsCreated) }>{ strconv.Itoa(a.TicketsCreated) }</td>
-							<td class="num-col" data-sort-val={ strconv.Itoa(a.TicketsCompleted) }>{ strconv.Itoa(a.TicketsCompleted) }</td>
-							<td class="num-col" data-sort-val={ strconv.Itoa(a.CommentsAuthored) }>{ strconv.Itoa(a.CommentsAuthored) }</td>
-						</tr>
+						@AgentTableRow(a, false)
 					}
 				</tbody>
 			</table>
@@ -88,4 +54,57 @@ templ Index(p IndexProps) {
 			<p class="hint">No agents have registered yet. Agents appear here once they call <code>register_agent</code>.</p>
 		}
 	</section>
+}
+
+// AgentTableRow renders one <tr> for the index table. Exported so the SSE
+// renderer can stream a byte-identical row on a live registration (highlight
+// true adds the flash class the CSS animates once). The last-seen cell carries
+// id="agent-lastseen-{id}" so an AgentSeen patch can re-render just that cell.
+templ AgentTableRow(a AgentRow, highlight bool) {
+	<tr class={ "agents-row", templ.KV("agent-row-new", highlight) } data-href={ agentHref(a.ID) } data-filter={ filterKey(a) }>
+		<td class="agent-name-cell">
+			<a href={ templ.SafeURL(agentHref(a.ID)) } class="agent-name-link">{ a.Name }</a>
+		</td>
+		<td>
+			<span class="agent-model">{ a.Model }</span>
+			if a.Client != "" {
+				<span class="agent-client muted">{ a.Client }</span>
+			}
+		</td>
+		<td class="agent-key-cell">
+			<code class="agent-key">{ keyShort(a.Key) }</code>
+			<button type="button" class="btn-copy" data-copy={ a.Key } title="Copy key" aria-label="copy agent key">⧉</button>
+		</td>
+		<td data-sort-val={ sortStamp(a.Registered, false) }>
+			@reltime.Time(a.Registered)
+		</td>
+		<td id={ "agent-lastseen-" + a.ID } data-sort-val={ sortStamp(a.LastSeen, a.NeverSeen) }>
+			if a.NeverSeen {
+				<span class="muted">never</span>
+			} else {
+				@reltime.Time(a.LastSeen)
+			}
+		</td>
+		<td>
+			if a.ActingForName != "" {
+				<span class="agent-acting-for">{ a.ActingForName }</span>
+			} else {
+				<span class="muted">—</span>
+			}
+		</td>
+		<td class="num-col" data-sort-val={ strconv.Itoa(a.TicketsCreated) }>{ strconv.Itoa(a.TicketsCreated) }</td>
+		<td class="num-col" data-sort-val={ strconv.Itoa(a.TicketsCompleted) }>{ strconv.Itoa(a.TicketsCompleted) }</td>
+		<td class="num-col" data-sort-val={ strconv.Itoa(a.CommentsAuthored) }>{ strconv.Itoa(a.CommentsAuthored) }</td>
+	</tr>
+}
+
+// AgentLastSeen renders just the inner content of the last-seen cell — the
+// relative <time> (or the "never" placeholder). The SSE AgentSeen patch morphs
+// #agent-lastseen-{id} with this so only the timestamp updates.
+templ AgentLastSeen(a AgentRow) {
+	if a.NeverSeen {
+		<span class="muted">never</span>
+	} else {
+		@reltime.Time(a.LastSeen)
+	}
 }

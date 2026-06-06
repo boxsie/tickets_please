@@ -1037,6 +1037,12 @@
   .agent-key { font-size: 0.8rem; color: var(--fg-muted); }
   .agent-acting-for { color: var(--fg-muted); }
   .agents-empty-filter { margin-top: 0.75rem; }
+  /* One-shot highlight when a new agent row streams in over SSE. */
+  .agents-row.agent-row-new { animation: agent-row-flash 1.6s ease-out 1; }
+  @keyframes agent-row-flash {
+    0%   { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+    100% { background: transparent; }
+  }
 
   /* ============================================================
      Agent detail (/agents/{id})

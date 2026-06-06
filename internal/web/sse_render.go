@@ -29,7 +29,7 @@ func (a *app) renderDelivery(ctx context.Context, d eventbus.Delivery) []sse.Eve
 	case strings.HasPrefix(d.Topic, "phase:"), strings.HasPrefix(d.Topic, "project:"):
 		frames = append(frames, a.renderPhasePatch(ctx, d.Event)...)
 	case d.Topic == eventbus.TopicGlobalAgents, strings.HasPrefix(d.Topic, "agent:"):
-		frames = append(frames, a.renderAgentPatch(d.Event)...)
+		frames = append(frames, a.renderAgentPatch(ctx, d.Event)...)
 	}
 	return frames
 }
@@ -51,14 +51,4 @@ func (a *app) signalFrame(ev eventbus.Event) sse.Event {
 		return sse.PatchSignals(`{"tpEvent":{}}`)
 	}
 	return sse.PatchSignals(string(b))
-}
-
-// renderAgentPatch produces /agents page element patches. Fleshed out in #84
-// once the agents pages exist (registration insert, last-seen tick). The
-// dev-ping smoke probe (handleSSEPing) rides this path to update #sse-target.
-func (a *app) renderAgentPatch(ev eventbus.Event) []sse.Event {
-	if ev.Kind == eventbus.KindAgentSeen && ev.AgentID == devPingAgentID {
-		return []sse.Event{sse.PatchElements("", "", devPingSpan(ev.AgentName))}
-	}
-	return nil
 }
