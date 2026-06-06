@@ -41,6 +41,12 @@ templ Detail(p DetailProps) {
 				</p>
 			}
 		</section>
+		if p.Focused {
+			<div class="wave-focus-banner" role="status">
+				<span>Showing <strong>{ p.FocusWaveLabel }</strong> only.</span>
+				<a class="btn btn-sm" href={ templ.SafeURL(p.AllWavesHref) }>View all waves</a>
+			</div>
+		}
 		<div class="phase-row-waves phase-detail-waves" id={ "phase-waves-" + p.Phase.ID }>
 			@PhaseWaves(p.Project.Slug, p.Waves)
 		</div>

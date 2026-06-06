@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"tickets_please/internal/domain"
@@ -84,10 +85,70 @@ func (a *app) handlePhasesIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	enriched := bucketTicketsByPhaseAndWave(phases, tickets)
 	unphased := bucketTicketsByWave(phaseLessTickets(tickets))
+
+	// ?wave=N focuses every phase body (and the Unphased section) on a single
+	// wave; ?phase=unphased narrows to just the Unphased section. Server-side
+	// filter so the link is shareable and works without JS.
+	focusWave, focused := parseWaveParam(r)
+	onlyUnphased := r.URL.Query().Get("phase") == "unphased"
+	if focused {
+		for i := range enriched {
+			enriched[i].Waves = filterWaves(enriched[i].Waves, focusWave)
+		}
+		unphased = filterWaves(unphased, focusWave)
+	}
+
+	props := toIndexProps(proj, enriched, unphased)
+	if focused || onlyUnphased {
+		props.Focused = true
+		props.OnlyUnphased = onlyUnphased
+		props.FocusWaveLabel = waveFocusLabel(focusWave, focused)
+		props.AllWavesHref = "/p/" + slug + "/phases"
+	}
 	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       proj.Name + " · phases · tickets_please",
 		CurrentSlug: slug,
-	}, phasescomp.Index(toIndexProps(proj, enriched, unphased)))
+	}, phasescomp.Index(props))
+}
+
+// parseWaveParam reads the ?wave=N query param shared by the phases index and
+// phase-detail focus filters. Returns the wave and whether it was present and
+// well-formed; ?wave=0 is the valid "unassigned" wave, so presence is tracked
+// separately from the zero value.
+func parseWaveParam(r *http.Request) (int, bool) {
+	q := r.URL.Query()
+	if !q.Has("wave") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(q.Get("wave"))
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// filterWaves narrows a wave-bucketed slice to just the target wave (nil if the
+// wave holds no tickets). Used by the ?wave=N focus filter.
+func filterWaves(waves []waveSection, target int) []waveSection {
+	for _, w := range waves {
+		if w.Wave == target {
+			return []waveSection{w}
+		}
+	}
+	return nil
+}
+
+// waveFocusLabel renders the noun phrase the focus banners drop in after
+// "Showing …" — "Wave 3", "Unassigned wave", or "all waves" when no specific
+// wave is targeted (e.g. ?phase=unphased alone).
+func waveFocusLabel(wave int, present bool) string {
+	if !present {
+		return "all waves"
+	}
+	if wave == 0 {
+		return "Unassigned wave"
+	}
+	return "Wave " + strconv.Itoa(wave)
 }
 
 // phaseLessTickets returns the tickets with no PhaseID — the ones the
@@ -184,6 +245,18 @@ func toWaveProps(projectSlug string, waves []waveSection) []phasescomp.WaveSecti
 			Tickets:      w.Tickets,
 			IsUnassigned: w.IsUnassigned,
 		})
+	}
+	return out
+}
+
+// toWavePropsFocusable is toWaveProps with the per-wave deep-link affordances
+// (the #w{n} anchor + "Focus on this wave →" link) switched on. Used by the
+// phase-detail page, where a single phase owns the page so bare wave ids don't
+// collide. The index keeps Focusable off (many phases per page).
+func toWavePropsFocusable(projectSlug string, waves []waveSection) []phasescomp.WaveSectionProps {
+	out := toWaveProps(projectSlug, waves)
+	for i := range out {
+		out[i].Focusable = true
 	}
 	return out
 }
@@ -331,16 +404,27 @@ func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
 		tickets = nil
 	}
 	waves := bucketTicketsByWave(tickets)
+	// ?wave=N focuses the page on a single wave (server-side, shareable link).
+	focusWave, focused := parseWaveParam(r)
+	if focused {
+		waves = filterWaves(waves, focusWave)
+	}
+	props := phasescomp.DetailProps{
+		Project:     proj,
+		Phase:       phase,
+		Waves:       toWavePropsFocusable(proj.Slug, waves),
+		CSRF:        a.summaryCSRF(r),
+		SummaryHTML: md.Render(phase.Summary),
+	}
+	if focused {
+		props.Focused = true
+		props.FocusWaveLabel = waveFocusLabel(focusWave, true)
+		props.AllWavesHref = "/p/" + proj.Slug + "/phases/" + phase.Slug
+	}
 	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       phase.Name + " · " + proj.Name,
 		CurrentSlug: proj.Slug,
-	}, phasescomp.Detail(phasescomp.DetailProps{
-		Project:     proj,
-		Phase:       phase,
-		Waves:       toWaveProps(proj.Slug, waves),
-		CSRF:        a.summaryCSRF(r),
-		SummaryHTML: md.Render(phase.Summary),
-	}))
+	}, phasescomp.Detail(props))
 }
 
 func (a *app) handlePhaseEditForm(w http.ResponseWriter, r *http.Request) {

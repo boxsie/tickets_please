@@ -10,7 +10,12 @@ package phases
 // Bucketing/sorting stays in the handler (see bucketTicketsByWave). This
 // component is presentation-only: it trusts the props it gets.
 templ WaveSection(p WaveSectionProps) {
-	<section class={ WaveClass(p) }>
+	<section
+		class={ WaveClass(p) }
+		if p.Focusable {
+			id={ WaveAnchorID(p) }
+		}
+	>
 		<header class="phase-wave-head">
 			<span class={ WaveChipClass(p) }>
 				{ WaveChipText(p) }
@@ -19,6 +24,9 @@ templ WaveSection(p WaveSectionProps) {
 				{ WaveTitle(p) }
 			</span>
 			<span class="phase-wave-count muted">{ TicketCountLabel(len(p.Tickets)) }</span>
+			if p.Focusable {
+				<a class="phase-wave-focus" href={ templ.SafeURL(WaveFocusHref(p)) }>Focus on this wave &rarr;</a>
+			}
 		</header>
 		<ul class="phase-wave-tickets">
 			for _, t := range p.Tickets {

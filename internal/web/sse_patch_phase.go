@@ -64,9 +64,16 @@ func (a *app) renderPhasePatch(ctx context.Context, ev eventbus.Event) []sse.Eve
 		return nil
 	}
 	pw := enriched[0]
+	// Focusable affordances (the #w{n} anchors + "Focus on this wave →" links)
+	// matter on the phase-detail page, which is the dominant live-update
+	// surface; rebuild them so a streamed wave re-render doesn't strip them.
+	// On the index this also lands focusable markup inside the (collapsed)
+	// phase body — harmless: the focus links are relative ?wave=N (valid on the
+	// index too) and the bare wave ids only nominally duplicate across phases
+	// that happen to live-update in the same session.
 	row := phasescomp.PhaseRowProps{
 		Phase: phase,
-		Waves: toWaveProps(proj.Slug, pw.Waves),
+		Waves: toWavePropsFocusable(proj.Slug, pw.Waves),
 		Dist: phasescomp.PhaseDist{
 			Todo:       pw.Dist.Todo,
 			InProgress: pw.Dist.InProgress,

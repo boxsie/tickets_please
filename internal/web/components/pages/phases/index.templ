@@ -17,14 +17,26 @@ templ Index(p IndexProps) {
 			<div class="page-actions">
 				<a class="btn btn-primary" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/new") }>New phase</a>
 			</div>
+			if p.Focused {
+				<div class="wave-focus-banner" role="status">
+					if p.OnlyUnphased {
+						<span>Showing <strong>{ p.FocusWaveLabel }</strong> in the Unphased section only.</span>
+					} else {
+						<span>Showing <strong>{ p.FocusWaveLabel }</strong> across every phase.</span>
+					}
+					<a class="btn btn-sm" href={ templ.SafeURL(p.AllWavesHref) }>View all waves</a>
+				</div>
+			}
 		</header>
 		if len(p.Phases) > 0 || p.UnphasedTotal > 0 {
-			<div class="phase-list">
-				for _, row := range p.Phases {
-					@phaseRow(p.Project.Slug, row)
+			<div class="phase-list" data-project-id={ p.Project.ID }>
+				if !p.OnlyUnphased {
+					for _, row := range p.Phases {
+						@phaseRow(p.Project.Slug, row, p.Focused)
+					}
 				}
 				if p.UnphasedTotal > 0 {
-					@UnphasedRow(p.Project.Slug, p.UnphasedTotal, p.Unphased)
+					@UnphasedRow(p.Project.Slug, p.UnphasedTotal, p.Unphased, p.Focused)
 				}
 			</div>
 		} else {
@@ -46,8 +58,8 @@ templ Index(p IndexProps) {
 // (kill-the-board), this is where they live. Shared with the project-overview
 // lead block. The `id="unphased"` anchor makes ?phase=unphased deep links land
 // here.
-templ UnphasedRow(projectSlug string, total int, waves []WaveSectionProps) {
-	<details class="phase-row phase-row-unphased" id="unphased">
+templ UnphasedRow(projectSlug string, total int, waves []WaveSectionProps, forceOpen bool) {
+	<details class="phase-row phase-row-unphased" id="unphased" data-phase-id="unphased" open?={ forceOpen }>
 		<summary class="phase-row-summary">
 			<span class="phase-row-chevron phase-row-chevron-muted" aria-hidden="true">&#9656;</span>
 			<div class="phase-row-headline">
@@ -72,8 +84,8 @@ templ UnphasedRow(projectSlug string, total int, waves []WaveSectionProps) {
 // phaseRow is one collapsible row on the index — the summary line + the
 // expanded body holding wave sections. Split out from Index so the
 // per-phase block doesn't bloat the index template.
-templ phaseRow(projectSlug string, row PhaseRowProps) {
-	<details class="phase-row">
+templ phaseRow(projectSlug string, row PhaseRowProps, forceOpen bool) {
+	<details class="phase-row" data-phase-id={ row.Phase.ID } open?={ forceOpen }>
 		<summary class="phase-row-summary">
 			<span class="phase-row-chevron" aria-hidden="true">&#9656;</span>
 			<div class="phase-row-headline">

@@ -35,6 +35,15 @@ type IndexProps struct {
 	// when there are no phase-less tickets — the UnphasedRow is then skipped.
 	Unphased      []WaveSectionProps
 	UnphasedTotal int
+	// Focused is set when the index is filtered to a single wave via ?wave=N
+	// (every phase body, and the Unphased section, is narrowed to that wave and
+	// rendered open). FocusWaveLabel is the human label; AllWavesHref clears
+	// the filter. OnlyUnphased (from ?phase=unphased) narrows further to just
+	// the Unphased section.
+	Focused        bool
+	FocusWaveLabel string
+	AllWavesHref   string
+	OnlyUnphased   bool
 }
 
 // PhaseRowProps drives one collapsible <details> row on the index. Waves is
@@ -64,6 +73,12 @@ type WaveSectionProps struct {
 	Wave         int
 	Tickets      []*domain.Ticket
 	IsUnassigned bool
+	// Focusable turns on the per-wave deep-link affordances: a stable
+	// `id="w{n}"` anchor (so `…/phases/{phase}#w3` scrolls + highlights) and a
+	// "Focus on this wave →" link. Set on the phase-detail page; left off on
+	// the index, where many phases share the page and bare wave ids would
+	// collide.
+	Focusable bool
 }
 
 // DetailProps drives the phases/detail page — a single phase with its
@@ -79,6 +94,13 @@ type DetailProps struct {
 	// SummaryHTML is the pre-rendered markdown of phase.Summary. The handler
 	// renders it via the components/md package before constructing this struct.
 	SummaryHTML template.HTML
+	// Focused is set when the page is filtered to a single wave via ?wave=N.
+	// FocusWaveLabel is the human label ("Wave 3" / "Unassigned wave") and
+	// AllWavesHref clears the filter (the path without the query). Waves is
+	// already narrowed to the focused wave by the handler when Focused.
+	Focused        bool
+	FocusWaveLabel string
+	AllWavesHref   string
 }
 
 // FormProps drives both phases/new and phases/edit. Mode is "new" or "edit";
@@ -138,6 +160,24 @@ func WaveChipText(p WaveSectionProps) string {
 		return "W0"
 	}
 	return waveLabelN("W", p.Wave)
+}
+
+// WaveAnchorID returns the stable element id for a wave section on the
+// phase-detail page — "w3" for a numbered wave, "w-unassigned" for wave 0.
+// `…/phases/{phase}#w3` then scrolls to (and, via CSS :target, highlights) it.
+func WaveAnchorID(p WaveSectionProps) string {
+	if p.IsUnassigned {
+		return "w-unassigned"
+	}
+	return "w" + itoa(p.Wave)
+}
+
+// WaveFocusHref returns the relative "?wave=N" link for the "Focus on this
+// wave →" affordance. It's query-only so it resolves against whatever page
+// it's rendered on — focusing a single wave on phase-detail, or the same wave
+// across every phase on the index — without needing the path threaded in.
+func WaveFocusHref(p WaveSectionProps) string {
+	return "?wave=" + itoa(p.Wave)
 }
 
 // WaveTitle returns the wave's human-readable title.

@@ -408,12 +408,14 @@ func TestPhasesIndex_RendersDetailsPerPhase(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
 	}
-	if !strings.Contains(body, `<details class="phase-row">`) {
+	if !strings.Contains(body, `<details class="phase-row" data-phase-id=`) {
 		t.Errorf("expected a phase-row details element, got:\n%s", body)
 	}
-	// Default-collapsed: no `open` attribute on the details tag.
-	if strings.Contains(body, `<details class="phase-row" open>`) {
-		t.Errorf("phase-row should default to collapsed, found open attribute")
+	// Default-collapsed (no wave focus): templ renders the open?={false} boolean
+	// attribute as nothing, so the summary follows the opening tag with no
+	// intervening ` open`.
+	if strings.Contains(body, ` open><summary class="phase-row-summary"`) {
+		t.Errorf("phase-row should default to collapsed, found open attribute\n%s", body)
 	}
 }
 
@@ -478,6 +480,96 @@ func TestPhasesIndex_EnrichesWithWaves(t *testing.T) {
 		if strings.Contains(chunk, ">Alpha<") && strings.Contains(chunk, "beta-w1") {
 			t.Errorf("beta-w1 leaked into the Alpha phase row")
 		}
+	}
+}
+
+// seedPhaseWaveTickets creates a project+phase with one ticket in wave 1
+// ("ticket-w1") and one in wave 2 ("ticket-w2"), returning (projectSlug,
+// phaseSlug). Used by the wave-focus filter tests.
+func seedPhaseWaveTickets(t *testing.T, deps Deps, projectSlug string) (string, string) {
+	t.Helper()
+	slug, phaseSlug := seedProjectAndPhase(t, deps, projectSlug, "Alpha")
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, projectSlug+"-agent", projectSlug,
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(ctx, id)
+	for _, tc := range []struct {
+		title string
+		wave  int
+	}{{"ticket-w1", 1}, {"ticket-w2", 2}} {
+		ps := phaseSlug
+		if _, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+			ProjectIDOrSlug: slug,
+			Title:           tc.title,
+			Body:            "x",
+			PhaseIDOrSlug:   &ps,
+			Wave:            tc.wave,
+		}); err != nil {
+			t.Fatalf("CreateTicket %q: %v", tc.title, err)
+		}
+	}
+	return slug, phaseSlug
+}
+
+// TestPhaseDetail_WaveFocusFilter: ?wave=N on phase-detail renders only that
+// wave's tickets (server-side filter) plus the "View all waves" escape.
+func TestPhaseDetail_WaveFocusFilter(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, phaseSlug := seedPhaseWaveTickets(t, deps, "wff")
+
+	getBody := func(url string) string {
+		resp, err := client.Get(url)
+		if err != nil {
+			t.Fatalf("GET %s: %v", url, err)
+		}
+		return mustReadAll(t, resp)
+	}
+
+	// Unfocused: both waves present.
+	body := getBody(srv.URL + "/p/" + slug + "/phases/" + phaseSlug)
+	if !strings.Contains(body, "ticket-w1") || !strings.Contains(body, "ticket-w2") {
+		t.Fatalf("unfocused detail should list both waves\n%s", body)
+	}
+	// The focusable affordances render on detail.
+	if !strings.Contains(body, `id="w1"`) || !strings.Contains(body, "Focus on this wave") {
+		t.Errorf("detail missing wave anchor / focus link\n%s", body)
+	}
+
+	// Focused on wave 2: only ticket-w2, plus the clear-filter link + banner.
+	body = getBody(srv.URL + "/p/" + slug + "/phases/" + phaseSlug + "?wave=2")
+	if strings.Contains(body, "ticket-w1") {
+		t.Errorf("?wave=2 should hide wave 1's ticket\n%s", body)
+	}
+	if !strings.Contains(body, "ticket-w2") {
+		t.Errorf("?wave=2 should show wave 2's ticket\n%s", body)
+	}
+	if !strings.Contains(body, "View all waves") || !strings.Contains(body, "wave-focus-banner") {
+		t.Errorf("?wave=2 should render the focus banner + clear link\n%s", body)
+	}
+}
+
+// TestPhasesIndex_WaveFocusFilter: ?wave=N on the index narrows every phase
+// body to that wave and renders the rows open with the banner.
+func TestPhasesIndex_WaveFocusFilter(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, _ := seedPhaseWaveTickets(t, deps, "iwf")
+
+	resp, err := client.Get(srv.URL + "/p/" + slug + "/phases?wave=1")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if !strings.Contains(body, "ticket-w1") {
+		t.Errorf("?wave=1 should show wave 1's ticket\n%s", body)
+	}
+	if strings.Contains(body, "ticket-w2") {
+		t.Errorf("?wave=1 should hide wave 2's ticket\n%s", body)
+	}
+	if !strings.Contains(body, "wave-focus-banner") {
+		t.Errorf("?wave=1 should render the focus banner\n%s", body)
 	}
 }
 
