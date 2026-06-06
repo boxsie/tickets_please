@@ -1,0 +1,14 @@
+## Testing evidence
+go test ./... all green (new reltime_test.go covers just-now/59m/1h/23h/yesterday/2d/6d/this-year/last-year/future + Absolute + Long). gofmt clean. Live: rebuilt ~/.local/bin/tickets_please + restarted the systemd unit, curled /p/tickets-please → recent-activity rows render `updated <time datetime="2026-06-06T18:50:41+01:00" title="Jun 6 · 18:50">6m ago</time>` (space present); ticket detail comment renders `<time ...>6m ago</time>`.
+
+## Work summary
+Added internal/web/reltime package (reltime.go helpers, reltime.templ Time component, reltime_test.go). Migrated comment.templ and projects/detail.templ (activity + learnings) onto @reltime.Time; removed Ago fields from props + web shapes and the dead humanizeAgo helper. Regenerated _templ.go, committed as 9e36137.
+
+## Learnings
+Shared time formatting now lives in internal/web/reltime: Short(t, now), Long(t)="Jan 2 · 15:04", Absolute(t)=ISO-8601 w/ TZ, plus a Time(t time.Time) templ component that renders `<time datetime title>relative</time>` and fills `now` via time.Now() (ShortNow wrapper). Short boundaries: <60s "just now", <60m "Nm ago", <24h "Nh ago", 24-47h "yesterday", <7d "Nd ago", same-year "Jan 2", else "Jan 2, 2006".
+
+THE BIG GOTCHA — templ whitespace/`@` parsing. Two traps when mixing prose with a component call inside an element:
+1. `<span>updated @reltime.Time(x)</span>` on ONE line → templ treats the whole thing as a literal TEXT node; the generated code emits the literal string "@reltime.Time(...)" and the package import shows "imported and not used". The `@Component` is only parsed as a call when it starts its own child line. Fix: put the text and the `@call` on SEPARATE lines.
+2. Once separated, templ TRIMS the whitespace around the component boundary, so "updated" and the <time> render glued: `updated<time>`. Fix: emit an explicit space expression `updated{ " " }` then the `@reltime.Time(...)` on the next line. (This is the same family as the prior learning "`@` in templ prose explodes the parser" — same root cause, opposite symptom.)
+
+Migration mechanics: dropped the precomputed `Ago string` field from both ActivityItem/LearningExcerpt (props) and the web-package activityItem/learningExcerpt shapes, and deleted the now-dead humanizeAgo + its fmt/time imports from handlers_projects.go — the templ now renders @reltime.Time(it.Ticket.UpdatedAt) / @reltime.Time(*l.Ticket.CompletedAt) straight from the ticket (guard CompletedAt for nil). Comment thread switched from the explicit "Jan 2 · 15:04" stamp to relative @reltime.Time (hover still shows the precise time via title) — note this changes the audit-thread display from absolute to relative, which is intentional per the ticket. reltime imports only fmt/time/templ so any web package (projects, tickets) can import it with no cycle risk.
