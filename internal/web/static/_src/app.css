@@ -985,6 +985,60 @@
   .data-table a:hover { color: var(--accent); }
 
   /* ============================================================
+     App-global nav (sidebar, above the project picker)
+     ============================================================ */
+  .app-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-bottom: 0.75rem;
+  }
+  .app-nav-link {
+    display: block;
+    padding: 0.4rem 0.6rem;
+    border-radius: 7px;
+    color: var(--fg-muted);
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .app-nav-link:hover { background: var(--bg-hover); color: var(--fg); }
+  .app-nav-link.active { background: var(--bg-elev-2); color: var(--accent); }
+
+  /* ============================================================
+     Agents page (/agents index)
+     ============================================================ */
+  .agents-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .agents-filter {
+    flex: 1;
+    max-width: 24rem;
+    padding: 0.45rem 0.7rem;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--fg);
+    font-size: 0.9rem;
+  }
+  .agents-count { font-size: 0.8rem; }
+  .agents-table .num-col { text-align: right; font-variant-numeric: tabular-nums; }
+  .agents-table tbody tr.agents-row { cursor: pointer; }
+  .agents-table th.sortable-th { cursor: pointer; user-select: none; }
+  .agents-table th.sortable-th:hover { color: var(--fg); }
+  .agents-table th[aria-sort="ascending"]::after { content: " ▲"; font-size: 0.6em; }
+  .agents-table th[aria-sort="descending"]::after { content: " ▼"; font-size: 0.6em; }
+  .agent-name-link { font-weight: 600; }
+  .agent-model { display: block; }
+  .agent-client { display: block; font-size: 0.75rem; }
+  .agent-key-cell { white-space: nowrap; }
+  .agent-key { font-size: 0.8rem; color: var(--fg-muted); }
+  .agent-acting-for { color: var(--fg-muted); }
+  .agents-empty-filter { margin-top: 0.75rem; }
+
+  /* ============================================================
      Lists
      ============================================================ */
   .bare-list {

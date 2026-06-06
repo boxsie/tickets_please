@@ -16,6 +16,9 @@ templ Sidebar(data PageData) {
 		hx-trigger="sidebar-refresh from:body"
 		hx-swap="outerHTML"
 	>
+		<nav class="app-nav" aria-label="App navigation">
+			@navLink(navLinkProps{Class: "app-nav-link", Href: "/agents", Active: linkIsActive(data.Chrome.URL, "/agents", false), Label: "Agents"})
+		</nav>
 		@ProjectPicker(data)
 		if p := activeProject(data); p != nil {
 			{{ overview := "/p/" + data.CurrentSlug }}

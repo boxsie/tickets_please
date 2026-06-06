@@ -72,6 +72,11 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// and grants membership.
 	mux.Handle("GET /invite/{token}", authed(a.handleInviteAccept))
 
+	// Agents registry (W3). App-global — not scoped to a project, so it hangs
+	// off the top level rather than under /p/{slug}. /agents/{id} is the
+	// per-agent activity detail (sibling ticket).
+	mux.Handle("GET /agents", wrap(a.handleAgentsIndex))
+
 	// Sidebar swap endpoint: returns just the <aside id="sidebar"> fragment.
 	// Wired by templates/partials/sidebar.tmpl's hx-get; triggered on the
 	// body-scoped sidebar-refresh event that POST handlers emit via
