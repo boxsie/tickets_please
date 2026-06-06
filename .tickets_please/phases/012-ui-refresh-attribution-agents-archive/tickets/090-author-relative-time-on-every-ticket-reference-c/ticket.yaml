@@ -2,9 +2,9 @@ id: dc20c148-0e8d-41f3-9a41-4ea1494b49de
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 90
 title: Author + relative time on every ticket reference (cards, lists, search hits, wave rows)
-column: in_progress
+column: testing
 phase_id: 9cb33cde-d600-45e4-874b-10198f6aab85
 wave: 2
 created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
 created_at: 2026-05-30T22:07:16.036904524+01:00
-updated_at: 2026-06-06T19:06:13.407192158+01:00
+updated_at: 2026-06-06T19:16:45.802817758+01:00
