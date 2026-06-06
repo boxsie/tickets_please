@@ -18,10 +18,13 @@ templ Index(p IndexProps) {
 				<a class="btn btn-primary" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/new") }>New phase</a>
 			</div>
 		</header>
-		if len(p.Phases) > 0 {
+		if len(p.Phases) > 0 || p.UnphasedTotal > 0 {
 			<div class="phase-list">
 				for _, row := range p.Phases {
 					@phaseRow(p.Project.Slug, row)
+				}
+				if p.UnphasedTotal > 0 {
+					@UnphasedRow(p.Project.Slug, p.UnphasedTotal, p.Unphased)
 				}
 			</div>
 		} else {
@@ -34,6 +37,36 @@ templ Index(p IndexProps) {
 			</div>
 		}
 	</section>
+}
+
+// UnphasedRow renders the "Unphased" pseudo-phase — phase-less tickets get the
+// same collapsible <details> + wave-section structure as a real phase row, but
+// visually muted: no progress bar, an italic "No phase" label, a muted chevron.
+// The board page used to be the only home for phase-less tickets; with it gone
+// (kill-the-board), this is where they live. Shared with the project-overview
+// lead block. The `id="unphased"` anchor makes ?phase=unphased deep links land
+// here.
+templ UnphasedRow(projectSlug string, total int, waves []WaveSectionProps) {
+	<details class="phase-row phase-row-unphased" id="unphased">
+		<summary class="phase-row-summary">
+			<span class="phase-row-chevron phase-row-chevron-muted" aria-hidden="true">&#9656;</span>
+			<div class="phase-row-headline">
+				<span class="phase-row-name phase-row-name-unphased"><em>No phase</em></span>
+				<span class="phase-row-desc">Tickets not assigned to any phase</span>
+			</div>
+			<div class="phase-row-meta">
+				<span class="phase-row-counts">
+					<strong>{ itoa(total) }</strong>
+					<span class="muted">{ UnphasedCountLabel(total) }</span>
+				</span>
+			</div>
+		</summary>
+		<div class="phase-row-body">
+			<div class="phase-row-waves">
+				@PhaseWaves(projectSlug, waves)
+			</div>
+		</div>
+	</details>
 }
 
 // phaseRow is one collapsible row on the index — the summary line + the

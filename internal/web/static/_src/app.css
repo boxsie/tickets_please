@@ -1864,6 +1864,26 @@
   }
   .phase-row-counts strong { font-weight: 600; }
 
+  /* Unphased pseudo-phase: visually distinct from real phases — dashed,
+     dimmer border, no progress bar, italic "no phase" label, muted chevron. */
+  .phase-row-unphased {
+    border-style: dashed;
+    border-color: rgba(255,255,255,0.10);
+    background: transparent;
+  }
+  .phase-row-unphased:hover { border-color: rgba(255,255,255,0.18); }
+  .phase-row-unphased[open] {
+    border-color: rgba(255,255,255,0.18);
+    box-shadow: none;
+  }
+  .phase-row-chevron-muted { color: var(--fg-faint, var(--fg-muted)); opacity: 0.7; }
+  .phase-row-name-unphased em {
+    font-style: italic;
+    font-weight: 600;
+    color: var(--fg-muted);
+    font-size: 0.98rem;
+  }
+
   .phase-row-body {
     padding: 0.65rem 1rem 1rem 1rem;
     border-top: 1px solid var(--line);

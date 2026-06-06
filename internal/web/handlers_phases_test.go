@@ -481,10 +481,10 @@ func TestPhasesIndex_EnrichesWithWaves(t *testing.T) {
 	}
 }
 
-// TestPhasesIndex_PhaseLessTicketsExcluded: tickets without a PhaseID must
-// not appear in any phase's wave breakdown on the phases index. They surface
-// on the waves page (separate ticket).
-func TestPhasesIndex_PhaseLessTicketsExcluded(t *testing.T) {
+// TestPhasesIndex_UnphasedSection: tickets without a PhaseID surface in the
+// "Unphased" pseudo-phase section on the phases index (their old home, the
+// board, is gone) — but must NOT leak into any real phase's wave breakdown.
+func TestPhasesIndex_UnphasedSection(t *testing.T) {
 	srv, client, deps := freshServerWithDeps(t)
 	slug, _ := seedProjectAndPhase(t, deps, "plx", "Alpha")
 
@@ -514,7 +514,41 @@ func TestPhasesIndex_PhaseLessTicketsExcluded(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d\n%s", resp.StatusCode, body)
 	}
-	if strings.Contains(body, "orphan-ticket") {
-		t.Errorf("phase-less ticket leaked into phases index:\n%s", body)
+	// The orphan ticket now appears, inside the Unphased section.
+	if !strings.Contains(body, "orphan-ticket") {
+		t.Errorf("phase-less ticket missing from phases index:\n%s", body)
+	}
+	if !strings.Contains(body, `id="unphased"`) {
+		t.Errorf("Unphased section not rendered when phase-less tickets exist:\n%s", body)
+	}
+	if !strings.Contains(body, "unphased ticket") {
+		t.Errorf("Unphased count label missing:\n%s", body)
+	}
+	// It must not have leaked into Alpha's phase-row body. Structural check:
+	// the chunk containing "Alpha" must not also contain the orphan ticket.
+	chunks := strings.Split(body, "</details>")
+	for _, chunk := range chunks {
+		if strings.Contains(chunk, ">Alpha<") && strings.Contains(chunk, "orphan-ticket") {
+			t.Errorf("orphan-ticket leaked into the Alpha phase row")
+		}
+	}
+}
+
+// TestPhasesIndex_NoUnphasedSectionWhenEmpty: with no phase-less tickets, the
+// Unphased section is not rendered at all.
+func TestPhasesIndex_NoUnphasedSectionWhenEmpty(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	slug, _ := seedProjectAndPhase(t, deps, "ple", "Alpha")
+
+	resp, err := client.Get(srv.URL + "/p/" + slug + "/phases")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d\n%s", resp.StatusCode, body)
+	}
+	if strings.Contains(body, `id="unphased"`) {
+		t.Errorf("Unphased section rendered with no phase-less tickets:\n%s", body)
 	}
 }

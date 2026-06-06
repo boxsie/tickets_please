@@ -83,10 +83,24 @@ func (a *app) handlePhasesIndex(w http.ResponseWriter, r *http.Request) {
 		tickets = nil
 	}
 	enriched := bucketTicketsByPhaseAndWave(phases, tickets)
+	unphased := bucketTicketsByWave(phaseLessTickets(tickets))
 	a.renderer.RenderTempl(w, r, PageOpts{
 		Title:       proj.Name + " · phases · tickets_please",
 		CurrentSlug: slug,
-	}, phasescomp.Index(toIndexProps(proj, enriched)))
+	}, phasescomp.Index(toIndexProps(proj, enriched, unphased)))
+}
+
+// phaseLessTickets returns the tickets with no PhaseID — the ones the
+// "Unphased" pseudo-phase surfaces. bucketTicketsByPhaseAndWave drops these,
+// so they'd otherwise be invisible now the board is gone.
+func phaseLessTickets(tickets []*domain.Ticket) []*domain.Ticket {
+	var out []*domain.Ticket
+	for _, t := range tickets {
+		if t.PhaseID == nil {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // bucketTicketsByPhaseAndWave groups tickets by (phase, wave) and returns the
@@ -135,8 +149,12 @@ func bucketTicketsByPhaseAndWave(phases []*domain.Phase, tickets []*domain.Ticke
 // package's mirror props, threading the project slug down to every wave so
 // the WaveSection can build /tickets/{id}?slug=... links without reaching
 // back up the render tree.
-func toIndexProps(proj *domain.Project, phases []phaseWithWaves) phasescomp.IndexProps {
+func toIndexProps(proj *domain.Project, phases []phaseWithWaves, unphased []waveSection) phasescomp.IndexProps {
 	out := phasescomp.IndexProps{Project: proj}
+	out.Unphased = toWaveProps(proj.Slug, unphased)
+	for _, w := range unphased {
+		out.UnphasedTotal += len(w.Tickets)
+	}
 	out.Phases = make([]phasescomp.PhaseRowProps, 0, len(phases))
 	for _, pw := range phases {
 		out.Phases = append(out.Phases, phasescomp.PhaseRowProps{

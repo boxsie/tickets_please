@@ -30,6 +30,11 @@ import (
 type IndexProps struct {
 	Project *domain.Project
 	Phases  []PhaseRowProps
+	// Unphased carries the wave-bucketed tickets that belong to no phase, so
+	// they get a home now that the board (their old surface) is gone. Empty
+	// when there are no phase-less tickets — the UnphasedRow is then skipped.
+	Unphased      []WaveSectionProps
+	UnphasedTotal int
 }
 
 // PhaseRowProps drives one collapsible <details> row on the index. Waves is
@@ -150,6 +155,16 @@ func TicketCountLabel(n int) string {
 		return "1 ticket"
 	}
 	return itoa(n) + " tickets"
+}
+
+// UnphasedCountLabel renders the count suffix on the Unphased pseudo-phase
+// summary — "unphased ticket" / "unphased tickets" (the leading number is
+// rendered separately in a <strong>).
+func UnphasedCountLabel(n int) string {
+	if n == 1 {
+		return "unphased ticket"
+	}
+	return "unphased tickets"
 }
 
 // PercentOf returns part/total as a 0-100 integer (floor); total==0 → 0.
