@@ -34,6 +34,7 @@ templ SearchResults(props SearchProps) {
 							completed{ " " }
 							@reltime.Time(h.CompletedAt)
 						</span>
+						@RatingWidget(RatingProps{Slug: slug, EntryKey: h.EntryKey, Likes: h.Likes, Dislikes: h.Dislikes, CSRF: props.CSRF, Query: props.Query})
 					</div>
 					<div class="search-hit-snippet">{ h.Learnings }</div>
 				</li>
@@ -49,6 +50,7 @@ templ SearchResults(props SearchProps) {
 						<span class="muted score">{ fmt.Sprintf("%.2f", h.Score) }</span>
 						@attribution.ArchivedPill(h.Ticket.Archived)
 						@attribution.Chip(h.Ticket)
+						@RatingWidget(RatingProps{Slug: slug, EntryKey: h.EntryKey, Likes: h.Likes, Dislikes: h.Dislikes, CSRF: props.CSRF, Query: props.Query})
 					</div>
 					if h.Ticket.Body != "" {
 						<div class="search-hit-snippet">{ h.Ticket.Body }</div>
@@ -64,6 +66,7 @@ templ SearchResults(props SearchProps) {
 						<a class="search-hit-title" href={ templ.SafeURL("/tickets/" + h.Comment.TicketID + "?slug=" + slug + "#comment-" + h.Comment.ID) }>Re: { h.TicketTitle }</a>
 						<span class="muted score">{ fmt.Sprintf("%.2f", h.Score) }</span>
 						@attribution.CommentChip(h.Comment)
+						@RatingWidget(RatingProps{Slug: slug, EntryKey: h.EntryKey, Likes: h.Likes, Dislikes: h.Dislikes, CSRF: props.CSRF, Query: props.Query})
 					</div>
 					<div class="search-hit-snippet">{ h.Comment.Body }</div>
 				</li>

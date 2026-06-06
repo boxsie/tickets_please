@@ -1823,6 +1823,51 @@
     color: var(--fg);
   }
   .search-hit-title:hover { color: var(--accent); text-decoration: none; }
+  /* Inline 👍/👎 rating widget on each search hit. */
+  .hit-rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-left: auto;
+  }
+  .hit-counts { display: inline-flex; gap: 0.4rem; font-size: 0.78rem; }
+  .hit-rate-form { display: inline-flex; margin: 0; }
+  .hit-rate-btn {
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: none;
+    border-radius: 6px;
+    padding: 0.05rem 0.3rem;
+    font-size: 0.92rem;
+    line-height: 1.2;
+    list-style: none;
+  }
+  .hit-rate-btn::-webkit-details-marker { display: none; }
+  .hit-rate-btn:hover { border-color: var(--line-strong); background: var(--bg-elev-1); }
+  .hit-dislike { position: relative; display: inline-flex; }
+  .hit-dislike[open] > .hit-rate-btn { border-color: var(--line-strong); background: var(--bg-elev-1); }
+  .hit-dislike-form {
+    position: absolute;
+    top: 1.6rem;
+    right: 0;
+    z-index: 5;
+    width: 16rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.6rem;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  }
+  .hit-dislike-form textarea { width: 100%; resize: vertical; }
+  .hit-dislike-actions { display: flex; justify-content: flex-end; }
+  .hit-rated {
+    font-size: 0.8rem;
+    color: var(--fg-faint);
+    white-space: nowrap;
+  }
   .search-hit-snippet {
     margin-top: 0.45rem;
     color: var(--fg-muted);

@@ -1,7 +1,9 @@
 package web
 
 import (
+	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -43,6 +45,7 @@ type projectSearchData struct {
 	Err          string
 	ShowArchived bool
 	ToggleHref   string
+	CSRF         string
 }
 
 // handleProjectSearch serves GET /p/{slug}/search. Resolves the project by
@@ -79,13 +82,14 @@ func (a *app) handleProjectSearch(w http.ResponseWriter, r *http.Request) {
 		Limit:        limit,
 		ShowArchived: showArchived,
 		ToggleHref:   archivedToggleHref(r, showArchived),
+		CSRF:         a.summaryCSRF(r),
 	}
 
 	if q != "" {
 		body = a.runProjectSearch(r, body)
 	}
 
-	props := searchToProps(body)
+	props := searchToProps(body, a.hitFeedbackCounts(r, proj.Slug, body))
 	if r.Header.Get("HX-Request") == "true" {
 		a.renderer.RenderTemplPartial(w, r, projectspg.SearchResults(props))
 		return
@@ -97,10 +101,70 @@ func (a *app) handleProjectSearch(w http.ResponseWriter, r *http.Request) {
 	}, projectspg.Search(props))
 }
 
+// handleSearchRate serves POST /p/{slug}/search/rate — a human 👍/👎 on one
+// search hit, wrapping svc.RateSearchResult. On htmx it swaps the hit's rating
+// widget for the sticky "rated" variant with the updated counts; a no-JS POST
+// falls back to a flash + redirect to the search page.
+func (a *app) handleSearchRate(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	entryKey := strings.TrimSpace(r.Form.Get("entry_key"))
+	rating := strings.TrimSpace(r.Form.Get("rating"))
+	reason := strings.TrimSpace(r.Form.Get("reason"))
+	query := r.Form.Get("query")
+
+	if entryKey == "" || (rating != string(domain.RatingLike) && rating != string(domain.RatingDislike)) {
+		a.renderer.RenderTemplError(w, r, http.StatusBadRequest,
+			errors.New("entry_key and a rating of 'like' or 'dislike' are required"))
+		return
+	}
+
+	out, err := a.deps.Service.RateSearchResult(r.Context(), svc.RateInput{
+		ProjectIDOrSlug: slug,
+		EntryKeys:       []domain.EntryKey{domain.EntryKey(entryKey)},
+		Rating:          domain.Rating(rating),
+		Reason:          reason,
+	})
+	if err != nil {
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
+		return
+	}
+	// Per-key partial success: a rejected key (unknown/malformed entry) means
+	// the rating didn't land — surface it so the user knows it didn't take.
+	if len(out.Rejected) > 0 {
+		a.renderer.RenderTemplError(w, r, http.StatusUnprocessableEntity, errors.New(out.Rejected[0].Error))
+		return
+	}
+
+	likes, dislikes := 0, 0
+	if len(out.Updated) > 0 {
+		likes, dislikes = out.Updated[0].Likes, out.Updated[0].Dislikes
+	}
+	widget := projectspg.RatingWidget(projectspg.RatingProps{
+		Slug:     slug,
+		EntryKey: entryKey,
+		Likes:    likes,
+		Dislikes: dislikes,
+		CSRF:     a.summaryCSRF(r),
+		Query:    query,
+		Rated:    true,
+		RatedAs:  rating,
+	})
+	if r.Header.Get("HX-Request") == "true" {
+		a.renderer.RenderTemplPartial(w, r, widget)
+		return
+	}
+	loc := "/p/" + slug + "/search"
+	if query != "" {
+		loc += "?q=" + url.QueryEscape(query)
+	}
+	SetFlash(w, r, "success", "Thanks — feedback noted.")
+	http.Redirect(w, r, loc, http.StatusSeeOther)
+}
+
 // searchToProps converts the web-package's projectSearchData into the
 // projects-package mirror. svc.* hit types come over field-by-field so the
 // templ page never imports svc.
-func searchToProps(d projectSearchData) projectspg.SearchProps {
+func searchToProps(d projectSearchData, counts map[domain.EntryKey]domain.FeedbackRecord) projectspg.SearchProps {
 	out := projectspg.SearchProps{
 		Project:      d.Project,
 		Query:        d.Query,
@@ -109,30 +173,64 @@ func searchToProps(d projectSearchData) projectspg.SearchProps {
 		Err:          d.Err,
 		ShowArchived: d.ShowArchived,
 		ToggleHref:   d.ToggleHref,
+		CSRF:         d.CSRF,
 	}
 	out.TicketHits = make([]projectspg.TicketHit, len(d.TicketHits))
 	for i, h := range d.TicketHits {
-		out.TicketHits[i] = projectspg.TicketHit{Ticket: h.Ticket, Score: h.Score}
+		rec := counts[h.EntryKey]
+		out.TicketHits[i] = projectspg.TicketHit{
+			Ticket: h.Ticket, Score: h.Score,
+			EntryKey: string(h.EntryKey), Likes: rec.Likes, Dislikes: rec.Dislikes,
+		}
 	}
 	out.CommentHits = make([]projectspg.CommentHit, len(d.CommentHits))
 	for i, h := range d.CommentHits {
+		rec := counts[h.EntryKey]
 		out.CommentHits[i] = projectspg.CommentHit{
 			Comment:     h.Comment,
 			TicketTitle: h.TicketTitle,
 			Score:       h.Score,
+			EntryKey:    string(h.EntryKey), Likes: rec.Likes, Dislikes: rec.Dislikes,
 		}
 	}
 	out.LearningHits = make([]projectspg.LearningHit, len(d.LearningHits))
 	for i, h := range d.LearningHits {
+		rec := counts[h.EntryKey]
 		out.LearningHits[i] = projectspg.LearningHit{
 			TicketID:    h.TicketID,
 			Title:       h.Title,
 			Learnings:   h.Learnings,
 			Score:       h.Score,
 			CompletedAt: h.CompletedAt,
+			EntryKey:    string(h.EntryKey), Likes: rec.Likes, Dislikes: rec.Dislikes,
 		}
 	}
 	return out
+}
+
+// hitFeedbackCounts gathers the like/dislike tallies for every hit's entry key
+// so the rating widget can show "👍 3 · 👎 1" on initial render. Best-effort:
+// any error degrades to no counts (the widgets still render their buttons).
+func (a *app) hitFeedbackCounts(r *http.Request, slug string, d projectSearchData) map[domain.EntryKey]domain.FeedbackRecord {
+	keys := make([]domain.EntryKey, 0, len(d.TicketHits)+len(d.CommentHits)+len(d.LearningHits))
+	for _, h := range d.TicketHits {
+		keys = append(keys, h.EntryKey)
+	}
+	for _, h := range d.CommentHits {
+		keys = append(keys, h.EntryKey)
+	}
+	for _, h := range d.LearningHits {
+		keys = append(keys, h.EntryKey)
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	counts, err := a.deps.Service.FeedbackCounts(r.Context(), slug, keys)
+	if err != nil {
+		a.deps.Logger.Warn("search: feedback counts", "err", err)
+		return nil
+	}
+	return counts
 }
 
 // runProjectSearch dispatches to the right Service method based on kind.

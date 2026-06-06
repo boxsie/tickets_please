@@ -95,13 +95,18 @@ type SearchProps struct {
 	Err          string
 	ShowArchived bool   // archived hits included this render
 	ToggleHref   string // link that flips the include-archived state
+	CSRF         string // threaded into the per-hit rating forms
 }
 
 // TicketHit mirrors svc.TicketHit (subset). The mirror exists so the templ
 // page doesn't import svc — the handler converts at the render boundary.
+// EntryKey/Likes/Dislikes drive the inline 👍/👎 rating widget.
 type TicketHit struct {
-	Ticket *domain.Ticket
-	Score  float32
+	Ticket   *domain.Ticket
+	Score    float32
+	EntryKey string
+	Likes    int
+	Dislikes int
 }
 
 // CommentHit mirrors svc.CommentHit.
@@ -109,6 +114,9 @@ type CommentHit struct {
 	Comment     *domain.Comment
 	TicketTitle string
 	Score       float32
+	EntryKey    string
+	Likes       int
+	Dislikes    int
 }
 
 // LearningHit mirrors svc.LearningHit (subset). CompletedAt drives the
@@ -120,6 +128,9 @@ type LearningHit struct {
 	Learnings   string
 	Score       float32
 	CompletedAt time.Time
+	EntryKey    string
+	Likes       int
+	Dislikes    int
 }
 
 // SettingsProps is the payload for the Settings page.

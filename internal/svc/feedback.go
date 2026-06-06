@@ -120,6 +120,32 @@ func (s *Service) RateSearchResult(ctx context.Context, in RateInput) (RateOutpu
 	return out, nil
 }
 
+// FeedbackCounts returns the like/dislike tallies for a set of entry keys in a
+// project, for inline display next to search hits. It's read-only display data,
+// so no session is required and unknown / never-rated keys are simply absent
+// from the returned map (callers treat a miss as zero counts). A project with
+// no feedback store yet yields an empty map, never an error.
+func (s *Service) FeedbackCounts(ctx context.Context, projectIDOrSlug string, keys []domain.EntryKey) (map[domain.EntryKey]domain.FeedbackRecord, error) {
+	out := make(map[domain.EntryKey]domain.FeedbackRecord, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	lp, _, err := s.Cache.Get(ctx, projectIDOrSlug)
+	if err != nil {
+		return nil, err
+	}
+	mount := s.mountForSlug(lp.Project.Slug)
+	if mount == nil || mount.Feedback == nil {
+		return out, nil
+	}
+	for _, k := range keys {
+		if rec, ok := mount.Feedback.Get(k); ok {
+			out[k] = rec
+		}
+	}
+	return out, nil
+}
+
 // feedbackKeyExists reports whether (kind, id) addresses a real entity in the
 // loaded project. Ticket/learning kinds both resolve via lp.Tickets (learnings
 // are 1:1 with their parent ticket); comment kinds walk lp.Comments.

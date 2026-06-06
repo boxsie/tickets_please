@@ -98,6 +98,7 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /p/{slug}/summary", slugRole(domain.RoleViewer, a.handleProjectSummaryView))
 	mux.Handle("POST /p/{slug}/summary", slugRole(domain.RoleMember, a.handleProjectSummaryUpdate))
 	mux.Handle("GET /p/{slug}/search", slugRole(domain.RoleViewer, a.handleProjectSearch))
+	mux.Handle("POST /p/{slug}/search/rate", slugRole(domain.RoleViewer, a.handleSearchRate))
 	mux.Handle("GET /p/{slug}/settings", slugRole(domain.RoleOwner, a.handleProjectSettings))
 	mux.Handle("POST /p/{slug}/settings", slugRole(domain.RoleOwner, a.handleProjectSettingsUpdate))
 	mux.Handle("POST /p/{slug}/reembed", slugRole(domain.RoleOwner, a.handleProjectReembed))
