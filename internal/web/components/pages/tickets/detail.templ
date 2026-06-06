@@ -20,7 +20,7 @@ templ Detail(props DetailProps) {
 		<header class="page-header">
 			<h1>{ t.Title }</h1>
 			<p class="ticket-meta">
-				<a href={ templ.SafeURL(boardHref(proj.Slug)) }>{ proj.Name }</a>
+				<a href={ templ.SafeURL(phasesHref(proj.Slug)) }>{ proj.Name }</a>
 				<span class="breadcrumb-sep"></span>
 				if props.Phase != nil {
 					<a href={ templ.SafeURL(phaseHref(proj.Slug, props.Phase.Slug)) }>{ props.Phase.Name }</a>

@@ -26,28 +26,11 @@ import (
 	"tickets_please/internal/domain"
 )
 
-// --- Board ----------------------------------------------------------------
-
-// BoardProps is the payload for the board page. Tickets are pre-bucketed by
-// column so the template can range without flow control over a flat slice.
-type BoardProps struct {
-	Project   *domain.Project
-	PhaseSlug string // current phase filter, "" = unscoped
-	Phases    []*domain.Phase
-	Columns   []BoardColumn
-}
-
-// BoardColumn is a single named column on the board.
-type BoardColumn struct {
-	Column  domain.Column
-	Title   string
-	Tickets []*domain.Ticket
-}
-
 // --- Ticket card ----------------------------------------------------------
 
 // TicketCardProps wraps a ticket plus its project slug for the small card
-// the board page composes (and any future "list of tickets" view).
+// the board page composed (board is retired) and any future "list of tickets"
+// view. Kept as the shared ticket-card primitive for the attribution wave.
 type TicketCardProps struct {
 	Ticket      *domain.Ticket
 	ProjectSlug string
@@ -253,9 +236,10 @@ func updateHref(id, slug string) string {
 // createHref is the /p/{slug}/tickets URL the new-ticket form posts to.
 func createHref(slug string) string { return "/p/" + slug + "/tickets" }
 
-// boardHref is the /p/{slug}/board URL — used by the board filter form's
-// action and by the "Cancel" link on the new-ticket form.
-func boardHref(slug string) string { return "/p/" + slug + "/board" }
+// phasesHref is the /p/{slug}/phases URL — used as the breadcrumb back-link on
+// the ticket detail + new-ticket pages and the "Cancel" link on the new-ticket
+// form. Replaced the old boardHref now the board page is gone.
+func phasesHref(slug string) string { return "/p/" + slug + "/phases" }
 
 // projectHref is /p/{slug} — the overview URL used as the back-link on the
 // edit form.

@@ -34,77 +34,16 @@ import (
 // /tickets/{id} and /tickets/{id}/{move,complete,edit,assign-phase} all
 // preserve the slug hint when one is in scope.
 
-// --- board ----------------------------------------------------------------
+// --- board (retired) -------------------------------------------------------
 
-// boardData is the payload for pages/tickets/board.tmpl. Tickets are
-// pre-bucketed by column so the template doesn't need flow control over the
-// flat slice.
-type boardData struct {
-	Project   *domain.Project
-	PhaseSlug string          // current phase filter, or "" for unscoped
-	Phases    []*domain.Phase // for the phase filter dropdown
-	Columns   []boardColumn
-}
-
-type boardColumn struct {
-	Column  domain.Column
-	Title   string
-	Tickets []*domain.Ticket
-}
-
-func (a *app) handleBoard(w http.ResponseWriter, r *http.Request) {
+// handleBoardRedirect is all that remains of the Trello board page. The board
+// was useless at scale ("nothing fits in and its not readable" — the user), so
+// phases→waves is now the spine. We keep the old URL alive as a permanent 302
+// to the phases page so stale bookmarks, agent memory, and old comment links
+// don't 404. Cheap insurance — never remove it.
+func (a *app) handleBoardRedirect(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	proj, err := a.deps.Service.GetProject(r.Context(), slug)
-	if err != nil {
-		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
-		return
-	}
-	phases, err := a.deps.Service.ListPhases(r.Context(), slug)
-	if err != nil {
-		a.deps.Logger.Warn("board: list phases", "err", err)
-		phases = nil
-	}
-	phaseSlug := r.URL.Query().Get("phase")
-	in := domain.ListTicketsInput{
-		ProjectIDOrSlug: slug,
-		Limit:           200,
-	}
-	if phaseSlug != "" {
-		in.PhaseIDOrSlug = &phaseSlug
-	}
-	tickets, _, err := a.deps.Service.ListTickets(r.Context(), in)
-	if err != nil {
-		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
-		return
-	}
-	cols := []boardColumn{
-		{Column: domain.ColumnTodo, Title: "To do"},
-		{Column: domain.ColumnInProgress, Title: "In progress"},
-		{Column: domain.ColumnTesting, Title: "Testing"},
-		{Column: domain.ColumnDone, Title: "Done"},
-	}
-	byCol := map[domain.Column]int{}
-	for i, c := range cols {
-		byCol[c.Column] = i
-	}
-	for _, t := range tickets {
-		if i, ok := byCol[t.Column]; ok {
-			cols[i].Tickets = append(cols[i].Tickets, t)
-		}
-	}
-	bcols := make([]pgtickets.BoardColumn, len(cols))
-	for i, c := range cols {
-		bcols[i] = pgtickets.BoardColumn{Column: c.Column, Title: c.Title, Tickets: c.Tickets}
-	}
-	a.renderer.RenderTempl(w, r, PageOpts{
-		Title:       "Board · " + proj.Name,
-		CurrentSlug: slug,
-	}, pgtickets.Board(pgtickets.BoardProps{
-		Project:   proj,
-		PhaseSlug: phaseSlug,
-		Phases:    phases,
-		Columns:   bcols,
-	}))
+	http.Redirect(w, r, "/p/"+slug+"/phases", http.StatusFound)
 }
 
 // --- create form / post ----------------------------------------------------
@@ -490,8 +429,8 @@ func (a *app) handleTicketComplete(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTicketDelete hard-deletes a non-`done` ticket via svc.DeleteTicket.
-// On success redirects to the project board (the ticket detail page is gone)
-// with a flash; on a service-level refusal (done ticket, dependents) the
+// On success redirects to the project phases page (the ticket detail page is
+// gone) with a flash; on a service-level refusal (done ticket, dependents) the
 // classifyServiceError mapper turns it into a 422 with the message visible.
 func (a *app) handleTicketDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -502,7 +441,7 @@ func (a *app) handleTicketDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	loc := "/"
 	if slug != "" {
-		loc = "/p/" + slug + "/board"
+		loc = "/p/" + slug + "/phases"
 	}
 	SetFlash(w, r, "success", "Ticket deleted.")
 	http.Redirect(w, r, loc, http.StatusSeeOther)

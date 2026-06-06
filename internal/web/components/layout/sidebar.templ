@@ -19,7 +19,6 @@ templ Sidebar(data PageData) {
 		@ProjectPicker(data)
 		if p := activeProject(data); p != nil {
 			{{ overview := "/p/" + data.CurrentSlug }}
-			{{ boardURL := "/p/" + data.CurrentSlug + "/board" }}
 			{{ phasesURL := "/p/" + data.CurrentSlug + "/phases" }}
 			{{ summaryURL := "/p/" + data.CurrentSlug + "/summary" }}
 			{{ newTicketURL := "/p/" + data.CurrentSlug + "/tickets/new" }}
@@ -28,7 +27,6 @@ templ Sidebar(data PageData) {
 			<nav class="project-nav" aria-label={ p.Name + " navigation" }>
 				<h2 class="sidebar-heading">{ p.Name }</h2>
 				@navLink(navLinkProps{Class: "project-nav-link", Href: overview, Active: linkIsActive(data.Chrome.URL, overview, true), Label: "Overview"})
-				@navLink(navLinkProps{Class: "project-nav-link", Href: boardURL, Active: linkIsActive(data.Chrome.URL, "/board", false), Label: "Board"})
 				@navLink(navLinkProps{Class: "project-nav-link", Href: phasesURL, Active: linkIsActive(data.Chrome.URL, "/phases", false), Label: "Phases"})
 				@navLink(navLinkProps{Class: "project-nav-link", Href: summaryURL, Active: linkIsActive(data.Chrome.URL, "/summary", false), Label: "Summary"})
 				<hr class="project-nav-sep"/>

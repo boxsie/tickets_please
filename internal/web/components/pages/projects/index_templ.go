@@ -32,7 +32,7 @@ func Index(props IndexProps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"project-index\"><header class=\"page-header\"><h1>Projects</h1><p class=\"subtitle\">All projects mounted on this server. Pick one to see its board, phases, or summary.</p><div class=\"page-actions\"><a class=\"btn btn-primary\" href=\"/p/new\">New project</a> <a class=\"btn\" href=\"/p/load\">Load existing</a></div></header>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"project-index\"><header class=\"page-header\"><h1>Projects</h1><p class=\"subtitle\">All projects mounted on this server. Pick one to see its phases, waves, or summary.</p><div class=\"page-actions\"><a class=\"btn btn-primary\" href=\"/p/new\">New project</a> <a class=\"btn\" href=\"/p/load\">Load existing</a></div></header>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

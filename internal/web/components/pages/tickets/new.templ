@@ -7,7 +7,7 @@ templ New(props FormProps) {
 	<section class="form-page">
 		<header class="page-header">
 			<h1>New ticket</h1>
-			<p class="subtitle"><a href={ templ.SafeURL(boardHref(props.Project.Slug)) }>{ props.Project.Name }</a></p>
+			<p class="subtitle"><a href={ templ.SafeURL(phasesHref(props.Project.Slug)) }>{ props.Project.Name }</a></p>
 			<p class="hint">New tickets land in <code>todo</code>. Wave 0 means "unassigned".</p>
 		</header>
 		if props.FormError != "" {
@@ -36,7 +36,7 @@ templ New(props FormProps) {
 			<input type="hidden" name="_csrf" value={ props.CSRF }/>
 			<div class="form-actions">
 				<button type="submit">Create ticket</button>
-				<a class="btn-link" href={ templ.SafeURL(boardHref(props.Project.Slug)) }>Cancel</a>
+				<a class="btn-link" href={ templ.SafeURL(phasesHref(props.Project.Slug)) }>Cancel</a>
 			</div>
 		</form>
 	</section>

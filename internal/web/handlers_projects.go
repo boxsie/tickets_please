@@ -294,8 +294,7 @@ type learningExcerpt struct {
 }
 
 // handleProjectDetail serves GET /p/{slug} — the project dashboard.
-// Section navigation (Board / Phases / Waves / Summary) lives in the
-// sidebar's per-project nav.
+// Section navigation (Phases / Summary) lives in the sidebar's per-project nav.
 func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	proj, err := a.deps.Service.GetProject(r.Context(), slug)

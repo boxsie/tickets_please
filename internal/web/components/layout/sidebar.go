@@ -23,7 +23,7 @@ func activeProject(data PageData) *domain.Project {
 // appending `active` when the current request URL matches.
 //
 // Matching strategy: the "Overview" link uses exact-equals (the URL is just
-// `/p/<slug>`); every other link uses suffix-match (e.g. `/board`) since the
+// `/p/<slug>`); every other link uses suffix-match (e.g. `/phases`) since the
 // project slug prefix is the same for all of them.
 func navLinkClass(base, currentURL, match string, exact bool) string {
 	if linkIsActive(currentURL, match, exact) {

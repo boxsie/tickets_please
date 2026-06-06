@@ -37,47 +37,23 @@ func seedProjectAndTicket(t *testing.T, deps Deps, projectSlug, title string) (s
 	return projectSlug, tkt.ID
 }
 
-// TestBoard_Empty: GET /p/{slug}/board with no tickets renders all four
-// columns with zero counts.
-func TestBoard_Empty(t *testing.T) {
+// TestBoard_RedirectsToPhases: the retired board URL 302s to /phases so stale
+// bookmarks, agent memory, and old comment links don't 404. The test client
+// is configured not to follow redirects, so we observe the 302 directly.
+func TestBoard_RedirectsToPhases(t *testing.T) {
 	srv, client, deps := freshServerWithDeps(t)
-	repo := seedRepoOnDisk(t, t.TempDir(), "b", "boardempty")
-	if _, err := deps.Service.RegisterProjectMount(context.Background(), repo); err != nil {
-		t.Fatalf("RegisterProjectMount: %v", err)
-	}
-	resp, err := client.Get(srv.URL + "/p/boardempty/board")
+	seedProjectAndTicket(t, deps, "brd", "x")
+
+	resp, err := client.Get(srv.URL + "/p/brd/board")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	body := mustReadAll(t, resp)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want 302", resp.StatusCode)
 	}
-	for _, want := range []string{"To do", "In progress", "Testing", "Done", `class="count"`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("board missing %q", want)
-		}
-	}
-}
-
-// TestBoard_RendersTicket: a created ticket appears in the todo column.
-func TestBoard_RendersTicket(t *testing.T) {
-	srv, client, deps := freshServerWithDeps(t)
-	seedProjectAndTicket(t, deps, "br", "Board Ticket")
-
-	resp, err := client.Get(srv.URL + "/p/br/board")
-	if err != nil {
-		t.Fatalf("GET: %v", err)
-	}
-	body := mustReadAll(t, resp)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
-	}
-	if !strings.Contains(body, "Board Ticket") {
-		t.Errorf("ticket title missing from board\n%s", body)
-	}
-	if !strings.Contains(body, `?slug=br`) {
-		t.Errorf("ticket card missing slug hint\n%s", body)
+	if got := resp.Header.Get("Location"); got != "/p/brd/phases" {
+		t.Errorf("Location = %q, want /p/brd/phases", got)
 	}
 }
 
@@ -396,7 +372,7 @@ func TestTicket_EditDoneRefused(t *testing.T) {
 }
 
 // TestTicket_Delete_Happy: POST /tickets/{id}/delete on a non-done ticket
-// removes it and 303s to the project board.
+// removes it and 303s to the project phases page.
 func TestTicket_Delete_Happy(t *testing.T) {
 	srv, client, deps := freshServerWithDeps(t)
 	_, tid := seedProjectAndTicket(t, deps, "del", "Doomed Ticket")
@@ -410,8 +386,8 @@ func TestTicket_Delete_Happy(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("status = %d, want 303", resp.StatusCode)
 	}
-	if got := resp.Header.Get("Location"); got != "/p/del/board" {
-		t.Errorf("Location = %q, want /p/del/board", got)
+	if got := resp.Header.Get("Location"); got != "/p/del/phases" {
+		t.Errorf("Location = %q, want /p/del/phases", got)
 	}
 	if _, err := deps.Service.GetTicket(context.Background(), tid); err == nil {
 		t.Error("ticket still resolves after delete; want ErrNotFound")

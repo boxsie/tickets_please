@@ -122,10 +122,14 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// owner (ticket 4).
 	mux.Handle("POST /tickets/{id}/assign-phase", tktRole(domain.RoleMember, a.handleAssignTicketToPhase))
 
-	// Tickets: board, create form, create POST, detail, edit form, update,
+	// Tickets: create form, create POST, detail, edit form, update,
 	// move (comment-required), complete (3 textareas). All ticket-mutation
 	// URLs accept an optional ?slug= hint to skip hostStoreForTicket.
-	mux.Handle("GET /p/{slug}/board", slugRole(domain.RoleViewer, a.handleBoard))
+	//
+	// The Trello board page is gone (phases→waves is the spine); its URL
+	// survives as a permanent 302 to /phases so stale bookmarks, agent
+	// memory, and old comment links don't 404.
+	mux.Handle("GET /p/{slug}/board", slugRole(domain.RoleViewer, a.handleBoardRedirect))
 	mux.Handle("GET /p/{slug}/tickets/new", slugRole(domain.RoleMember, a.handleTicketNewForm))
 	mux.Handle("POST /p/{slug}/tickets", slugRole(domain.RoleMember, a.handleTicketCreate))
 	mux.Handle("GET /tickets/{id}", tktRole(domain.RoleViewer, a.handleTicketDetail))

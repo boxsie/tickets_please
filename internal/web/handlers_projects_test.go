@@ -236,7 +236,7 @@ func TestProjects_Detail(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
 	}
-	for _, want := range []string{"demo-slug", "/p/demo-slug/settings", "/p/demo-slug/summary", "/p/demo-slug/board"} {
+	for _, want := range []string{"demo-slug", "/p/demo-slug/settings", "/p/demo-slug/summary", "/p/demo-slug/phases"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("detail missing %q", want)
 		}
