@@ -2,9 +2,9 @@ id: 8888d70d-dca3-4cf4-b6a7-d5572bb1e77f
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 89
 title: 'Ticket-detail metadata block: created_by/at, completed_by/at, updated_at, archived, deps, parallelizable_with, entry key'
-column: in_progress
+column: testing
 phase_id: 9cb33cde-d600-45e4-874b-10198f6aab85
 wave: 2
 created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
 created_at: 2026-05-30T22:07:09.375512809+01:00
-updated_at: 2026-06-06T18:58:49.273584914+01:00
+updated_at: 2026-06-06T19:05:31.798661096+01:00
