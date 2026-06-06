@@ -59,14 +59,12 @@ type StatusSegment struct {
 // ActivityItem is one row in the "Recent activity" list.
 type ActivityItem struct {
 	Ticket *domain.Ticket
-	Ago    string
 }
 
 // LearningExcerpt is one row in the "Recent learnings" section.
 type LearningExcerpt struct {
 	Ticket  *domain.Ticket
 	Excerpt string
-	Ago     string
 }
 
 // SummaryProps is the payload for the Summary page + partials. Mode is "view"

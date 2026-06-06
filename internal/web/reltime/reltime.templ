@@ -1,0 +1,10 @@
+package reltime
+
+import "time"
+
+// Time renders a semantic <time> element with a relative label, the absolute
+// ISO value in datetime=, and a precise tooltip in title=. This is the single
+// affordance every UI surface should use to show a timestamp.
+templ Time(t time.Time) {
+	<time datetime={ Absolute(t) } title={ Long(t) }>{ ShortNow(t) }</time>
+}

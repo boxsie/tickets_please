@@ -1,6 +1,9 @@
 package tickets
 
-import "tickets_please/internal/web/components/md"
+import (
+	"tickets_please/internal/web/components/md"
+	"tickets_please/internal/web/reltime"
+)
 
 // CommentRow renders one comment row inside the thread. 1:1 port of
 // templates/partials/comment.tmpl — same id anchor, same class names, same
@@ -19,10 +22,7 @@ templ CommentRow(props CommentRowProps) {
 			if c.FromColumn != nil && c.ToColumn != nil {
 				<span class="transition">{ transition(c.FromColumn, c.ToColumn) }</span>
 			}
-			<time
-				datetime={ c.CreatedAt.Format("2006-01-02T15:04:05Z07:00") }
-				title={ c.CreatedAt.Format("2006-01-02 15:04:05 MST") }
-			>{ c.CreatedAt.Format("Jan 2 · 15:04") }</time>
+			@reltime.Time(c.CreatedAt)
 		</div>
 		if c.Body != "" {
 			<div class="comment-body markdown">

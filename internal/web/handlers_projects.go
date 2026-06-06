@@ -2,13 +2,11 @@ package web
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"tickets_please/internal/domain"
 	"tickets_please/internal/svc"
@@ -282,7 +280,6 @@ type statusSegment struct {
 // would require a per-ticket walk we don't want on every dashboard load.
 type activityItem struct {
 	Ticket *domain.Ticket
-	Ago    string
 }
 
 // learningExcerpt is one row in the "Recent learnings" section. The
@@ -291,7 +288,6 @@ type activityItem struct {
 type learningExcerpt struct {
 	Ticket  *domain.Ticket
 	Excerpt string
-	Ago     string
 }
 
 // handleProjectDetail serves GET /p/{slug} — the project dashboard.
@@ -369,11 +365,11 @@ func detailToProps(d projectDetailData, csrf string) projectspg.DetailProps {
 	}
 	out.RecentActivity = make([]projectspg.ActivityItem, len(d.RecentActivity))
 	for i, a := range d.RecentActivity {
-		out.RecentActivity[i] = projectspg.ActivityItem{Ticket: a.Ticket, Ago: a.Ago}
+		out.RecentActivity[i] = projectspg.ActivityItem{Ticket: a.Ticket}
 	}
 	out.RecentLearnings = make([]projectspg.LearningExcerpt, len(d.RecentLearnings))
 	for i, l := range d.RecentLearnings {
-		out.RecentLearnings[i] = projectspg.LearningExcerpt{Ticket: l.Ticket, Excerpt: l.Excerpt, Ago: l.Ago}
+		out.RecentLearnings[i] = projectspg.LearningExcerpt{Ticket: l.Ticket, Excerpt: l.Excerpt}
 	}
 	return out
 }
@@ -462,7 +458,7 @@ func pickRecentActivity(tickets []*domain.Ticket, n int) []activityItem {
 	}
 	out := make([]activityItem, len(src))
 	for i, t := range src {
-		out[i] = activityItem{Ticket: t, Ago: humanizeAgo(t.UpdatedAt)}
+		out[i] = activityItem{Ticket: t}
 	}
 	return out
 }
@@ -493,34 +489,9 @@ func pickRecentLearnings(tickets []*domain.Ticket, n int) []learningExcerpt {
 	out := make([]learningExcerpt, len(src))
 	for i, t := range src {
 		excerpt := firstLine(*t.Learnings, 140)
-		ago := ""
-		if t.CompletedAt != nil {
-			ago = humanizeAgo(*t.CompletedAt)
-		}
-		out[i] = learningExcerpt{Ticket: t, Excerpt: excerpt, Ago: ago}
+		out[i] = learningExcerpt{Ticket: t, Excerpt: excerpt}
 	}
 	return out
-}
-
-// humanizeAgo formats a past time as "N <unit> ago" — "just now", "5m
-// ago", "2h ago", "3d ago", "2w ago". Future times collapse to "just
-// now" since they shouldn't happen on real data.
-func humanizeAgo(t time.Time) string {
-	d := time.Since(t)
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	case d < 14*24*time.Hour:
-		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
-	case d < 60*24*time.Hour:
-		return fmt.Sprintf("%dw ago", int(d.Hours()/24/7))
-	default:
-		return t.Format("2006-01-02")
-	}
 }
 
 // firstLine returns the first non-blank line of s, trimmed and capped to
