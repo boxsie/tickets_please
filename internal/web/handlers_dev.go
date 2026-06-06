@@ -5,10 +5,20 @@ import (
 	"net/http"
 	"time"
 
+	"tickets_please/internal/eventbus"
 	"tickets_please/internal/web/components"
 	"tickets_please/internal/web/components/ui"
-	"tickets_please/internal/web/sse"
 )
+
+// devPingAgentID tags the synthetic AgentSeen event the dev SSE-ping button
+// publishes, so the agent-patch renderer can route it to #sse-target instead
+// of a real agent row.
+const devPingAgentID = "dev-ping"
+
+// devPingSpan is the element fragment the dev ping morphs into #sse-target.
+func devPingSpan(label string) string {
+	return `<span id="sse-target" class="badge badge-done">` + label + `</span>`
+}
 
 // handleTemplHello renders the throwaway components.Hello templ component as
 // the smoke proof that the .templ → _templ.go → render pipeline is alive.
@@ -44,17 +54,15 @@ func (a *app) handleComponentsPlayground(w http.ResponseWriter, r *http.Request)
 //
 // Dev-only — see router.go's `if deps.Dev` gate.
 func (a *app) handleSSEPing(w http.ResponseWriter, r *http.Request) {
-	if a.deps.Hub == nil {
-		http.Error(w, "sse hub not wired", http.StatusServiceUnavailable)
+	if a.deps.Bus == nil {
+		http.Error(w, "sse bus not wired", http.StatusServiceUnavailable)
 		return
 	}
-	body := fmt.Sprintf(
-		`elements <span id="sse-target" class="badge badge-done">pong @ %s</span>`,
-		time.Now().UTC().Format(time.RFC3339Nano),
-	)
-	a.deps.Hub.Publish("global", sse.Event{
-		Type: "datastar-patch-elements",
-		Data: body,
+	a.deps.Bus.Publish(eventbus.Event{
+		Kind:      eventbus.KindAgentSeen,
+		Topics:    []string{eventbus.TopicGlobalAgents},
+		AgentID:   devPingAgentID,
+		AgentName: fmt.Sprintf("pong @ %s", time.Now().UTC().Format(time.RFC3339Nano)),
 	})
 	w.WriteHeader(http.StatusNoContent)
 }

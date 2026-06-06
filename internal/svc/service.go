@@ -19,6 +19,7 @@ import (
 	"tickets_please/internal/config"
 	"tickets_please/internal/domain"
 	"tickets_please/internal/embed"
+	"tickets_please/internal/eventbus"
 	"tickets_please/internal/store"
 	"tickets_please/internal/vecindex"
 	"tickets_please/internal/worker"
@@ -106,6 +107,12 @@ type Service struct {
 	Logger          *slog.Logger
 	Cfg             config.Config
 
+	// publisher receives typed realtime events on every mutation (move,
+	// complete, comment, archive, agent register/seen). Fire-and-forget: the
+	// web layer's eventbus.Bus implements it; stdio mode and tests leave it as
+	// the no-op default so call sites never nil-check. Set via SetPublisher.
+	publisher eventbus.Publisher
+
 	// Cache is the in-memory project cache (T04). Lazy-loads project trees
 	// off disk, sliding-TTL evicts, and listens for cross-process file
 	// changes via fsnotify.
@@ -156,6 +163,26 @@ type Service struct {
 	// (<= cfg.MaxLoadedProjects, default 16).
 	mountsMu      sync.Mutex
 	projectMounts map[string]*ProjectMount
+}
+
+// SetPublisher wires the realtime event sink. Called once at serve startup
+// with the web layer's eventbus.Bus. Safe to leave unset (stdio/tests) — the
+// Nop default discards events.
+func (s *Service) SetPublisher(p eventbus.Publisher) {
+	if p == nil {
+		p = eventbus.Nop{}
+	}
+	s.publisher = p
+}
+
+// publish fans a typed event to the wired publisher, fire-and-forget. A nil
+// publisher can't happen (Nop default) but we guard anyway so a future
+// zero-valued Service in a test doesn't panic.
+func (s *Service) publish(ev eventbus.Event) {
+	if s.publisher == nil {
+		return
+	}
+	s.publisher.Publish(ev)
 }
 
 // New builds a Service: resolves the data dir into a *store.Store, wires a
@@ -300,6 +327,7 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 		cacheCancel:     cancelCache,
 		backfillCancel:  cancelBackfill,
 		bgCtx:           backfillCtx,
+		publisher:       eventbus.Nop{},
 		touchOnce:       make(map[string]time.Time),
 		projectMounts:   make(map[string]*ProjectMount),
 	}

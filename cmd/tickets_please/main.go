@@ -29,11 +29,11 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"tickets_please/internal/config"
+	"tickets_please/internal/eventbus"
 	tplog "tickets_please/internal/log"
 	"tickets_please/internal/mcptools"
 	"tickets_please/internal/svc"
 	"tickets_please/internal/web"
-	"tickets_please/internal/web/sse"
 )
 
 // version is the MCP server version reported to clients. Bump when meaningful
@@ -252,7 +252,11 @@ func runServe(args []string, cfg config.Config, log *slog.Logger, logRing *tplog
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok")
 	})
-	web.Mount(mux, web.Deps{Service: s, Logger: log, Cfg: cfg, Dev: *dev, Logs: logRing, Hub: sse.NewMemHub()})
+	// One shared realtime bus: svc publishes mutations into it, /sse fans them
+	// out as Datastar patches.
+	bus := eventbus.NewBus()
+	s.SetPublisher(bus)
+	web.Mount(mux, web.Deps{Service: s, Logger: log, Cfg: cfg, Dev: *dev, Logs: logRing, Bus: bus})
 
 	srv := &http.Server{
 		Addr:              *addr,

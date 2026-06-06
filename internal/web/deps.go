@@ -8,9 +8,9 @@ import (
 	"log/slog"
 
 	"tickets_please/internal/config"
+	"tickets_please/internal/eventbus"
 	tplog "tickets_please/internal/log"
 	"tickets_please/internal/svc"
-	"tickets_please/internal/web/sse"
 )
 
 // Deps is everything Mount needs to wire the web UI. The single instance is
@@ -25,9 +25,8 @@ type Deps struct {
 	// Logs is the in-process log ring backing /logs. nil → /logs renders an
 	// empty buffer (tests that don't care about the page leave it nil).
 	Logs *tplog.Ring
-	// Hub multiplexes server-sent events out to /sse subscribers. nil → the
-	// /sse stream still opens and heartbeats, but no app events are
-	// delivered (handlers_sse.go's no-Hub branch). W1 wires the in-process
-	// memhub; later waves swap in a per-session scoped implementation.
-	Hub sse.Hub
+	// Bus is the typed realtime event hub. svc publishes mutations into it and
+	// /sse subscribers fan them out as Datastar patches. nil → the /sse stream
+	// still opens and heartbeats, but no app events are delivered.
+	Bus *eventbus.Bus
 }
