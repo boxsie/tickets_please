@@ -64,6 +64,13 @@ type Agent struct {
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
 	LastSeenAt time.Time
+
+	// Computed at read time by ListAgents — cheap cross-project aggregates the
+	// agents page surfaces. Tallied by walking each loaded project's tickets
+	// and comments. Zero on a single-record GetAgent read.
+	TicketsCreated   int
+	TicketsCompleted int
+	CommentsAuthored int
 }
 
 // Project is the hydrated form of a project — the yaml record fields plus the
