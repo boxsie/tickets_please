@@ -16,10 +16,10 @@ func TestQualityParams_Multiplier_Defaults(t *testing.T) {
 		likes, dislikes int
 		want            float64
 	}{
-		{0, 0, 0.75},                          // unrated: quality=0.5 → 0.5 + 0.5*0.5
-		{5, 0, 0.5 + 0.5*(7.0/9.0)},           // mild like skew
-		{0, 5, 0.5 + 0.5*(2.0/9.0)},           // mild dislike skew
-		{1000, 0, 0.5 + 0.5*(1002.0/1004.0)},  // overwhelmingly liked
+		{0, 0, 0.75},                         // unrated: quality=0.5 → 0.5 + 0.5*0.5
+		{5, 0, 0.5 + 0.5*(7.0/9.0)},          // mild like skew
+		{0, 5, 0.5 + 0.5*(2.0/9.0)},          // mild dislike skew
+		{1000, 0, 0.5 + 0.5*(1002.0/1004.0)}, // overwhelmingly liked
 	}
 	for _, c := range cases {
 		got := p.Multiplier(c.likes, c.dislikes)

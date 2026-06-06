@@ -111,10 +111,10 @@ func TestRateSearchResult_PartialSuccess(t *testing.T) {
 
 	updated, rejected, _ := callRate(t, tools, map[string]any{
 		"entry_keys": []any{
-			"ticket:" + id,                  // valid
-			"learning:" + id,                // valid (learning shares ticket id)
-			"ticket:nonexistent-ticket-id",  // unknown
-			"weird-malformed-key",           // malformed
+			"ticket:" + id,                 // valid
+			"learning:" + id,               // valid (learning shares ticket id)
+			"ticket:nonexistent-ticket-id", // unknown
+			"weird-malformed-key",          // malformed
 		},
 		"rating": "like",
 	})

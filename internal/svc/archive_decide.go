@@ -46,12 +46,12 @@ type ArchivePolicy struct {
 
 // defaultArchivePolicy returns the canonical defaults from SPEC.md.
 //
-//   enabled: false               # opt-in
-//   min_age_days: 180
-//   min_retrievals: 3
-//   dislike_ratio: 0.5
-//   early_archive_age_days: 30
-//   auto_sweep_on_mount: false
+//	enabled: false               # opt-in
+//	min_age_days: 180
+//	min_retrievals: 3
+//	dislike_ratio: 0.5
+//	early_archive_age_days: 30
+//	auto_sweep_on_mount: false
 func defaultArchivePolicy() ArchivePolicy {
 	return ArchivePolicy{
 		Enabled:             false,

@@ -13,8 +13,8 @@ import (
 // hand-rolled clock so the test isn't time-of-day fragile.
 func TestDecide_TruthTable(t *testing.T) {
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	oldAnchor := now.AddDate(0, 0, -200) // 200 days ago
-	newAnchor := now.AddDate(0, 0, -45)  // 45 days ago
+	oldAnchor := now.AddDate(0, 0, -200)  // 200 days ago
+	newAnchor := now.AddDate(0, 0, -45)   // 45 days ago
 	youngAnchor := now.AddDate(0, 0, -10) // 10 days ago
 
 	enabledPolicy := defaultArchivePolicy()
@@ -259,4 +259,3 @@ func TestSearchTickets_IncludeArchivedFilter(t *testing.T) {
 		t.Errorf("include_archived=true didn't surface the archived ticket")
 	}
 }
-

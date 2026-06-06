@@ -28,9 +28,9 @@ const (
 
 // Entry is one vector in the index.
 type Entry struct {
-	ID    string  // source row id (project_id / ticket_id / comment_id)
-	Kind  Kind    // the domain of the source row
-	Owner string  // project slug; empty for global indexes
+	ID    string // source row id (project_id / ticket_id / comment_id)
+	Kind  Kind   // the domain of the source row
+	Owner string // project slug; empty for global indexes
 	Vec   []float32
 }
 
@@ -175,10 +175,10 @@ func (i *Index) Search(query []float32, kind Kind, ownerFilter string, limit int
 // root is always the weakest currently-kept hit and easy to evict.
 type minHeap []Hit
 
-func (h minHeap) Len() int            { return len(h) }
-func (h minHeap) Less(i, j int) bool  { return h[i].Score < h[j].Score }
-func (h minHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
-func (h *minHeap) Push(x any)         { *h = append(*h, x.(Hit)) }
+func (h minHeap) Len() int           { return len(h) }
+func (h minHeap) Less(i, j int) bool { return h[i].Score < h[j].Score }
+func (h minHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *minHeap) Push(x any)        { *h = append(*h, x.(Hit)) }
 func (h *minHeap) Pop() any {
 	old := *h
 	n := len(old)

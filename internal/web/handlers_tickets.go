@@ -39,10 +39,10 @@ import (
 // pre-bucketed by column so the template doesn't need flow control over the
 // flat slice.
 type boardData struct {
-	Project    *domain.Project
-	PhaseSlug  string         // current phase filter, or "" for unscoped
-	Phases     []*domain.Phase // for the phase filter dropdown
-	Columns    []boardColumn
+	Project   *domain.Project
+	PhaseSlug string          // current phase filter, or "" for unscoped
+	Phases    []*domain.Phase // for the phase filter dropdown
+	Columns   []boardColumn
 }
 
 type boardColumn struct {
@@ -118,11 +118,11 @@ type ticketFormData struct {
 }
 
 type ticketFormSubmitted struct {
-	Title         string
-	Body          string
-	PhaseSlug     string
-	Wave          int
-	DependsOn     []string
+	Title          string
+	Body           string
+	PhaseSlug      string
+	Wave           int
+	DependsOn      []string
 	Parallelizable []string
 }
 

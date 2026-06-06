@@ -76,9 +76,9 @@ func (s *Store) WatchProject(slug string) (*ProjectWatcher, error) {
 // loop pumps fsnotify events into the debounced Events channel.
 func (p *ProjectWatcher) loop() {
 	var (
-		timer    *time.Timer
-		timerC   <-chan time.Time
-		dirty    bool
+		timer  *time.Timer
+		timerC <-chan time.Time
+		dirty  bool
 	)
 
 	emit := func() {

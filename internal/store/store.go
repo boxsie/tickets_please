@@ -104,4 +104,3 @@ func (s *Store) projectDir(_ string) string {
 func (s *Store) stagingDir() string {
 	return filepath.Join(s.Root, dirStaging)
 }
-

@@ -94,11 +94,11 @@ func TestSettings_PostRoundTrips_PreservesComments(t *testing.T) {
 	csrf := primeCSRF(t, client, srv.URL)
 
 	form := url.Values{
-		"embed_provider":  {"ollama"},
-		"embed_model":     {"bge-m3"},
-		"ollama_url":      {"http://localhost:11434"},
-		"openai_api_key":  {""}, // blank: leave key alone
-		"_csrf":           {csrf},
+		"embed_provider": {"ollama"},
+		"embed_model":    {"bge-m3"},
+		"ollama_url":     {"http://localhost:11434"},
+		"openai_api_key": {""}, // blank: leave key alone
+		"_csrf":          {csrf},
 	}
 	resp, err := client.PostForm(srv.URL+"/settings", form)
 	if err != nil {

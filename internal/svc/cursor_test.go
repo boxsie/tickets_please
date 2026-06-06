@@ -47,7 +47,7 @@ func TestListTickets_CursorEdges(t *testing.T) {
 	t.Run("garbage_cursor_returns_invalid_argument", func(t *testing.T) {
 		s, ctx, _, slug := freshServiceWithProject(t)
 		for _, bad := range []string{
-			"garbage!!!",          // not base64
+			"garbage!!!",           // not base64
 			"bm9waXBlc2VwYXJhdG9y", // base64 of "nopipeseparator"
 			"fA==",                 // base64 of "|" alone — separator at start, no ts
 			"YXxiYWQtdGltZXN0YW1w", // base64 of "a|bad-timestamp"

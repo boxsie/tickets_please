@@ -77,14 +77,14 @@ func TestStageOp_RoundTrip_WriteRenameRemove(t *testing.T) {
 	ctx := context.Background()
 
 	// Pre-populate a directory we'll RenameDir, and a file we'll RemovePath.
-	srcDir := filepath.Join(s.Root,"tickets", "001-foo")
+	srcDir := filepath.Join(s.Root, "tickets", "001-foo")
 	if err := os.MkdirAll(srcDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(srcDir, "ticket.yaml"), []byte("id: x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	stragglerDir := filepath.Join(s.Root,"phases", "001-old")
+	stragglerDir := filepath.Join(s.Root, "phases", "001-old")
 	if err := os.MkdirAll(stragglerDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
