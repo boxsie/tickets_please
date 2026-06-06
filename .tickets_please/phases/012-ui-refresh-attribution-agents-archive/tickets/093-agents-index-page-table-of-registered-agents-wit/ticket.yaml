@@ -2,9 +2,9 @@ id: 249ce6f7-692e-4513-bedc-225846bbaea9
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 93
 title: '/agents index page: table of registered agents with last-seen, counts, and link to detail'
-column: in_progress
+column: testing
 phase_id: 9cb33cde-d600-45e4-874b-10198f6aab85
 wave: 3
 created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
 created_at: 2026-05-30T22:07:39.663038291+01:00
-updated_at: 2026-06-06T19:43:23.070705713+01:00
+updated_at: 2026-06-06T19:50:52.803135825+01:00
