@@ -1,0 +1,22 @@
+## Testing evidence
+go test ./... green. handlers_archive_policy_test.go: SaveRoundTrip (POST save → 303, svc.GetArchivePolicy shows all 6 knobs, GET form has value="42"), PreviewDryRun (permissive policy → body "Dry-run" + ticket title, ticket NOT archived), ApplyWrites (body "Applied", ticket IS archived), PreviewDisabledErrors (disabled policy → non-200 + "disabled" message). gofmt clean. Live: GET settings renders the Archive policy fieldset (6 fields + save/preview/apply buttons); POST preview on the real disabled project 422s with "disabled for project".
+
+## Work summary
+svc: SetArchivePolicy (persist 6-knob archive block to project.yaml + refresh mount) + GetArchivePolicy. web: ArchivePolicyView/ArchiveReportView/ArchiveReportRow mirrors + fields on SettingsProps; archivePolicyCard + archiveReport templ in settings.templ; GET settings populates Archive via GetArchivePolicy; new POST /p/{slug}/archive-policy (handleArchivePolicy: save|preview|apply) + parseArchiveForm + renderArchiveSettings + archiveReportView converter; route (RoleOwner). CSS for .archive-policy-form/.form-grid/.archive-report. Committed 0930877.
+
+## Learnings
+Archive-policy settings form. The svc had ApplyArchivePolicy (dry-run/commit) but NO way to persist the policy from outside — so I added svc.SetArchivePolicy + GetArchivePolicy.
+
+Key facts:
+
+- PERSISTENCE PATTERN: SetArchivePolicy mirrors updateProjectLocked exactly — requireSession → Cache.Get → ResolveProjectStore → lp.Lock.Lock → st.ReadProject(slug) (re-read so forward-compat fields survive) → set rec.Archive = &store.ArchiveConfigRecord{...all six as pointers...} → MarshalYAML → BeginOp/Write("project.yaml")/Commit(LockProject(slug), agent, caption) → update mount.ArchivePolicy = resolveArchivePolicy(rec.Archive). The ArchiveConfigRecord fields are all *T (omitempty); I set every one explicitly since the form always supplies a complete set.
+
+- POLICY IS A mount FIELD, not a domain.Project field. domain.Project has NO EmbedProvider/EmbedModel/Archive — those live on the ProjectMount (mount.ArchivePolicy) and the store ProjectRecord. To show embed provider/model in a re-rendered settings page you read them via readEmbedStatus (the summary.embedding.json sidecar + ReadProject), NOT off domain.Project. Tripped on this — proj.EmbedProvider doesn't compile.
+
+- DECIDE thresholds for a deterministic test: a fresh active ticket has age-anchor = UpdatedAt (≈now, ageDays 0), 0 retrievals, 0 ratings. With enabled + min_age_days=0 + min_retrievals=0 it archives via the LONG-TERM branch (ageDays>=0 && retrievals>=0 && totalRatings==0). That's the easy "make something archivable in a test" recipe — no need to backdate or fake retrievals.
+
+- ONE FORM, THREE ACTIONS via <button name="action" value="save|preview|apply">. save → SetArchivePolicy → 303 redirect. preview/apply → ApplyArchivePolicy(commit=false/true) → re-render the SAME settings page with the report inline (no navigation). Preview/Apply run against the SAVED policy (ApplyArchivePolicy reads mount.ArchivePolicy, ignores form values), so after them the form shows the re-read saved policy and a hint says "save before previewing". ApplyArchivePolicy REFUSES when !policy.Enabled (ErrFailedPrecondition "...disabled for project...") — surface it inline (classifyServiceError → 422). Dry-run report rows come from report.WouldArchive; apply rows from report.Archived; report.Considered is the baseline count.
+
+- Owner-gating: the whole /p/{slug}/settings + the new POST /p/{slug}/archive-policy are RoleOwner already, so "Apply now owner-only" is satisfied by the route guard; IsOwner is just passed true for the template's button visibility.
+
+- Live-test caution: SetArchivePolicy git-commits project.yaml under the flock (like move/archive). Don't live-test the positive save/apply against the real dogfood project — it mutates project.yaml + leaves commits + could archive real tickets. The integration tests are full HTTP→handler→svc→store→git against temp-dir Services (real, not mocked), so they're as authoritative as a curl; I only live-checked form render + the disabled-policy 422.
