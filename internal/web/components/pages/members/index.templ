@@ -1,0 +1,103 @@
+package members
+
+import "tickets_please/internal/domain"
+
+// Index is the /p/{slug}/members page — current members with per-row role
+// management + remove, the pending-invitations list with inline shareable
+// accept links, and the "create invite" form. Owner-only (route-guarded).
+templ Index(p IndexProps) {
+	<section class="members-page">
+		<header class="page-header">
+			<a class="back-link" href={ templ.SafeURL("/p/" + p.Project.Slug) }>{ p.Project.Name }</a>
+			<h1>Members</h1>
+			<p class="subtitle">Who can see and change this project, and pending invitations. Owners manage access here.</p>
+		</header>
+		<section class="card">
+			<h2>Current members</h2>
+			if len(p.Members) > 0 {
+				<table class="members-table">
+					<thead>
+						<tr><th>Member</th><th>Role</th><th class="members-actions-col"></th></tr>
+					</thead>
+					<tbody>
+						for _, m := range p.Members {
+							<tr>
+								<td>
+									<span class="member-name">{ m.DisplayName }</span>
+									if m.IsSelf {
+										<span class="badge badge-system">you</span>
+									}
+									if m.Email != "" {
+										<div class="member-email muted">{ m.Email }</div>
+									}
+								</td>
+								<td>
+									<form method="post" action={ templ.SafeURL(roleHref(p.Project.Slug, m.UserID)) } class="inline-form">
+										<input type="hidden" name="_csrf" value={ p.CSRF }/>
+										<select name="role" aria-label="role">
+											for _, r := range roleOptions {
+												<option value={ string(r) } selected?={ m.Role == r }>{ roleLabel(r) }</option>
+											}
+										</select>
+										<button type="submit" class="btn btn-sm">Save</button>
+									</form>
+								</td>
+								<td class="members-actions-col">
+									if !m.IsSelf {
+										<form
+											method="post"
+											action={ templ.SafeURL(removeHref(p.Project.Slug, m.UserID)) }
+											onsubmit={ templ.JSUnsafeFuncCall("return confirm('Remove " + m.DisplayName + " from this project?');") }
+										>
+											<input type="hidden" name="_csrf" value={ p.CSRF }/>
+											<button type="submit" class="btn btn-sm btn-danger">Remove</button>
+										</form>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			} else {
+				<p class="hint">No members yet.</p>
+			}
+		</section>
+		<section class="card">
+			<h2>Invite someone</h2>
+			<p class="hint">Creates a one-use link valid for 7 days. No email is sent — copy the link from the list below and share it. Whoever opens it while logged in is granted the chosen role.</p>
+			<form method="post" action={ templ.SafeURL(inviteHref(p.Project.Slug)) } class="invite-form">
+				<input type="hidden" name="_csrf" value={ p.CSRF }/>
+				<input type="email" name="email" placeholder="email (optional, for your reference)"/>
+				<select name="role" aria-label="invite role">
+					for _, r := range roleOptions {
+						<option value={ string(r) } selected?={ r == domain.RoleMember }>{ roleLabel(r) }</option>
+					}
+				</select>
+				<button type="submit" class="btn btn-primary">Create invite</button>
+			</form>
+			if len(p.Invitations) > 0 {
+				<h3 class="mt-4">Pending invitations</h3>
+				<ul class="invite-list">
+					for _, inv := range p.Invitations {
+						<li class="invite-row">
+							<div class="invite-meta">
+								<span class="invite-email">{ emailOrDash(inv.Email) }</span>
+								<span class="badge">{ roleLabel(inv.Role) }</span>
+								if expiresLabel(inv.ExpiresAt) != "" {
+									<span class="muted">expires { expiresLabel(inv.ExpiresAt) }</span>
+								}
+							</div>
+							<input class="invite-link" type="text" readonly value={ inv.AcceptPath } onclick="this.select()" aria-label="invite link"/>
+							<form method="post" action={ templ.SafeURL(cancelHref(p.Project.Slug, inv.ID)) }>
+								<input type="hidden" name="_csrf" value={ p.CSRF }/>
+								<button type="submit" class="btn btn-sm">Cancel</button>
+							</form>
+						</li>
+					}
+				</ul>
+			} else {
+				<p class="hint mt-4">No pending invitations.</p>
+			}
+		</section>
+	</section>
+}

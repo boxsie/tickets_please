@@ -104,6 +104,9 @@ type Service struct {
 	// Read by the web layer's route guards to authorize access; written by the
 	// invitation / role-management flows (W2-4) and bootstrap admin (W2-6).
 	MembershipStore *store.MembershipStore
+	// InvitationStore holds pending project invitations (W2-4 invitations UI).
+	// Consumed (deleted) on accept, which upserts the corresponding membership.
+	InvitationStore *store.InvitationStore
 	Logger          *slog.Logger
 	Cfg             config.Config
 
@@ -296,6 +299,10 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 	if err != nil {
 		return nil, fmt.Errorf("svc: build membership store: %w", err)
 	}
+	is, err := store.NewInvitationStore(dataRoot, cfg.LockTimeoutSeconds)
+	if err != nil {
+		return nil, fmt.Errorf("svc: build invitation store: %w", err)
+	}
 
 	st, err := store.New(cfg)
 	if err != nil {
@@ -318,6 +325,7 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 		AgentStore:      as,
 		UserStore:       us,
 		MembershipStore: ms,
+		InvitationStore: is,
 		Logger:          logger,
 		Cfg:             cfg,
 		Embed:           provider,

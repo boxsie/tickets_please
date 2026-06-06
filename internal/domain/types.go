@@ -178,6 +178,29 @@ type Membership struct {
 	GrantedAt time.Time
 }
 
+// Invitation is a pending grant: an owner creates one to bring a User onto a
+// Project at a given Role. Token is a random one-use secret embedded in the
+// accept link (/auth/invite/{token}); the invitation is consumed (deleted) on
+// accept. Email is informational in the homelab/inline-link flow — whoever
+// follows the link while logged in is granted the role. AcceptedAt is reserved
+// for a future audit-trail variant that keeps consumed invites.
+type Invitation struct {
+	ID         string
+	ProjectID  string
+	Email      string
+	Role       Role
+	Token      string
+	CreatedBy  string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	AcceptedAt *time.Time
+}
+
+// Expired reports whether the invitation is past its expiry as of now.
+func (i *Invitation) Expired(now time.Time) bool {
+	return !i.ExpiresAt.IsZero() && now.After(i.ExpiresAt)
+}
+
 // WaveSummary describes a single wave inside a phase or the phase-less area
 // of a project.
 type WaveSummary struct {

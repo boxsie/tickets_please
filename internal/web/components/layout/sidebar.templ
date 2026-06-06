@@ -24,6 +24,7 @@ templ Sidebar(data PageData) {
 			{{ summaryURL := "/p/" + data.CurrentSlug + "/summary" }}
 			{{ newTicketURL := "/p/" + data.CurrentSlug + "/tickets/new" }}
 			{{ settingsURL := "/p/" + data.CurrentSlug + "/settings" }}
+			{{ membersURL := "/p/" + data.CurrentSlug + "/members" }}
 			<nav class="project-nav" aria-label={ p.Name + " navigation" }>
 				<h2 class="sidebar-heading">{ p.Name }</h2>
 				@navLink(navLinkProps{Class: "project-nav-link", Href: overview, Active: linkIsActive(data.Chrome.URL, overview, true), Label: "Overview"})
@@ -32,6 +33,7 @@ templ Sidebar(data PageData) {
 				@navLink(navLinkProps{Class: "project-nav-link", Href: summaryURL, Active: linkIsActive(data.Chrome.URL, "/summary", false), Label: "Summary"})
 				<hr class="project-nav-sep"/>
 				@navLink(navLinkProps{Class: "project-nav-cta", Href: newTicketURL, Active: linkIsActive(data.Chrome.URL, "/tickets/new", false), Label: "+ New ticket"})
+				@navLink(navLinkProps{Class: "project-nav-link muted", Href: membersURL, Active: linkIsActive(data.Chrome.URL, "/members", false), Label: "Members"})
 				@navLink(navLinkProps{Class: "project-nav-link muted", Href: settingsURL, Active: linkIsActive(data.Chrome.URL, "/settings", false), Label: "Settings"})
 			</nav>
 		} else {

@@ -65,6 +65,13 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /auth/{provider}/callback", pub(a.handleAuthCallback))
 	mux.Handle("POST /auth/logout", wrap(a.handleLogout))
 
+	// Invitation accept (#077). Lives at /invite/{token} rather than under
+	// /auth/ to avoid colliding with the /auth/{provider}/... wildcard. `authed`
+	// bounces an anonymous visitor to login with ?next= back here, so they
+	// return to this URL once signed in; then the handler consumes the token
+	// and grants membership.
+	mux.Handle("GET /invite/{token}", authed(a.handleInviteAccept))
+
 	// Sidebar swap endpoint: returns just the <aside id="sidebar"> fragment.
 	// Wired by templates/partials/sidebar.tmpl's hx-get; triggered on the
 	// body-scoped sidebar-refresh event that POST handlers emit via
@@ -88,6 +95,15 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /p/{slug}/settings", slugRole(domain.RoleOwner, a.handleProjectSettings))
 	mux.Handle("POST /p/{slug}/settings", slugRole(domain.RoleOwner, a.handleProjectSettingsUpdate))
 	mux.Handle("POST /p/{slug}/reembed", slugRole(domain.RoleOwner, a.handleProjectReembed))
+
+	// Members + invitations (W2-4, #077). Owner-only management of who can see
+	// and change the project. The accept route (below, near auth) is login-gated
+	// instead — the invitee isn't a member yet.
+	mux.Handle("GET /p/{slug}/members", slugRole(domain.RoleOwner, a.handleMembersIndex))
+	mux.Handle("POST /p/{slug}/members/invite", slugRole(domain.RoleOwner, a.handleMemberInvite))
+	mux.Handle("POST /p/{slug}/members/invitations/{id}/cancel", slugRole(domain.RoleOwner, a.handleInviteCancel))
+	mux.Handle("POST /p/{slug}/members/{user_id}/role", slugRole(domain.RoleOwner, a.handleMemberRole))
+	mux.Handle("POST /p/{slug}/members/{user_id}/remove", slugRole(domain.RoleOwner, a.handleMemberRemove))
 
 	// Phase routes. Same wrap (session + CSRF on POST). Literal segments
 	// (/phases, /new) take precedence over the {phase} wildcard.

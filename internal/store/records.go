@@ -165,6 +165,40 @@ func (r *MembershipRecord) ToDomain() *domain.Membership {
 	}
 }
 
+// InvitationRecord is the on-disk yaml at
+// `<DataRoot>/invitations/<project_id>/<id>.yaml`. Per-project subdir mirrors
+// memberships so a project delete is one `os.RemoveAll`. The record IS the
+// full domain shape — invitations have no sidecar files.
+type InvitationRecord struct {
+	ID         string      `yaml:"id"`
+	ProjectID  string      `yaml:"project_id"`
+	Email      string      `yaml:"email,omitempty"`
+	Role       domain.Role `yaml:"role"`
+	Token      string      `yaml:"token"`
+	CreatedBy  string      `yaml:"created_by,omitempty"`
+	CreatedAt  time.Time   `yaml:"created_at"`
+	ExpiresAt  time.Time   `yaml:"expires_at"`
+	AcceptedAt *time.Time  `yaml:"accepted_at,omitempty"`
+}
+
+// ToDomain converts an InvitationRecord to its domain equivalent.
+func (r *InvitationRecord) ToDomain() *domain.Invitation {
+	if r == nil {
+		return nil
+	}
+	return &domain.Invitation{
+		ID:         r.ID,
+		ProjectID:  r.ProjectID,
+		Email:      r.Email,
+		Role:       r.Role,
+		Token:      r.Token,
+		CreatedBy:  r.CreatedBy,
+		CreatedAt:  r.CreatedAt,
+		ExpiresAt:  r.ExpiresAt,
+		AcceptedAt: r.AcceptedAt,
+	}
+}
+
 // AgentRecord is the full agent yaml at `agents/<session-uuid>.yaml`. Agents
 // have no sidecar files — the record IS the full domain shape.
 type AgentRecord struct {
