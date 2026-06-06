@@ -2,9 +2,9 @@ id: 7e260496-5d06-4eef-85e9-712df0411d61
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 96
 title: Include-archived toggle on search and ticket lists
-column: in_progress
+column: testing
 phase_id: 9cb33cde-d600-45e4-874b-10198f6aab85
 wave: 4
 created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
 created_at: 2026-05-30T22:08:00.753204415+01:00
-updated_at: 2026-06-06T20:25:49.653734539+01:00
+updated_at: 2026-06-06T20:32:14.02662719+01:00
