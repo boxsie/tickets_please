@@ -2,8 +2,8 @@ id: 1392480e-7ee2-49c6-ac89-9c590d1ec4a6
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 120
 title: Make "acting for X" attribution clickable (Claude → /agents/{id}, Dan → /u/{user})
-column: in_progress
+column: testing
 phase_id: 9cb33cde-d600-45e4-874b-10198f6aab85
 created_by: c95c9564-c6e7-4d92-b94e-4a4fa1ba41af
 created_at: 2026-06-02T23:25:05.21453522+01:00
-updated_at: 2026-06-06T20:52:30.913106643+01:00
+updated_at: 2026-06-06T20:59:07.897975423+01:00
