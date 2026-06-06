@@ -101,6 +101,7 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /p/{slug}/search/rate", slugRole(domain.RoleViewer, a.handleSearchRate))
 	mux.Handle("GET /p/{slug}/settings", slugRole(domain.RoleOwner, a.handleProjectSettings))
 	mux.Handle("POST /p/{slug}/settings", slugRole(domain.RoleOwner, a.handleProjectSettingsUpdate))
+	mux.Handle("POST /p/{slug}/archive-policy", slugRole(domain.RoleOwner, a.handleArchivePolicy))
 	mux.Handle("POST /p/{slug}/reembed", slugRole(domain.RoleOwner, a.handleProjectReembed))
 
 	// Members + invitations (W2-4, #077). Owner-only management of who can see

@@ -140,6 +140,40 @@ type SettingsProps struct {
 	Submitted SettingsSubmitted
 	Status    EmbedStatus
 	CSRF      string
+	// Archive is the current archive-policy form state. Report is a non-nil
+	// dry-run / apply sweep result to render below the archive fieldset (set
+	// only after a Preview / Apply action); IsOwner gates the Apply button.
+	Archive      ArchivePolicyView
+	ArchiveError string
+	Report       *ArchiveReportView
+	IsOwner      bool
+}
+
+// ArchivePolicyView is the archive-policy form state (mirrors svc.ArchivePolicy).
+type ArchivePolicyView struct {
+	Enabled             bool
+	MinAgeDays          int
+	MinRetrievals       int
+	DislikeRatio        float64
+	EarlyArchiveAgeDays int
+	AutoSweepOnMount    bool
+}
+
+// ArchiveReportView is one dry-run or apply sweep report rendered inline below
+// the archive fieldset. Committed distinguishes "would archive" (false) from
+// "archived" (true). Considered is the baseline ticket count walked.
+type ArchiveReportView struct {
+	Committed  bool
+	Considered int
+	Rows       []ArchiveReportRow
+}
+
+// ArchiveReportRow is one ticket in a sweep report, with its archive reason.
+type ArchiveReportRow struct {
+	TicketID string
+	Title    string
+	Reason   string
+	Slug     string
 }
 
 // SettingsSubmitted captures the user-typed form values for the settings form.

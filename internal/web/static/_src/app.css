@@ -1326,6 +1326,30 @@
     color: var(--bg);
   }
   .archived-toggle.on { color: var(--fg); }
+  /* Archive-policy fieldset (project settings). */
+  .archive-policy-form .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.7rem 1rem;
+    margin: 0.4rem 0;
+  }
+  .archive-policy-form .form-grid input[type="number"] { width: 100%; }
+  .archive-policy-form .check-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .archive-report {
+    margin-top: 1rem;
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--bg-elev-1);
+  }
+  .archive-report-committed { border-color: var(--accent); }
+  .archive-report h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+  .archive-report-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  .archive-report-reason { margin-left: 0.5rem; font-size: 0.8rem; }
   .ticket-card-title {
     font-size: 0.88rem;
     font-weight: 500;

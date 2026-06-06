@@ -75,5 +75,88 @@ templ Settings(props SettingsProps) {
 			</div>
 			<p class="hint">Changing the provider or model triggers a full re-embed automatically.</p>
 		</form>
+		@archivePolicyCard(props)
 	</section>
+}
+
+// archivePolicyCard renders the "Archive policy" fieldset plus the inline
+// dry-run / apply report. The six knobs map 1:1 to the project.yaml `archive`
+// block; the three buttons share one form and differ only by their `action`
+// value (save | preview | apply).
+templ archivePolicyCard(props SettingsProps) {
+	{{ p := props.Project }}
+	{{ a := props.Archive }}
+	@ui.Card(ui.CardProps{Title: "Archive policy", Class: "archive-policy"}) {
+		<p class="hint">
+			The automatic-archive sweep is opt-in. With it enabled, old / unhelpful tickets are
+			hidden from the default lists and search (never deleted). Preview before applying.
+		</p>
+		if props.ArchiveError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { props.ArchiveError }</div>
+		}
+		<form method="post" action={ templ.SafeURL("/p/" + p.Slug + "/archive-policy") } class="stack archive-policy-form">
+			<label class="check-row">
+				<input type="checkbox" name="enabled" value="true" checked?={ a.Enabled }/>
+				Enabled <span class="muted">— turn the sweep on for this project</span>
+			</label>
+			<div class="form-grid">
+				<div>
+					<label for="min_age_days">Min age (days)</label>
+					<input id="min_age_days" type="number" name="min_age_days" min="0" value={ strconv.Itoa(a.MinAgeDays) }/>
+				</div>
+				<div>
+					<label for="min_retrievals">Min retrievals</label>
+					<input id="min_retrievals" type="number" name="min_retrievals" min="0" value={ strconv.Itoa(a.MinRetrievals) }/>
+				</div>
+				<div>
+					<label for="dislike_ratio">Dislike ratio <span class="muted">(0–1)</span></label>
+					<input id="dislike_ratio" type="number" name="dislike_ratio" min="0" max="1" step="0.05" value={ strconv.FormatFloat(a.DislikeRatio, 'g', -1, 64) }/>
+				</div>
+				<div>
+					<label for="early_archive_age_days">Early-archive age (days)</label>
+					<input id="early_archive_age_days" type="number" name="early_archive_age_days" min="0" value={ strconv.Itoa(a.EarlyArchiveAgeDays) }/>
+				</div>
+			</div>
+			<label class="check-row">
+				<input type="checkbox" name="auto_sweep_on_mount" value="true" checked?={ a.AutoSweepOnMount }/>
+				Auto-sweep on mount <span class="muted">— run the sweep automatically when the project loads</span>
+			</label>
+			<input type="hidden" name="_csrf" value={ props.CSRF }/>
+			<div class="form-actions">
+				<button type="submit" name="action" value="save" class="btn btn-primary">Save policy</button>
+				<button type="submit" name="action" value="preview" class="btn">Preview (dry-run)</button>
+				if props.IsOwner {
+					<button type="submit" name="action" value="apply" class="btn btn-danger">Apply now</button>
+				}
+			</div>
+			<p class="hint">Save your changes before previewing — Preview &amp; Apply run against the saved policy.</p>
+		</form>
+		if props.Report != nil {
+			@archiveReport(*props.Report)
+		}
+	}
+}
+
+// archiveReport renders a sweep report below the form: the baseline considered
+// count, whether it was a dry-run or a real apply, and the per-ticket rows.
+templ archiveReport(r ArchiveReportView) {
+	<div class={ "archive-report", templ.KV("archive-report-committed", r.Committed) } role="status">
+		if r.Committed {
+			<h3>Applied — archived { strconv.Itoa(len(r.Rows)) } of { strconv.Itoa(r.Considered) } considered</h3>
+		} else {
+			<h3>Dry-run — would archive { strconv.Itoa(len(r.Rows)) } of { strconv.Itoa(r.Considered) } considered</h3>
+		}
+		if len(r.Rows) == 0 {
+			<p class="hint">Nothing matches the policy right now.</p>
+		} else {
+			<ul class="archive-report-list">
+				for _, row := range r.Rows {
+					<li>
+						<a href={ templ.SafeURL("/tickets/" + row.TicketID + "?slug=" + row.Slug) }>{ row.Title }</a>
+						<span class="muted archive-report-reason">{ row.Reason }</span>
+					</li>
+				}
+			</ul>
+		}
+	</div>
 }

@@ -204,6 +204,91 @@ func (s *Service) flipArchive(ctx context.Context, ticketID, comment string, wan
 	return cp, nil
 }
 
+// GetArchivePolicy returns the project's currently-resolved archive policy
+// (defaults merged with the project.yaml `archive` block). Read-only — used to
+// populate the settings form. Falls back to the canonical defaults when the
+// mount isn't resolved.
+func (s *Service) GetArchivePolicy(ctx context.Context, idOrSlug string) (ArchivePolicy, error) {
+	lp, _, err := s.Cache.Get(ctx, idOrSlug)
+	if err != nil {
+		return ArchivePolicy{}, err
+	}
+	mount := s.mountForSlug(lp.Project.Slug)
+	if mount == nil {
+		return defaultArchivePolicy(), nil
+	}
+	return mount.ArchivePolicy, nil
+}
+
+// SetArchivePolicy persists the full archive policy to the project.yaml
+// `archive` block and updates the mount's resident policy. All six knobs are
+// written explicitly (not omitted) since the settings form always supplies a
+// complete set. Mirrors updateProjectLocked's read-modify-write-under-flock
+// pattern. Returns the re-resolved policy.
+func (s *Service) SetArchivePolicy(ctx context.Context, idOrSlug string, p ArchivePolicy) (ArchivePolicy, error) {
+	ctx, agent, err := s.requireSession(ctx)
+	if err != nil {
+		return ArchivePolicy{}, err
+	}
+	if p.DislikeRatio < 0 || p.DislikeRatio > 1 {
+		return ArchivePolicy{}, fmt.Errorf("%w: dislike_ratio must be between 0 and 1", domain.ErrInvalidArgument)
+	}
+	if p.MinAgeDays < 0 || p.MinRetrievals < 0 || p.EarlyArchiveAgeDays < 0 {
+		return ArchivePolicy{}, fmt.Errorf("%w: day/retrieval thresholds must be >= 0", domain.ErrInvalidArgument)
+	}
+
+	lp, _, err := s.Cache.Get(ctx, idOrSlug)
+	if err != nil {
+		return ArchivePolicy{}, err
+	}
+	st, err := s.ResolveProjectStore(ctx, lp.Project.Slug)
+	if err != nil {
+		return ArchivePolicy{}, err
+	}
+	slug := lp.Project.Slug
+
+	lp.Lock.Lock()
+	defer lp.Lock.Unlock()
+
+	rec, err := st.ReadProject(slug)
+	if err != nil {
+		return ArchivePolicy{}, fmt.Errorf("read project: %w", err)
+	}
+	enabled, minAge, minRetr := p.Enabled, p.MinAgeDays, p.MinRetrievals
+	ratio, early, sweep := p.DislikeRatio, p.EarlyArchiveAgeDays, p.AutoSweepOnMount
+	rec.Archive = &store.ArchiveConfigRecord{
+		Enabled:             &enabled,
+		MinAgeDays:          &minAge,
+		MinRetrievals:       &minRetr,
+		DislikeRatio:        &ratio,
+		EarlyArchiveAgeDays: &early,
+		AutoSweepOnMount:    &sweep,
+	}
+	rec.UpdatedAt = time.Now()
+
+	yamlBytes, err := store.MarshalYAML(rec)
+	if err != nil {
+		return ArchivePolicy{}, err
+	}
+	op, err := st.BeginOp()
+	if err != nil {
+		return ArchivePolicy{}, err
+	}
+	defer op.Abort()
+	if err := op.Write("project.yaml", yamlBytes); err != nil {
+		return ArchivePolicy{}, err
+	}
+	if err := op.Commit(ctx, store.LockProject(slug), agent, fmt.Sprintf("set archive policy %s", slug)); err != nil {
+		return ArchivePolicy{}, fmt.Errorf("commit archive policy: %w", err)
+	}
+
+	resolved := resolveArchivePolicy(rec.Archive)
+	if mount := s.mountForSlug(slug); mount != nil {
+		mount.ArchivePolicy = resolved
+	}
+	return resolved, nil
+}
+
 // ApplyPolicyInput is the request shape for ApplyArchivePolicy.
 type ApplyPolicyInput struct {
 	ProjectIDOrSlug string
