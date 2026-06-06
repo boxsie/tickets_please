@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/svc"
 	pgtickets "tickets_please/internal/web/components/pages/tickets"
 	"tickets_please/internal/web/components/partials"
 )
@@ -57,11 +58,32 @@ func (a *app) handleCommentsList(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCommentCreate: POST /tickets/{id}/comments — append.
+//
+// Three response shapes by request flavour:
+//   - Idempotency-Key header (optimistic JS, #85): the key rides onto the
+//     CommentAdded event via svc.WithClientID; success returns 204 and the
+//     SSE echo delivers the canonical row (removing the optimistic
+//     placeholder), so there's nothing to render here. Errors return the
+//     status + plain message for the JS to surface on the pending row.
+//   - HX-Request: returns just the new comment row partial (legacy/no-SSE).
+//   - plain form: 303 redirect back to the detail page.
 func (a *app) handleCommentCreate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	body := strings.TrimSpace(r.Form.Get("body"))
-	created, err := a.deps.Service.CreateComment(r.Context(), id, body)
+
+	ctx := r.Context()
+	clientID := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	optimistic := clientID != ""
+	if optimistic {
+		ctx = svc.WithClientID(ctx, clientID)
+	}
+
+	created, err := a.deps.Service.CreateComment(ctx, id, body)
 	if err != nil {
+		if optimistic {
+			http.Error(w, err.Error(), classifyServiceError(err))
+			return
+		}
 		// HX-Request: return the inline error fragment so the form can swap
 		// it next to itself; non-HX falls through to the generic error page.
 		if r.Header.Get("HX-Request") == "true" {
@@ -74,6 +96,12 @@ func (a *app) handleCommentCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
+		return
+	}
+	if optimistic {
+		// The SSE stream carries the canonical row to every subscribed tab
+		// (and reconciles this tab's optimistic placeholder by client id).
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	row := buildCommentRow(created)

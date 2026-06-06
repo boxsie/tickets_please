@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/svc"
 	pgtickets "tickets_please/internal/web/components/pages/tickets"
 )
 
@@ -429,15 +430,36 @@ func (a *app) handleTicketMove(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	target := strings.TrimSpace(r.Form.Get("target_column"))
 	comment := r.Form.Get("comment")
+	ctx := r.Context()
+	clientID := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	optimistic := clientID != ""
+	if optimistic {
+		ctx = svc.WithClientID(ctx, clientID)
+	}
+
 	if target == string(domain.ColumnDone) {
 		// UI shouldn't put `done` in the move dropdown; if a stale form
 		// or a hand-rolled POST tries it, send the user to the completion
 		// form instead of leaking the service-level rejection.
+		if optimistic {
+			http.Error(w, "done is reachable only via the Complete form, not Move", http.StatusUnprocessableEntity)
+			return
+		}
 		a.renderer.RenderTemplError(w, r, http.StatusUnprocessableEntity, errors.New("done is reachable only via the Complete form, not Move"))
 		return
 	}
-	if _, err := a.deps.Service.MoveTicket(r.Context(), id, domain.Column(target), comment); err != nil {
+	if _, err := a.deps.Service.MoveTicket(ctx, id, domain.Column(target), comment); err != nil {
+		if optimistic {
+			http.Error(w, err.Error(), classifyServiceError(err))
+			return
+		}
 		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
+		return
+	}
+	if optimistic {
+		// The SSE TicketMoved patch updates the badge/actions live; nothing to
+		// render here. The optimistic JS flips its "Moving…" toast on the echo.
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	slug := r.URL.Query().Get("slug")

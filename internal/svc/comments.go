@@ -161,6 +161,7 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 		ProjectID:   lp.Project.ID,
 		CommentID:   rec.ID,
 		CommentKind: string(rec.Kind),
+		ClientID:    ClientIDFrom(ctx),
 	}, agent))
 
 	cp := *domComment

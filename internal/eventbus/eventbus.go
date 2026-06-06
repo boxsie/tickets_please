@@ -73,6 +73,13 @@ type Event struct {
 	CommentID   string
 	CommentKind string
 
+	// ClientID is the optimistic-UI idempotency key the web layer attached to
+	// the originating request (empty for MCP/non-web mutations). The SSE
+	// renderer uses it to reconcile the echo with a pending local change —
+	// e.g. removing the "#comment-pending-{ClientID}" placeholder before
+	// appending the canonical row.
+	ClientID string
+
 	// Actor — who performed the mutation.
 	ByAgentID   string
 	ByAgentName string

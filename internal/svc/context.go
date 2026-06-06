@@ -13,6 +13,7 @@ type ctxKey int
 const (
 	keySessionID ctxKey = iota
 	keyAgent
+	keyClientID
 )
 
 // WithSessionID returns a child context carrying the agent session id. The
@@ -29,6 +30,22 @@ func SessionIDFrom(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return v, true
+}
+
+// WithClientID returns a child context carrying a client-generated idempotency
+// key (the web layer reads it from the Idempotency-Key request header). It
+// rides onto the event a mutation publishes so an optimistic UI can match the
+// SSE echo to its pending local change. The MCP transport never sets it, so
+// non-web callers simply publish events with an empty ClientID.
+func WithClientID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, keyClientID, id)
+}
+
+// ClientIDFrom extracts the client id installed by WithClientID, or "" when
+// none was attached.
+func ClientIDFrom(ctx context.Context) string {
+	v, _ := ctx.Value(keyClientID).(string)
+	return v
 }
 
 // WithAgent returns a child context carrying the resolved agent. The

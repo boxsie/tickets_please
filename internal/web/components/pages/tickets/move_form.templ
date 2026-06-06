@@ -12,6 +12,8 @@ templ MoveForm(props DetailProps) {
 		method="post"
 		action={ templ.SafeURL(moveHref(t.ID, props.ProjectSlug)) }
 		class="stack"
+		data-optimistic-move
+		data-dialog-id="dlg-move"
 	>
 		<label for="target_column">Target column</label>
 		<select id="target_column" name="target_column" required>

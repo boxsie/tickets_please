@@ -1328,6 +1328,26 @@
     border-style: dashed;
     border-color: var(--line);
   }
+  /* Optimistic-UI states (#85). A "sending…" row dims until the SSE echo
+     swaps in the canonical row; a failed POST turns it red with a Retry. */
+  .comment-row.comment-pending {
+    opacity: 0.6;
+    border-style: dashed;
+  }
+  .comment-row.comment-error {
+    border-color: rgba(255,107,107,0.5);
+    background: rgba(255,107,107,0.08);
+    opacity: 1;
+  }
+  .comment-pending-flag {
+    font-size: 0.72rem;
+    color: var(--fg-muted);
+    font-style: italic;
+  }
+  .comment-error .comment-pending-flag { color: var(--error); font-style: normal; }
+  .comment-retry {
+    margin-left: 0.35rem;
+  }
   .comment-meta {
     display: flex;
     align-items: center;

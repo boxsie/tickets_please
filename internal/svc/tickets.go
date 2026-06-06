@@ -631,6 +631,7 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 		ToColumn:    string(target),
 		CommentID:   cRec.ID,
 		CommentKind: string(cRec.Kind),
+		ClientID:    ClientIDFrom(ctx),
 	}, agent))
 
 	cp := cloneTicket(t)

@@ -8,9 +8,15 @@ package tickets
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// CommentForm renders the append-only comment textarea + submit. Same field
-// names, action URL, and htmx wiring as the legacy
-// templates/partials/comment_form.tmpl — handlers stay untouched.
+// CommentForm renders the append-only comment textarea + submit.
+//
+// Realtime path (#85): data-optimistic-comment hands the form to optimistic.js,
+// which on submit renders a "sending…" placeholder row, clears the textarea,
+// and POSTs with an Idempotency-Key header. The server's SSE echo
+// (commentAppendPatch) removes the placeholder and appends the canonical row,
+// so there's no double-render. The plain method/action are kept as a no-JS
+// fallback (full POST → 303 redirect). htmx wiring was removed — it raced the
+// SSE append and double-rendered the row.
 func CommentForm(props CommentsThreadProps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -39,39 +45,26 @@ func CommentForm(props CommentsThreadProps) templ.Component {
 		var templ_7745c5c3_Var2 templ.SafeURL
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(commentsHref(props.TicketID, props.ProjectSlug)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/comment_form.templ`, Line: 10, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/comment_form.templ`, Line: 16, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" data-optimistic-comment data-comments-list=\"#comments-list\"><label for=\"comment-body\">New comment</label> <textarea id=\"comment-body\" name=\"body\" rows=\"3\" required minlength=\"1\" placeholder=\"Add a note — markdown welcome.\"></textarea> <input type=\"hidden\" name=\"_csrf\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(commentsHref(props.TicketID, props.ProjectSlug))
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(props.CSRF)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/comment_form.templ`, Line: 11, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/comment_form.templ`, Line: 22, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" hx-target=\"#comments-list\" hx-swap=\"beforeend\" hx-on::after-request=\"if (event.detail.successful) this.reset()\"><label for=\"comment-body\">New comment</label> <textarea id=\"comment-body\" name=\"body\" rows=\"3\" required minlength=\"1\" placeholder=\"Add a note — markdown welcome.\"></textarea> <input type=\"hidden\" name=\"_csrf\" value=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(props.CSRF)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/comment_form.templ`, Line: 18, Col: 54}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><div class=\"form-actions\"><button type=\"submit\">Add comment</button> <span class=\"hint\">Comments are append-only — no edits, no deletes.</span></div></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div class=\"form-actions\"><button type=\"submit\">Add comment</button> <span class=\"hint\">Comments are append-only — no edits, no deletes.</span></div></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

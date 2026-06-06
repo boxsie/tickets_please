@@ -61,15 +61,18 @@ func PatchElements(selector, mode, html string) Event {
 		fmt.Fprintf(&b, "selector %s\n", selector)
 	}
 	// Each line of the fragment is sent as its own `elements` continuation so
-	// multi-line HTML survives the SSE data framing.
-	for i, line := range strings.Split(html, "\n") {
-		if i == 0 {
-			fmt.Fprintf(&b, "elements %s", line)
-		} else {
-			fmt.Fprintf(&b, "\nelements %s", line)
+	// multi-line HTML survives the SSE data framing. An empty fragment (e.g. a
+	// `mode remove`, which only needs the selector) emits no `elements` lines.
+	if html != "" {
+		for i, line := range strings.Split(html, "\n") {
+			if i == 0 {
+				fmt.Fprintf(&b, "elements %s", line)
+			} else {
+				fmt.Fprintf(&b, "\nelements %s", line)
+			}
 		}
 	}
-	return Event{Type: EventPatchElements, Data: b.String()}
+	return Event{Type: EventPatchElements, Data: strings.TrimSuffix(b.String(), "\n")}
 }
 
 // PatchSignals builds a datastar-patch-signals frame merging the given JSON

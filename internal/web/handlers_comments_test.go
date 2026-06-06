@@ -103,6 +103,58 @@ func TestComments_Create_RejectsEmpty(t *testing.T) {
 	}
 }
 
+// TestComments_Create_Optimistic_NoContent: POST with an Idempotency-Key
+// header (the optimistic-JS path) returns 204 — the canonical row arrives via
+// SSE, not in the POST response — and the comment is persisted.
+func TestComments_Create_Optimistic_NoContent(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "cop", "Comments Optimistic")
+	csrf := primeCSRF(t, client, srv.URL)
+	form := url.Values{"body": {"optimistic insight"}, "_csrf": {csrf}}
+	req, _ := http.NewRequest("POST", srv.URL+"/tickets/"+tid+"/comments?slug=cop", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Idempotency-Key", "cid-xyz")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204\n%s", resp.StatusCode, body)
+	}
+	if body != "" {
+		t.Errorf("204 response should have no body, got:\n%s", body)
+	}
+	// Persisted: it shows up on the next detail GET.
+	resp, err = client.Get(srv.URL + "/tickets/" + tid + "?slug=cop")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	if !strings.Contains(mustReadAll(t, resp), "optimistic insight") {
+		t.Errorf("optimistic comment was not persisted")
+	}
+}
+
+// TestComments_Create_Optimistic_RejectEmpty: the optimistic path surfaces a
+// server rejection as a non-204 error status so the JS can revert.
+func TestComments_Create_Optimistic_RejectEmpty(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "coe", "Comments Optimistic Empty")
+	csrf := primeCSRF(t, client, srv.URL)
+	form := url.Values{"body": {""}, "_csrf": {csrf}}
+	req, _ := http.NewRequest("POST", srv.URL+"/tickets/"+tid+"/comments", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Idempotency-Key", "cid-empty")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusSeeOther {
+		t.Fatalf("empty optimistic comment should error, got %d", resp.StatusCode)
+	}
+}
+
 // TestComments_List_HxRefresh: GET /tickets/{id}/comments returns the thread
 // fragment without page chrome.
 func TestComments_List_HxRefresh(t *testing.T) {

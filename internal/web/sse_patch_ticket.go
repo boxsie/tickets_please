@@ -84,9 +84,18 @@ func (a *app) commentAppendPatch(ctx context.Context, ev eventbus.Event) []sse.E
 		return nil
 	}
 	row := toTemplRow(buildCommentRow(found))
-	return []sse.Event{
-		sse.PatchElements("#comments-list", sse.ModeAppend, a.renderComp(ctx, pgtickets.CommentRow(row))),
+	var frames []sse.Event
+	// Optimistic reconciliation: if the mutation carried a client id, the
+	// originating tab rendered a "#comment-pending-{cid}" placeholder. Remove
+	// it first so the canonical append replaces it rather than doubling up.
+	// Other tabs never had that placeholder, so the remove is a harmless no-op
+	// there. (This also undoes the #082 double-render: the comment form no
+	// longer htmx-appends, it relies on this echo.)
+	if ev.ClientID != "" {
+		frames = append(frames, sse.PatchElements("#comment-pending-"+ev.ClientID, sse.ModeRemove, ""))
 	}
+	frames = append(frames, sse.PatchElements("#comments-list", sse.ModeAppend, a.renderComp(ctx, pgtickets.CommentRow(row))))
+	return frames
 }
 
 // archivedBadgePatch morphs the archived pill to match the ticket's current

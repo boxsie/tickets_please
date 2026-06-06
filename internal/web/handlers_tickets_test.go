@@ -200,6 +200,61 @@ func TestTicket_Move_Happy(t *testing.T) {
 	}
 }
 
+// TestTicket_Move_Optimistic_NoContent: POST /move with an Idempotency-Key
+// header (the optimistic-JS path) returns 204 and the move still lands; the
+// status badge updates via SSE, not the POST response.
+func TestTicket_Move_Optimistic_NoContent(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "mopt", "Move Optimistic")
+	csrf := primeCSRF(t, client, srv.URL)
+	form := url.Values{
+		"target_column": {"in_progress"},
+		"comment":       {"starting work"},
+		"_csrf":         {csrf},
+	}
+	req, _ := http.NewRequest("POST", srv.URL+"/tickets/"+tid+"/move?slug=mopt", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Idempotency-Key", "mv-cid-1")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+	got, err := deps.Service.GetTicket(context.Background(), tid)
+	if err != nil {
+		t.Fatalf("GetTicket: %v", err)
+	}
+	if got.Column != domain.ColumnInProgress {
+		t.Errorf("column = %q, want in_progress", got.Column)
+	}
+}
+
+// TestTicket_Move_Optimistic_DoneBlocked: the optimistic path also rejects a
+// move-to-done, as a plain error status (not the HTML error page).
+func TestTicket_Move_Optimistic_DoneBlocked(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "moptd", "Move Optimistic Done")
+	csrf := primeCSRF(t, client, srv.URL)
+	form := url.Values{"target_column": {"done"}, "comment": {"nope"}, "_csrf": {csrf}}
+	req, _ := http.NewRequest("POST", srv.URL+"/tickets/"+tid+"/move", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Idempotency-Key", "mv-cid-2")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422\n%s", resp.StatusCode, body)
+	}
+	if strings.Contains(body, "<html") {
+		t.Errorf("optimistic error should be plain text, not the HTML error page\n%s", body)
+	}
+}
+
 // TestTicket_Move_DoneBlocked: target=done is rejected by the handler before
 // it even reaches Service.
 func TestTicket_Move_DoneBlocked(t *testing.T) {

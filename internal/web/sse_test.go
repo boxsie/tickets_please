@@ -208,6 +208,45 @@ func TestSSE_TicketDetailLivePatches(t *testing.T) {
 	}
 }
 
+func TestSSE_OptimisticCommentReconcile(t *testing.T) {
+	srv, _, deps := sseTestServerDeps(t)
+	s := deps.Service
+
+	agentID, _, err := s.RegisterAgent(context.Background(), "opt-fixture", "Claude Opt", nil, time.Hour, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(context.Background(), agentID)
+	if _, err := s.CreateProject(authed, "optlive", "Opt Live", "", strings.Repeat("z", 220)); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	tk, err := s.CreateTicket(authed, domain.CreateTicketInput{ProjectIDOrSlug: "optlive", Title: "Opt ticket"})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+
+	br, done := sseConnect(t, srv.URL, "ticket:"+tk.ID)
+	defer done()
+
+	// A comment created with a client id (as the web handler does from the
+	// Idempotency-Key header) should make the SSE echo first remove the
+	// optimistic placeholder, then append the canonical row.
+	const cid = "cid-abc-123"
+	if _, err := s.CreateComment(svc.WithClientID(authed, cid), tk.ID, "reconciled comment"); err != nil {
+		t.Fatalf("CreateComment: %v", err)
+	}
+
+	rm := readUntil(t, br, "#comment-pending-"+cid)
+	joined := strings.Join(rm, "\n")
+	if !strings.Contains(joined, "mode remove") {
+		t.Errorf("expected a mode-remove frame for the optimistic placeholder:\n%s", joined)
+	}
+	appended := readUntil(t, br, "reconciled comment")
+	if !strings.Contains(strings.Join(appended, "\n"), "mode append") {
+		t.Errorf("expected the canonical row to append after the remove:\n%s", strings.Join(appended, "\n"))
+	}
+}
+
 func TestSSE_PhasesPageLivePatches(t *testing.T) {
 	srv, _, deps := sseTestServerDeps(t)
 	s := deps.Service
