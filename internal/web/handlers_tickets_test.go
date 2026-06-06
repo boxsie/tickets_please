@@ -444,3 +444,170 @@ func TestTicket_Update(t *testing.T) {
 		t.Errorf("wave = %d, want 1", got.Wave)
 	}
 }
+
+// --- archive / unarchive --------------------------------------------------
+
+// getBody GETs a URL and returns the response body as a string, failing the
+// test on a transport error.
+func getBody(t *testing.T, client *http.Client, urlStr string) string {
+	t.Helper()
+	resp, err := client.Get(urlStr)
+	if err != nil {
+		t.Fatalf("GET %s: %v", urlStr, err)
+	}
+	return mustReadAll(t, resp)
+}
+
+// archiveTicket is a small helper that archives a freshly-seeded ticket
+// directly via the service so unarchive/detail tests have an archived target
+// without re-POSTing through the handler each time.
+func archiveTicket(t *testing.T, deps Deps, ticketID string) {
+	t.Helper()
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, "arch-fixture-"+ticketID, "arch-fixture",
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	if _, err := deps.Service.ArchiveTicket(svc.WithSessionID(ctx, id), ticketID, "seed archive"); err != nil {
+		t.Fatalf("ArchiveTicket: %v", err)
+	}
+}
+
+// TestTicket_Archive_Happy: POST /archive with a comment flips the flag and
+// 303s back to the detail page.
+func TestTicket_Archive_Happy(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "arch", "Archive Me")
+	csrf := primeCSRF(t, client, srv.URL)
+	form := url.Values{"comment": {"no longer relevant"}, "_csrf": {csrf}}
+	resp, err := client.PostForm(srv.URL+"/tickets/"+tid+"/archive?slug=arch", form)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", resp.StatusCode)
+	}
+	got, err := deps.Service.GetTicket(context.Background(), tid)
+	if err != nil {
+		t.Fatalf("GetTicket: %v", err)
+	}
+	if !got.Archived {
+		t.Errorf("ticket should be archived")
+	}
+}
+
+// TestTicket_Archive_RequiresComment: the service rejects an empty comment;
+// the handler surfaces it as a 422 (the modal also enforces `required`).
+func TestTicket_Archive_RequiresComment(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "archnc", "Archive No Comment")
+	csrf := primeCSRF(t, client, srv.URL)
+	form := url.Values{"comment": {""}, "_csrf": {csrf}}
+	resp, err := client.PostForm(srv.URL+"/tickets/"+tid+"/archive?slug=archnc", form)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", resp.StatusCode)
+	}
+	got, _ := deps.Service.GetTicket(context.Background(), tid)
+	if got.Archived {
+		t.Errorf("ticket should not be archived after a rejected request")
+	}
+}
+
+// TestTicket_Archive_AlreadyArchived: archiving an already-archived ticket is
+// a precondition failure → 422.
+func TestTicket_Archive_AlreadyArchived(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "archdup", "Archive Twice")
+	archiveTicket(t, deps, tid)
+	csrf := primeCSRF(t, client, srv.URL)
+	form := url.Values{"comment": {"again"}, "_csrf": {csrf}}
+	resp, err := client.PostForm(srv.URL+"/tickets/"+tid+"/archive?slug=archdup", form)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", resp.StatusCode)
+	}
+}
+
+// TestTicket_Unarchive_Happy: POST /unarchive flips an archived ticket back.
+func TestTicket_Unarchive_Happy(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "unarch", "Unarchive Me")
+	archiveTicket(t, deps, tid)
+	csrf := primeCSRF(t, client, srv.URL)
+	form := url.Values{"comment": {"back in play"}, "_csrf": {csrf}}
+	resp, err := client.PostForm(srv.URL+"/tickets/"+tid+"/unarchive?slug=unarch", form)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", resp.StatusCode)
+	}
+	got, err := deps.Service.GetTicket(context.Background(), tid)
+	if err != nil {
+		t.Fatalf("GetTicket: %v", err)
+	}
+	if got.Archived {
+		t.Errorf("ticket should be unarchived")
+	}
+}
+
+// TestTicket_Detail_ArchiveButtonAndBadge: a non-archived ticket shows the
+// Archive button and the (empty) archived-badge slot; once archived, the
+// detail page shows the archived pill and flips the button to Unarchive. The
+// archive/unarchive modals are present in both states.
+func TestTicket_Detail_ArchiveButtonAndBadge(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "archdet", "Archive Detail")
+
+	body := getBody(t, client, srv.URL+"/tickets/"+tid+"?slug=archdet")
+	for _, want := range []string{`data-dialog="dlg-archive"`, `>Archive<`, `id="dlg-archive"`, `id="dlg-unarchive"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("active ticket detail missing %q", want)
+		}
+	}
+	if strings.Contains(body, `class="badge badge-archived"`) {
+		t.Errorf("active ticket should not show the archived pill")
+	}
+
+	archiveTicket(t, deps, tid)
+	body = getBody(t, client, srv.URL+"/tickets/"+tid+"?slug=archdet")
+	for _, want := range []string{`badge badge-archived`, `>archived<`, `data-dialog="dlg-unarchive"`, `>Unarchive<`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("archived ticket detail missing %q", want)
+		}
+	}
+}
+
+// TestTicket_Detail_ArchiveAvailableWhenDone: completion freezes the edit/move
+// /complete buttons, but archive stays available on a done ticket.
+func TestTicket_Detail_ArchiveAvailableWhenDone(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	_, tid := seedProjectAndTicket(t, deps, "archdone", "Archive Done")
+	ctx := context.Background()
+	aid, _, err := deps.Service.RegisterAgent(ctx, "done-fixture", "done-fixture",
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	if _, err := deps.Service.CompleteTicket(svc.WithSessionID(ctx, aid), tid,
+		"tested it", "did the work", "learned a lot here"); err != nil {
+		t.Fatalf("CompleteTicket: %v", err)
+	}
+	body := getBody(t, client, srv.URL+"/tickets/"+tid+"?slug=archdone")
+	if !strings.Contains(body, "frozen") {
+		t.Errorf("done ticket should show the frozen-actions badge")
+	}
+	if !strings.Contains(body, `data-dialog="dlg-archive"`) {
+		t.Errorf("done ticket should still offer Archive")
+	}
+}

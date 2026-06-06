@@ -17,6 +17,17 @@ templ Chip(t *domain.Ticket) {
 	</span>
 }
 
+// ArchivedPill renders a small "archived" badge for any ticket reference
+// (card, wave row, search hit, dependency link). It's a no-op when the ticket
+// isn't archived, so call sites can drop it in unconditionally. Lives here
+// alongside Chip because every ticket-reference surface already imports this
+// package for the attribution chip — one import covers both.
+templ ArchivedPill(archived bool) {
+	if archived {
+		<span class="badge badge-archived" title="this ticket is archived">archived</span>
+	}
+}
+
 // CommentChip is Chip's sibling for comment references (search hits): the
 // comment author and when they wrote it.
 templ CommentChip(c *domain.Comment) {

@@ -43,7 +43,24 @@ templ PageActions(props DetailProps) {
 			<a class="btn" href={ templ.SafeURL(editHref(t.ID, proj.Slug)) }>Edit ticket</a>
 			<button type="button" class="btn btn-danger" data-dialog="dlg-delete">Delete</button>
 		}
+		// Archive/unarchive is independent of the freeze rule — it stays
+		// available on done tickets (only completion fields are frozen).
+		@ArchiveAction(t.Archived)
 	</div>
+}
+
+// ArchiveAction is the archive-vs-unarchive button shown on every ticket
+// regardless of column. Split out so the SSE archived-badge patch can also
+// re-render #ticket-actions and flip the button live (Archive ↔ Unarchive)
+// for other viewers. The button opens the always-present archive/unarchive
+// modal — its data-dialog wiring is delegated (see dialogs.js), so it works
+// even after an SSE morph re-injects this markup.
+templ ArchiveAction(archived bool) {
+	if archived {
+		<button type="button" class="btn" data-dialog="dlg-unarchive">Unarchive</button>
+	} else {
+		<button type="button" class="btn" data-dialog="dlg-archive">Archive</button>
+	}
 }
 
 // Toast is one transient notification appended to #ticket-toasts when a

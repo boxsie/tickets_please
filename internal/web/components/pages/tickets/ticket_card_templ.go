@@ -37,7 +37,7 @@ func TicketCard(props TicketCardProps) templ.Component {
 		ctx = templ.ClearChildren(ctx)
 		t := props.Ticket
 		slug := props.ProjectSlug
-		var templ_7745c5c3_Var2 = []any{"ticket-card", templ.KV("blocked", len(t.BlockedBy) > 0)}
+		var templ_7745c5c3_Var2 = []any{"ticket-card", templ.KV("blocked", len(t.BlockedBy) > 0), templ.KV("archived", t.Archived)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -157,6 +157,10 @@ func TicketCard(props TicketCardProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+		}
+		templ_7745c5c3_Err = attribution.ArchivedPill(t.Archived).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = attribution.Chip(t).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {

@@ -9,7 +9,7 @@ import "tickets_please/internal/web/components/attribution"
 templ TicketCard(props TicketCardProps) {
 	{{ t := props.Ticket }}
 	{{ slug := props.ProjectSlug }}
-	<li class={ "ticket-card", templ.KV("blocked", len(t.BlockedBy) > 0) }>
+	<li class={ "ticket-card", templ.KV("blocked", len(t.BlockedBy) > 0), templ.KV("archived", t.Archived) }>
 		<a class="ticket-card-title" href={ templ.SafeURL(ticketCardHref(t.ID, slug)) }>{ t.Title }</a>
 		<div class="ticket-card-meta">
 			<span class={ "badge", "badge-" + columnString(t.Column) }>{ columnString(t.Column) }</span>
@@ -19,6 +19,7 @@ templ TicketCard(props TicketCardProps) {
 			if len(t.BlockedBy) > 0 {
 				<span class="badge-blocked" title={ "blocked by: " + blockedByList(t.BlockedBy) }>blocked</span>
 			}
+			@attribution.ArchivedPill(t.Archived)
 			@attribution.Chip(t)
 		</div>
 	</li>

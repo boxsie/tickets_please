@@ -436,6 +436,47 @@ func (a *app) handleTicketComplete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, loc, http.StatusSeeOther)
 }
 
+// handleTicketArchive / handleTicketUnarchive wrap the existing svc archive
+// methods. Both require a non-empty comment (the modal enforces it client-side
+// with `required`; the service enforces it server-side and a 422 surfaces
+// inline on rejection). Archive is column-independent — done tickets archive
+// fine, the freeze rule only covers completion fields. The live archived-badge
+// + button flip happens via the SSE TicketArchived/Unarchived patch; the
+// redirect below reloads the originating tab to the same detail page.
+func (a *app) handleTicketArchive(w http.ResponseWriter, r *http.Request) {
+	a.flipArchive(w, r, true)
+}
+
+func (a *app) handleTicketUnarchive(w http.ResponseWriter, r *http.Request) {
+	a.flipArchive(w, r, false)
+}
+
+func (a *app) flipArchive(w http.ResponseWriter, r *http.Request, archive bool) {
+	id := r.PathValue("id")
+	comment := r.Form.Get("comment")
+	var err error
+	if archive {
+		_, err = a.deps.Service.ArchiveTicket(r.Context(), id, comment)
+	} else {
+		_, err = a.deps.Service.UnarchiveTicket(r.Context(), id, comment)
+	}
+	if err != nil {
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
+		return
+	}
+	slug := r.URL.Query().Get("slug")
+	loc := "/tickets/" + id
+	if slug != "" {
+		loc += "?slug=" + slug
+	}
+	if archive {
+		SetFlash(w, r, "success", "Ticket archived.")
+	} else {
+		SetFlash(w, r, "success", "Ticket unarchived.")
+	}
+	http.Redirect(w, r, loc, http.StatusSeeOther)
+}
+
 // handleTicketDelete hard-deletes a non-`done` ticket via svc.DeleteTicket.
 // On success redirects to the project phases page (the ticket detail page is
 // gone) with a flash; on a service-level refusal (done ticket, dependents) the

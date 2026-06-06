@@ -42,11 +42,12 @@ templ SearchResults(props SearchProps) {
 	} else if props.Kind == "tickets" {
 		<ul class="search-hits">
 			for _, h := range props.TicketHits {
-				<li class="search-hit">
+				<li class={ "search-hit", templ.KV("archived", h.Ticket.Archived) }>
 					<div class="search-hit-row">
 						<a class="search-hit-title" href={ templ.SafeURL("/tickets/" + h.Ticket.ID + "?slug=" + slug) }>{ h.Ticket.Title }</a>
 						<span class={ "badge badge-" + string(h.Ticket.Column) }>{ string(h.Ticket.Column) }</span>
 						<span class="muted score">{ fmt.Sprintf("%.2f", h.Score) }</span>
+						@attribution.ArchivedPill(h.Ticket.Archived)
 						@attribution.Chip(h.Ticket)
 					</div>
 					if h.Ticket.Body != "" {

@@ -143,6 +143,8 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /tickets/{id}", tktRole(domain.RoleMember, a.handleTicketUpdate))
 	mux.Handle("POST /tickets/{id}/move", tktRole(domain.RoleMember, a.handleTicketMove))
 	mux.Handle("POST /tickets/{id}/complete", tktRole(domain.RoleMember, a.handleTicketComplete))
+	mux.Handle("POST /tickets/{id}/archive", tktRole(domain.RoleMember, a.handleTicketArchive))
+	mux.Handle("POST /tickets/{id}/unarchive", tktRole(domain.RoleMember, a.handleTicketUnarchive))
 	mux.Handle("POST /tickets/{id}/delete", tktRole(domain.RoleMember, a.handleTicketDelete))
 
 	// Comments thread: list (htmx refresh) + create (htmx append).

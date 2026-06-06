@@ -62,6 +62,7 @@ templ Detail(props DetailProps) {
 								<li>
 									<a href={ templ.SafeURL(ticketDetailHref(d.ID, proj.Slug)) }>{ d.Title }</a>
 									<span class={ "badge", "badge-" + columnString(d.Column) }>{ columnString(d.Column) }</span>
+									@attribution.ArchivedPill(d.Archived)
 									@attribution.Chip(d)
 								</li>
 							}
@@ -74,6 +75,7 @@ templ Detail(props DetailProps) {
 								<li>
 									<a href={ templ.SafeURL(ticketDetailHref(b.ID, proj.Slug)) }>{ b.Title }</a>
 									<span class={ "badge", "badge-" + columnString(b.Column) }>{ columnString(b.Column) }</span>
+									@attribution.ArchivedPill(b.Archived)
 									@attribution.Chip(b)
 								</li>
 							}
@@ -141,6 +143,34 @@ templ Detail(props DetailProps) {
 					</div>
 				</form>
 			}
+		}
+		// Archive/unarchive modals are rendered unconditionally (even on done
+		// tickets — archiving is allowed after completion). Both are always
+		// present so a live Archive↔Unarchive button flip (via SSE) always has
+		// its modal in the DOM. Each requires a comment, mirroring move.
+		@ui.Modal(ui.ModalProps{ID: "dlg-archive", Title: "Archive ticket"}) {
+			<p>Archiving hides this ticket from the default lists and search. It stays fully intact and can be unarchived at any time. Done tickets can be archived too.</p>
+			<form method="post" action={ templ.SafeURL(archiveHref(t.ID, proj.Slug)) } class="stack">
+				<label for="archive-comment">Comment <span class="muted">(required)</span></label>
+				<textarea id="archive-comment" name="comment" rows="2" required minlength="1" placeholder="Why are you archiving this?"></textarea>
+				<input type="hidden" name="_csrf" value={ props.CSRF }/>
+				<div class="form-actions">
+					<button type="submit">Archive</button>
+					<button type="button" class="btn" data-dialog-close="dlg-archive">Cancel</button>
+				</div>
+			</form>
+		}
+		@ui.Modal(ui.ModalProps{ID: "dlg-unarchive", Title: "Unarchive ticket"}) {
+			<p>Unarchiving brings this ticket back into the default lists and search.</p>
+			<form method="post" action={ templ.SafeURL(unarchiveHref(t.ID, proj.Slug)) } class="stack">
+				<label for="unarchive-comment">Comment <span class="muted">(required)</span></label>
+				<textarea id="unarchive-comment" name="comment" rows="2" required minlength="1" placeholder="Why are you unarchiving this?"></textarea>
+				<input type="hidden" name="_csrf" value={ props.CSRF }/>
+				<div class="form-actions">
+					<button type="submit">Unarchive</button>
+					<button type="button" class="btn" data-dialog-close="dlg-unarchive">Cancel</button>
+				</div>
+			</form>
 		}
 	</section>
 }

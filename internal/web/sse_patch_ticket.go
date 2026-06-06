@@ -99,14 +99,17 @@ func (a *app) commentAppendPatch(ctx context.Context, ev eventbus.Event) []sse.E
 }
 
 // archivedBadgePatch morphs the archived pill to match the ticket's current
-// archived flag.
+// archived flag, and re-renders the action cluster so the Archive↔Unarchive
+// button flips live for every viewer (the button is part of #ticket-actions).
 func (a *app) archivedBadgePatch(ctx context.Context, ev eventbus.Event) []sse.Event {
 	tkt, err := a.deps.Service.GetTicket(ctx, ev.TicketID)
 	if err != nil {
 		return nil
 	}
+	props := a.detailPropsForPatch(ctx, tkt)
 	return []sse.Event{
 		sse.PatchElements("", "", a.renderComp(ctx, pgtickets.ArchivedBadge(tkt.Archived))),
+		sse.PatchElements("", "", a.renderComp(ctx, pgtickets.PageActions(props))),
 	}
 }
 

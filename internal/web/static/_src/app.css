@@ -1286,6 +1286,15 @@
     box-shadow: 0 1px 0 rgba(255,255,255,0.02);
   }
   .ticket-card.blocked { opacity: 0.55; }
+  /* Archived ticket references: muted + struck-through title across every
+     surface (card, wave row, search hit). The pill names the state; the
+     dimming makes it scannable in a list. */
+  .ticket-card.archived { opacity: 0.6; }
+  .ticket-card.archived .ticket-card-title { text-decoration: line-through; }
+  .phase-wave-ticket.archived { opacity: 0.6; }
+  .phase-wave-ticket.archived .phase-wave-ticket-title { text-decoration: line-through; }
+  .search-hit.archived { opacity: 0.6; }
+  .search-hit.archived .search-hit-title { text-decoration: line-through; }
   .ticket-card-title {
     font-size: 0.88rem;
     font-weight: 500;

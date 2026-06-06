@@ -222,6 +222,11 @@ func deleteHref(id, slug string) string {
 	return ticketActionHref(id, "delete", slug)
 }
 
+// archiveHref / unarchiveHref are the /tickets/{id}/{archive,unarchive} URLs
+// the archive modals post to.
+func archiveHref(id, slug string) string   { return ticketActionHref(id, "archive", slug) }
+func unarchiveHref(id, slug string) string { return ticketActionHref(id, "unarchive", slug) }
+
 // editHref is the /tickets/{id}/edit URL the "Edit ticket" anchor points at.
 func editHref(id, slug string) string {
 	return ticketActionHref(id, "edit", slug)
