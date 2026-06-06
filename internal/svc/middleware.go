@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/eventbus"
 )
 
 // touchDebounceWindow is the minimum interval between two LastSeenAt
@@ -95,5 +96,17 @@ func (s *Service) touchAgentDebounced(id string) {
 	rec.LastSeenAt = now
 	if err := s.AgentStore.WriteAgentRecord(rec); err != nil {
 		s.Logger.Warn("touch agent: write failed", "agent_id", id, "err", err)
+		return
 	}
+
+	// The write is already debounced (touchDebounceWindow), so the seen event
+	// fires at most once per window per agent — well within the realtime
+	// budget for last-seen ticks.
+	s.publish(eventbus.Event{
+		Kind:       eventbus.KindAgentSeen,
+		Topics:     []string{eventbus.TopicGlobalAgents, eventbus.TopicAgent(id)},
+		AgentID:    id,
+		AgentName:  rec.Name,
+		LastSeenAt: now,
+	})
 }

@@ -14,6 +14,7 @@ import (
 
 	"tickets_please/internal/cache"
 	"tickets_please/internal/domain"
+	"tickets_please/internal/eventbus"
 	"tickets_please/internal/store"
 	"tickets_please/internal/worker"
 )
@@ -611,6 +612,18 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
 
+	s.publish(withActor(eventbus.Event{
+		Kind:        eventbus.KindTicketMoved,
+		Topics:      ticketTopics(ticketID, lp.Project.ID, t.PhaseID),
+		TicketID:    ticketID,
+		ProjectID:   lp.Project.ID,
+		PhaseID:     derefStr(t.PhaseID),
+		FromColumn:  string(oldColumn),
+		ToColumn:    string(target),
+		CommentID:   cRec.ID,
+		CommentKind: string(cRec.Kind),
+	}, agent))
+
 	cp := cloneTicket(t)
 	cp.BlockedBy = computeBlockedBy(cp.DependsOn, lp.Tickets)
 	return cp, nil
@@ -804,6 +817,17 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 		CreatedAt:  cRec.CreatedAt,
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
+
+	s.publish(withActor(eventbus.Event{
+		Kind:        eventbus.KindTicketCompleted,
+		Topics:      ticketTopics(ticketID, lp.Project.ID, t.PhaseID),
+		TicketID:    ticketID,
+		ProjectID:   lp.Project.ID,
+		PhaseID:     derefStr(t.PhaseID),
+		ToColumn:    string(domain.ColumnDone),
+		CommentID:   cRec.ID,
+		CommentKind: string(cRec.Kind),
+	}, agent))
 
 	cp := cloneTicket(t)
 	cp.BlockedBy = computeBlockedBy(cp.DependsOn, lp.Tickets)

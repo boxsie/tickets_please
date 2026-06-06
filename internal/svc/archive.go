@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/eventbus"
 	"tickets_please/internal/store"
 	"tickets_please/internal/worker"
 )
@@ -183,6 +184,20 @@ func (s *Service) flipArchive(ctx context.Context, ticketID, comment string, wan
 		CreatedAt: cRec.CreatedAt,
 	}
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
+
+	evKind := eventbus.KindTicketArchived
+	if !wantArchived {
+		evKind = eventbus.KindTicketUnarchived
+	}
+	s.publish(withActor(eventbus.Event{
+		Kind:        evKind,
+		Topics:      ticketTopics(ticketID, lp.Project.ID, t.PhaseID),
+		TicketID:    ticketID,
+		ProjectID:   lp.Project.ID,
+		PhaseID:     derefStr(t.PhaseID),
+		CommentID:   cRec.ID,
+		CommentKind: string(cRec.Kind),
+	}, agent))
 
 	cp := cloneTicket(t)
 	cp.BlockedBy = computeBlockedBy(cp.DependsOn, lp.Tickets)

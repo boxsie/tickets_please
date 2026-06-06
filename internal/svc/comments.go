@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/eventbus"
 	"tickets_please/internal/store"
 	"tickets_please/internal/worker"
 )
@@ -152,6 +153,15 @@ func (s *Service) CreateComment(ctx context.Context, ticketID, body string) (*do
 	}
 
 	lp.Comments[ticketID] = append(lp.Comments[ticketID], domComment)
+
+	s.publish(withActor(eventbus.Event{
+		Kind:        eventbus.KindCommentAdded,
+		Topics:      []string{eventbus.TopicTicket(ticketID)},
+		TicketID:    ticketID,
+		ProjectID:   lp.Project.ID,
+		CommentID:   rec.ID,
+		CommentKind: string(rec.Kind),
+	}, agent))
 
 	cp := *domComment
 	return &cp, nil

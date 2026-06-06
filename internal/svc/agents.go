@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"tickets_please/internal/domain"
+	"tickets_please/internal/eventbus"
 	"tickets_please/internal/store"
 )
 
@@ -78,6 +79,14 @@ func (s *Service) RegisterAgent(ctx context.Context, key, name string, metadata 
 	if err := s.AgentStore.RegisterAgent(ctx, rec); err != nil {
 		return "", time.Time{}, err
 	}
+
+	s.publish(eventbus.Event{
+		Kind:      eventbus.KindAgentRegistered,
+		Topics:    []string{eventbus.TopicGlobalAgents, eventbus.TopicAgent(rec.ID)},
+		AgentID:   rec.ID,
+		AgentName: rec.Name,
+		UserID:    derefStr(rec.ActingForUserID),
+	})
 	return rec.ID, rec.ExpiresAt, nil
 }
 
