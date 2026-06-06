@@ -15,7 +15,8 @@ import (
 templ Detail(props DetailProps) {
 	{{ t := props.Ticket }}
 	{{ proj := props.Project }}
-	<section class="ticket-detail">
+	<section class="ticket-detail" data-on-load={ "@get('/sse?topics=ticket:" + t.ID + "')" }>
+		<div id="ticket-toasts" class="toast-region" aria-live="polite"></div>
 		<header class="page-header">
 			<h1>{ t.Title }</h1>
 			<p class="ticket-meta">
@@ -27,7 +28,8 @@ templ Detail(props DetailProps) {
 					<span class="muted">no phase</span>
 				}
 				<span class="breadcrumb-sep"></span>
-				<span class={ "badge", "badge-" + columnString(t.Column) }>{ columnString(t.Column) }</span>
+				@StatusBadge(t.Column)
+				@ArchivedBadge(t.Archived)
 				if t.Wave != 0 {
 					<span class="breadcrumb-sep"></span>
 					wave { formatWave(t.Wave) }
@@ -35,19 +37,7 @@ templ Detail(props DetailProps) {
 				<span class="breadcrumb-sep"></span>
 				<span class="id-pill" title={ t.ID }>{ shortID(t.ID) }</span>
 			</p>
-			<div class="page-actions">
-				if props.IsDone {
-					@FrozenActions()
-				} else {
-					<button type="button" class="btn btn-primary" data-dialog="dlg-complete">Complete</button>
-					<button type="button" class="btn" data-dialog="dlg-move">Move</button>
-					if len(props.Phases) > 0 {
-						<button type="button" class="btn" data-dialog="dlg-assign-phase">Reassign phase</button>
-					}
-					<a class="btn" href={ templ.SafeURL(editHref(t.ID, proj.Slug)) }>Edit ticket</a>
-					<button type="button" class="btn btn-danger" data-dialog="dlg-delete">Delete</button>
-				}
-			</div>
+			@PageActions(props)
 		</header>
 		<div class="ticket-main">
 			<section class="card">

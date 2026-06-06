@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -19,12 +20,12 @@ import (
 // the same event delivered on project:{id} renders phase-row patches. A patch
 // whose selector isn't present on the receiving page is a harmless no-op in
 // Datastar.
-func (a *app) renderDelivery(d eventbus.Delivery) []sse.Event {
+func (a *app) renderDelivery(ctx context.Context, d eventbus.Delivery) []sse.Event {
 	frames := []sse.Event{a.signalFrame(d.Event)}
 
 	switch {
 	case strings.HasPrefix(d.Topic, "ticket:"):
-		frames = append(frames, a.renderTicketPatch(d.Event)...)
+		frames = append(frames, a.renderTicketPatch(ctx, d.Event)...)
 	case strings.HasPrefix(d.Topic, "phase:"), strings.HasPrefix(d.Topic, "project:"):
 		frames = append(frames, a.renderPhasePatch(d.Event)...)
 	case d.Topic == eventbus.TopicGlobalAgents, strings.HasPrefix(d.Topic, "agent:"):
@@ -50,13 +51,6 @@ func (a *app) signalFrame(ev eventbus.Event) sse.Event {
 		return sse.PatchSignals(`{"tpEvent":{}}`)
 	}
 	return sse.PatchSignals(string(b))
-}
-
-// renderTicketPatch produces ticket-detail element patches. Fleshed out in
-// #82 (badge re-render, comment append, archived badge); the baseline signal
-// frame already covers generic reactions.
-func (a *app) renderTicketPatch(ev eventbus.Event) []sse.Event {
-	return nil
 }
 
 // renderPhasePatch produces phases-page element patches. Fleshed out in #83

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strconv"
@@ -73,7 +74,7 @@ func (a *app) handleSSE(w http.ResponseWriter, r *http.Request) {
 	sse.WriteComment(w, "connected")
 	// Replay buffered events the client missed, in seq order, before live.
 	for _, d := range replay {
-		a.writeDelivery(w, d)
+		a.writeDelivery(r.Context(), w, d)
 	}
 	flusher.Flush()
 
@@ -95,7 +96,7 @@ func (a *app) handleSSE(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			a.writeDelivery(w, d)
+			a.writeDelivery(r.Context(), w, d)
 			flusher.Flush()
 		}
 	}
@@ -104,9 +105,9 @@ func (a *app) handleSSE(w http.ResponseWriter, r *http.Request) {
 // writeDelivery renders one eventbus delivery into its Datastar patch frame(s)
 // and writes them, stamping each with the event seq as the SSE id so a
 // reconnect can resume from it.
-func (a *app) writeDelivery(w io.Writer, d eventbus.Delivery) {
+func (a *app) writeDelivery(ctx context.Context, w io.Writer, d eventbus.Delivery) {
 	id := strconv.FormatUint(d.Event.Seq, 10)
-	for _, ev := range a.renderDelivery(d) {
+	for _, ev := range a.renderDelivery(ctx, d) {
 		ev.ID = id
 		sse.Write(w, ev)
 	}

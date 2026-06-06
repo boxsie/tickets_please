@@ -1115,6 +1115,37 @@
   .badge-in_progress { background: var(--accent-soft); color: var(--accent); border-color: rgba(106,169,255,0.4); }
   .badge-testing     { background: var(--warn-bg); color: var(--warn); border-color: rgba(245,165,36,0.4); }
   .badge-done        { background: var(--success-bg); color: var(--success); border-color: rgba(62,207,142,0.4); }
+  .badge-archived    { background: var(--bg-elev-2); color: var(--fg-faint); border-color: var(--line-strong); }
+
+  /* Realtime toast region (#82): transient notifications streamed via SSE.
+     CSS-only auto-fade — no JS needed; the element lingers invisibly. */
+  .toast-region {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    z-index: 50;
+    pointer-events: none;
+  }
+  .toast {
+    background: var(--bg-elev-2);
+    color: var(--fg);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.85rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    animation: toast-fade 5s ease forwards;
+  }
+  @keyframes toast-fade {
+    0%   { opacity: 0; transform: translateY(8px); }
+    8%   { opacity: 1; transform: translateY(0); }
+    80%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
   .badge-system {
     background: transparent;
     color: var(--fg-faint);

@@ -13,6 +13,7 @@ import (
 	"tickets_please/internal/domain"
 	"tickets_please/internal/eventbus"
 	"tickets_please/internal/store"
+	"tickets_please/internal/svc"
 )
 
 // sseConnect opens a streaming /sse request and returns a line reader plus a
@@ -73,14 +74,24 @@ func readUntil(t *testing.T, br *bufio.Reader, substr string) []string {
 
 func sseTestServer(t *testing.T) (*httptest.Server, *eventbus.Bus) {
 	t.Helper()
+	srv, bus, _ := sseTestServerDeps(t)
+	return srv, bus
+}
+
+// sseTestServerDeps also wires the service's publisher to the bus (so svc
+// mutations fan out through /sse) and returns the Deps for driving the
+// service directly.
+func sseTestServerDeps(t *testing.T) (*httptest.Server, *eventbus.Bus, Deps) {
+	t.Helper()
 	deps := freshDeps(t)
 	bus := eventbus.NewBus()
 	deps.Bus = bus
+	deps.Service.SetPublisher(bus)
 	mux := http.NewServeMux()
 	Mount(mux, deps)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv, bus
+	return srv, bus, deps
 }
 
 func TestSSE_SubscribePublishReceive(t *testing.T) {
@@ -131,6 +142,69 @@ func TestSSE_ReconnectReplaysNewerOnly(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	if strings.Contains(joined, "id: 1") {
 		t.Errorf("replay leaked already-seen seq 1:\n%s", joined)
+	}
+}
+
+func TestSSE_TicketDetailLivePatches(t *testing.T) {
+	srv, _, deps := sseTestServerDeps(t)
+	s := deps.Service
+
+	agentID, _, err := s.RegisterAgent(context.Background(), "live-fixture", "Claude Live", nil, time.Hour, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(context.Background(), agentID)
+	if _, err := s.CreateProject(authed, "live", "Live", "", strings.Repeat("z", 220)); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	tk, err := s.CreateTicket(authed, domain.CreateTicketInput{ProjectIDOrSlug: "live", Title: "Realtime ticket"})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+
+	br, done := sseConnect(t, srv.URL, "ticket:"+tk.ID)
+	defer done()
+
+	// Move → status badge re-renders to the new column + a toast appears.
+	if _, err := s.MoveTicket(authed, tk.ID, domain.ColumnInProgress, "starting work"); err != nil {
+		t.Fatalf("MoveTicket: %v", err)
+	}
+	lines := readUntil(t, br, `id="ticket-status"`)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "datastar-patch-elements") {
+		t.Errorf("move patch not a datastar-patch-elements frame:\n%s", joined)
+	}
+	if !strings.Contains(joined, "badge-in_progress") {
+		t.Errorf("status badge didn't re-render to in_progress:\n%s", joined)
+	}
+	// The action cluster patch and the toast ride the same delivery.
+	more := readUntil(t, br, "Moved to in_progress")
+	if !strings.Contains(strings.Join(more, "\n"), "ticket-actions") &&
+		!strings.Contains(joined, "ticket-actions") {
+		t.Errorf("expected a #ticket-actions patch around the move")
+	}
+
+	// Comment → row appended to #comments-list.
+	if _, err := s.CreateComment(authed, tk.ID, "a streamed comment"); err != nil {
+		t.Fatalf("CreateComment: %v", err)
+	}
+	clines := readUntil(t, br, "comments-list")
+	cjoined := strings.Join(clines, "\n")
+	if !strings.Contains(cjoined, "mode append") {
+		t.Errorf("comment patch should append:\n%s", cjoined)
+	}
+	commentRow := readUntil(t, br, "comment-row")
+	if !strings.Contains(strings.Join(commentRow, "\n"), "a streamed comment") {
+		t.Errorf("appended comment row missing body:\n%s", strings.Join(commentRow, "\n"))
+	}
+
+	// Archive → archived badge appears.
+	if _, err := s.ArchiveTicket(authed, tk.ID, "shelving"); err != nil {
+		t.Fatalf("ArchiveTicket: %v", err)
+	}
+	alines := readUntil(t, br, "badge-archived")
+	if !strings.Contains(strings.Join(alines, "\n"), "ticket-archived") {
+		t.Errorf("archived badge patch missing #ticket-archived wrapper:\n%s", strings.Join(alines, "\n"))
 	}
 }
 
