@@ -2,9 +2,11 @@ id: 67f3323e-22b2-4f1f-8cc7-55376b62eb95
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 82
 title: Live patches on ticket detail (column changes, new comments stream in)
-column: in_progress
+column: done
 phase_id: 60c4d889-a15e-48d2-b319-4447ad5b716d
 wave: 3
 created_by: 6bf84e21-2bb2-4df1-aace-448a30bcf514
+completed_by: 230d1b01-f336-4764-a788-f378a0463b8e
+completed_at: 2026-06-06T11:41:02.115697752+01:00
 created_at: 2026-05-30T22:05:26.778505564+01:00
-updated_at: 2026-06-06T11:40:36.935842416+01:00
+updated_at: 2026-06-06T11:41:02.115697752+01:00
