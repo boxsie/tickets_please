@@ -1,6 +1,7 @@
 package tickets
 
 import (
+	"tickets_please/internal/web/components/attribution"
 	"tickets_please/internal/web/components/md"
 	"tickets_please/internal/web/reltime"
 )
@@ -15,7 +16,16 @@ templ CommentRow(props CommentRowProps) {
 	{{ c := props.Comment }}
 	<li id={ "comment-" + c.ID } class={ "comment-row", templ.KV("comment-system", props.IsSystem) }>
 		<div class="comment-meta">
-			<span class="comment-author" data-initial={ initial(props.AuthorLabel) }>{ props.AuthorLabel }</span>
+			<span class="comment-author" data-initial={ initial(props.AuthorLabel) }>
+				if props.AgentID != "" || props.AgentName != "" {
+					@attribution.AgentLink(props.AgentID, props.AgentName)
+					if props.ForUserName != "" {
+						{ " (for " }@attribution.UserLink(props.ForUserID, props.ForUserName){ ")" }
+					}
+				} else {
+					{ props.AuthorLabel }
+				}
+			</span>
 			if props.IsSystem {
 				<span class="badge badge-system">system</span>
 			}

@@ -24,7 +24,8 @@ templ TicketMetadata(props DetailProps) {
 			<div class="meta-pair">
 				<dt>Created</dt>
 				<dd>
-					{ agentName(t.CreatedBy) }{ " " }
+					@attribution.AgentLink(agentID(t.CreatedBy), agentName(t.CreatedBy))
+					{ " " }
 					@reltime.Time(t.CreatedAt)
 				</dd>
 			</div>
@@ -40,7 +41,8 @@ templ TicketMetadata(props DetailProps) {
 				<div class="meta-pair">
 					<dt>Completed</dt>
 					<dd>
-						{ agentName(t.CompletedBy) }{ " " }
+						@attribution.AgentLink(agentID(t.CompletedBy), agentName(t.CompletedBy))
+						{ " " }
 						@reltime.Time(*t.CompletedAt)
 					</dd>
 				</div>
@@ -48,7 +50,9 @@ templ TicketMetadata(props DetailProps) {
 			if actingForName(t) != "" {
 				<div class="meta-pair">
 					<dt>Acting for</dt>
-					<dd>{ actingForName(t) }</dd>
+					<dd>
+						@attribution.UserLink(actingForUserID(t), actingForName(t))
+					</dd>
 				</div>
 			}
 			if t.Archived && t.ArchivedAt != nil {

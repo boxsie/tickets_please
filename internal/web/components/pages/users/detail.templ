@@ -1,0 +1,58 @@
+package users
+
+import "tickets_please/internal/web/reltime"
+
+// Detail renders the /u/{id} user-profile page: identity header + the projects
+// the user is a member of. Kept deliberately lean — it exists mainly so the
+// "(for <user>)" attribution links resolve instead of 404ing.
+templ Detail(p DetailProps) {
+	{{ u := p.User }}
+	<section class="user-detail">
+		<header class="page-header">
+			<a class="back-link" href="/agents">Agents</a>
+			<h1>{ displayName(u) }</h1>
+			<p class="subtitle">
+				if u.Email != "" {
+					<code>{ u.Email }</code>
+				}
+				if providerLogin(u) != "" {
+					<span class="breadcrumb-sep"></span>
+					{ providerLogin(u) }
+				}
+			</p>
+		</header>
+		<dl class="user-meta">
+			<div class="meta-pair">
+				<dt>Joined</dt>
+				<dd>
+					@reltime.Time(u.CreatedAt)
+				</dd>
+			</div>
+			<div class="meta-pair">
+				<dt>Last login</dt>
+				<dd>
+					@reltime.Time(u.LastLoginAt)
+				</dd>
+			</div>
+		</dl>
+		<section class="card">
+			<h2>Member of</h2>
+			if len(p.Memberships) > 0 {
+				<ul class="user-membership-list">
+					for _, m := range p.Memberships {
+						<li>
+							if m.ProjectSlug != "" {
+								<a href={ templ.SafeURL("/p/" + m.ProjectSlug) }>{ m.ProjectName }</a>
+							} else {
+								<span class="muted">{ m.ProjectID }</span>
+							}
+							<span class="badge">{ m.Role }</span>
+						</li>
+					}
+				</ul>
+			} else {
+				<p class="hint">Not a member of any project.</p>
+			}
+		</section>
+	</section>
+}

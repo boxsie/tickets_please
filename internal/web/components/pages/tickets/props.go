@@ -93,11 +93,19 @@ type CommentsThreadProps struct {
 	FormError   string
 }
 
-// CommentRowProps mirrors web.commentRowData.
+// CommentRowProps mirrors web.commentRowData. AuthorLabel is the composed
+// plain-text fallback (used for the avatar initial and when the author can't be
+// linked); AgentID/AgentName + ForUserID/ForUserName carry the structured
+// attribution so the author renders as "Claude (for Dan)" with both names
+// linked to /agents/{id} and /u/{id}.
 type CommentRowProps struct {
 	Comment     *domain.Comment
 	IsSystem    bool
 	AuthorLabel string
+	AgentID     string
+	AgentName   string
+	ForUserID   string
+	ForUserName string
 }
 
 // --- Assign-phase modal ---------------------------------------------------

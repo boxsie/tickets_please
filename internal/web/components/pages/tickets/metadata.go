@@ -29,6 +29,28 @@ func actingForName(t *domain.Ticket) string {
 	return ""
 }
 
+// agentID is the id of an attribution AgentRef (for the /agents/{id} link), or
+// "" when the ref is nil — in which case the name renders as plain text.
+func agentID(a *domain.AgentRef) string {
+	if a == nil {
+		return ""
+	}
+	return a.ID
+}
+
+// actingForUserID returns the user id matching actingForName (same
+// completer-over-creator preference) so the acting-for name can link to
+// /u/{id}. Empty when there's no display-named acting-for user.
+func actingForUserID(t *domain.Ticket) string {
+	if t.CompletedFor != nil && t.CompletedFor.DisplayName != "" {
+		return t.CompletedFor.UserID
+	}
+	if t.CreatedFor != nil && t.CreatedFor.DisplayName != "" {
+		return t.CreatedFor.UserID
+	}
+	return ""
+}
+
 // showUpdated reports whether UpdatedAt is meaningfully later than CreatedAt
 // (>1m). Below that the two stamps are effectively the create event and the
 // "Updated" row is just noise.

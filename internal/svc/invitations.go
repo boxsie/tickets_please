@@ -16,6 +16,56 @@ import (
 // invitationTTL is how long a pending invite stays valid after creation.
 const invitationTTL = 7 * 24 * time.Hour
 
+// UserProfileView is a registered user joined with their cross-project
+// memberships, for the /u/{id} page.
+type UserProfileView struct {
+	User        *domain.User
+	Memberships []UserMembershipView
+}
+
+// UserMembershipView is one of a user's project memberships, resolved to the
+// project's slug + name (empty when the project isn't currently mounted).
+type UserMembershipView struct {
+	ProjectID   string
+	ProjectSlug string
+	ProjectName string
+	Role        domain.Role
+}
+
+// GetUserProfile returns the user record plus every project they hold a
+// membership on. Returns domain.ErrNotFound (via ReadUser) for an unknown id.
+func (s *Service) GetUserProfile(ctx context.Context, userID string) (*UserProfileView, error) {
+	if s.UserStore == nil {
+		return nil, fmt.Errorf("%w: user registry not available", domain.ErrFailedPrecondition)
+	}
+	rec, err := s.UserStore.ReadUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	out := &UserProfileView{User: rec.ToDomain()}
+	if s.MembershipStore == nil {
+		return out, nil
+	}
+	mrecs, err := s.MembershipStore.ListMembershipsForUser(userID)
+	if err != nil || len(mrecs) == 0 {
+		return out, nil
+	}
+	projects, _ := s.ListProjects(ctx)
+	byID := make(map[string]*domain.Project, len(projects))
+	for _, p := range projects {
+		byID[p.ID] = p
+	}
+	for _, m := range mrecs {
+		v := UserMembershipView{ProjectID: m.ProjectID, Role: m.Role}
+		if p, ok := byID[m.ProjectID]; ok {
+			v.ProjectSlug = p.Slug
+			v.ProjectName = p.Name
+		}
+		out.Memberships = append(out.Memberships, v)
+	}
+	return out, nil
+}
+
 // MemberView is a project membership joined with the inviter-facing identity
 // fields from the user registry, for rendering the members table. DisplayName
 // degrades to an id stub when the user record is missing.

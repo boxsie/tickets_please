@@ -78,6 +78,10 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /agents", wrap(a.handleAgentsIndex))
 	mux.Handle("GET /agents/{id}", wrap(a.handleAgentDetail))
 
+	// User profile (/u/{id}) — the human an agent acts for. App-global,
+	// login-gated. Destination of the "(for <user>)" attribution links.
+	mux.Handle("GET /u/{id}", wrap(a.handleUserDetail))
+
 	// Sidebar swap endpoint: returns just the <aside id="sidebar"> fragment.
 	// Wired by templates/partials/sidebar.tmpl's hx-get; triggered on the
 	// body-scoped sidebar-refresh event that POST handlers emit via

@@ -172,11 +172,28 @@ func commentRowsTempl(comments []*domain.Comment) []pgtickets.CommentRowProps {
 // renderer + still useful for the cookie-cutter buildCommentRow helper) into
 // the templ-shaped pgtickets.CommentRowProps.
 func toTemplRow(row commentRowData) pgtickets.CommentRowProps {
-	return pgtickets.CommentRowProps{
+	p := pgtickets.CommentRowProps{
 		Comment:     row.Comment,
 		IsSystem:    row.IsSystem,
 		AuthorLabel: row.AuthorLabel,
 	}
+	// Structured attribution so comment.templ can render linked names. Only
+	// link the agent when we have a real name (not the id-stub fallback); the
+	// acting-for user links to /u/{id} with a display-name-or-stub label.
+	if c := row.Comment; c != nil {
+		if c.Author != nil && c.Author.Name != "" {
+			p.AgentID = c.Author.ID
+			p.AgentName = c.Author.Name
+		}
+		if c.AuthorFor != nil && c.AuthorFor.UserID != "" {
+			p.ForUserID = c.AuthorFor.UserID
+			p.ForUserName = c.AuthorFor.DisplayName
+			if p.ForUserName == "" {
+				p.ForUserName = c.AuthorFor.UserID[:min(8, len(c.AuthorFor.UserID))]
+			}
+		}
+	}
+	return p
 }
 
 func min(a, b int) int {

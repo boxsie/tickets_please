@@ -1350,6 +1350,13 @@
   .archive-report h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
   .archive-report-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.3rem; }
   .archive-report-reason { margin-left: 0.5rem; font-size: 0.8rem; }
+  /* Attribution links (agent / acting-for user) inside author labels + meta. */
+  .attr-link { color: inherit; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 2px; }
+  .attr-link:hover { color: var(--accent); text-decoration-color: var(--accent); }
+  /* /u/{id} user-profile page. */
+  .user-meta { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 0.5rem 0 1.2rem; }
+  .user-membership-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.45rem; }
+  .user-membership-list li { display: flex; align-items: center; gap: 0.6rem; }
   .ticket-card-title {
     font-size: 0.88rem;
     font-weight: 500;

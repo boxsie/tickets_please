@@ -34,6 +34,21 @@ func baseMetaProps() DetailProps {
 	}
 }
 
+// The created-by agent and the acting-for user render as links to their detail
+// pages (/agents/{id}, /u/{id}).
+func TestTicketMetadata_AttributionLinks(t *testing.T) {
+	p := baseMetaProps()
+	p.Ticket.CreatedBy = &domain.AgentRef{ID: "agent-99", Name: "Claude Code"}
+	p.Ticket.CreatedFor = &domain.UserRef{UserID: "user-7", DisplayName: "Dan"}
+	out := renderMeta(t, p)
+	if !strings.Contains(out, `href="/agents/agent-99"`) {
+		t.Errorf("created-by agent should link to /agents/{id}:\n%s", out)
+	}
+	if !strings.Contains(out, `href="/u/user-7"`) {
+		t.Errorf("acting-for user should link to /u/{id}:\n%s", out)
+	}
+}
+
 func TestTicketMetadata_CreatedAndEntryKeyAlwaysPresent(t *testing.T) {
 	out := renderMeta(t, baseMetaProps())
 	if !strings.Contains(out, "<dt>Created</dt>") {

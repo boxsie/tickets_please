@@ -17,6 +17,27 @@ templ Chip(t *domain.Ticket) {
 	</span>
 }
 
+// AgentLink renders an agent's name as a link to its /agents/{id} detail page.
+// Falls back to plain text when the id is empty (an unresolved / system author),
+// so call sites can use it unconditionally.
+templ AgentLink(id, name string) {
+	if id != "" {
+		<a class="attr-link attr-agent" href={ templ.SafeURL("/agents/" + id) }>{ name }</a>
+	} else {
+		{ name }
+	}
+}
+
+// UserLink renders a registered user's display name as a link to its /u/{id}
+// page — the human an agent was acting for. Plain text when the id is empty.
+templ UserLink(id, name string) {
+	if id != "" {
+		<a class="attr-link attr-user" href={ templ.SafeURL("/u/" + id) }>{ name }</a>
+	} else {
+		{ name }
+	}
+}
+
 // ArchivedPill renders a small "archived" badge for any ticket reference
 // (card, wave row, search hit, dependency link). It's a no-op when the ticket
 // isn't archived, so call sites can drop it in unconditionally. Lives here
