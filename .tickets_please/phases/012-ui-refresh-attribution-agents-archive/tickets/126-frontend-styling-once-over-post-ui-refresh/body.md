@@ -1,0 +1,3 @@
+General coherence/polish pass over the web UI styling with the frontend-design skill, guided by visual verification (headless Chrome screenshots of overview, phases, phase-detail, search, agents).
+
+Outcome: the design system (dark dev-tool aesthetic, tabular-num metrics, consistent tokens/components) is solid — the win was fixing concrete defects rather than a risky blind teardown that would fight the SSE/htmx live-morph. Added: `Card` header action links, a `.btn-warn` variant + `.archive-zone` disclosure, compact phase summary, 5th metric card with derived sub-hints. Deliberately skipped global page-load animations (would re-fire on morphed-in elements).
