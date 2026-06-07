@@ -675,6 +675,39 @@
 
   .card-compact { padding: 1rem 1.15rem; }
 
+  /* Card header with a right-aligned action link (e.g. "Browse all phases →").
+     Reproduces the .card > h2 underline at the row level so the title and link
+     share one rule. The h2 here is NOT a direct .card child, so the .card > h2
+     rule doesn't reach it — restate its type treatment. */
+  .card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .card-head > h2 {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--fg-muted);
+    font-weight: 600;
+  }
+  .card-head-link {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--fg-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: color 0.12s;
+  }
+  .card-head-link:hover { color: var(--accent); text-decoration: none; }
+
   .muted { color: var(--fg-muted); }
   .hint  { color: var(--fg-muted); font-size: 0.85rem; }
 
@@ -688,7 +721,7 @@
      the submit button class="btn".
      ============================================================ */
   .btn,
-  button[type="submit"]:not(.btn-link) {
+  button[type="submit"]:not(.btn-link):not(.hit-rate-btn) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -708,7 +741,7 @@
     width: auto;
   }
   .btn:hover,
-  button[type="submit"]:not(.btn-link):hover {
+  button[type="submit"]:not(.btn-link):not(.hit-rate-btn):hover {
     background: var(--bg-hover);
     border-color: var(--fg-faint);
     text-decoration: none;
@@ -720,14 +753,14 @@
 
   /* Submit buttons default to primary unless explicitly given .btn (= "I
      want this to look secondary"). Explicit .btn-primary works anywhere. */
-  button[type="submit"]:not(.btn):not(.btn-link),
+  button[type="submit"]:not(.btn):not(.btn-link):not(.hit-rate-btn),
   .btn-primary {
     background: var(--accent);
     color: var(--accent-fg);
     border-color: var(--accent);
     font-weight: 600;
   }
-  button[type="submit"]:not(.btn):not(.btn-link):hover,
+  button[type="submit"]:not(.btn):not(.btn-link):not(.hit-rate-btn):hover,
   .btn-primary:hover {
     filter: brightness(1.08);
     border-color: var(--accent);
@@ -739,6 +772,13 @@
     border-color: rgba(255,107,107,0.4);
   }
   .btn-danger:hover { background: rgba(255,107,107,0.18); border-color: var(--error); }
+
+  .btn-warn {
+    background: var(--warn-bg);
+    color: var(--warn);
+    border-color: rgba(245,165,36,0.4);
+  }
+  .btn-warn:hover { background: rgba(245,165,36,0.20); border-color: var(--warn); }
 
   .btn-link {
     background: transparent;
@@ -1172,6 +1212,36 @@
   .danger-zone form { padding-bottom: 1rem; padding-top: 0.5rem; }
   .danger-zone .hint { padding-top: 0.75rem; max-width: 48rem; }
 
+  /* Archive-zone: danger-zone's warn-coloured sibling for reversible bulk
+     actions (archive a whole phase). Same disclosure shape, amber instead of
+     red, a box icon instead of the warning triangle. */
+  .archive-zone {
+    margin-top: 1.5rem;
+    border: 1px solid rgba(245,165,36,0.28);
+    border-radius: 10px;
+    background: rgba(245,165,36,0.04);
+  }
+  .archive-zone > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.75rem 1rem;
+    color: var(--warn);
+    font-weight: 600;
+    font-size: 0.88rem;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .archive-zone > summary::-webkit-details-marker { display: none; }
+  .archive-zone > summary::before {
+    content: "🗄";
+    font-size: 0.95rem;
+  }
+  .archive-zone[open] > summary { border-bottom: 1px solid rgba(245,165,36,0.22); }
+  .archive-zone > *:not(summary) { padding-left: 1rem; padding-right: 1rem; }
+  .archive-zone form { padding-bottom: 1rem; padding-top: 0.5rem; }
+  .archive-zone .hint { padding-top: 0.75rem; max-width: 48rem; }
+
   /* ============================================================
      Board (kanban)
      ============================================================ */
@@ -1316,7 +1386,7 @@
     height: 1rem;
     border: 1px solid var(--line-strong);
     border-radius: 4px;
-    background: var(--bg-elev-1);
+    background: var(--bg-elev-2);
     font-size: 0.7rem;
     line-height: 1;
   }
@@ -1344,7 +1414,7 @@
     padding: 0.8rem 1rem;
     border: 1px solid var(--line-strong);
     border-radius: 8px;
-    background: var(--bg-elev-1);
+    background: var(--bg-elev-2);
   }
   .archive-report-committed { border-color: var(--accent); }
   .archive-report h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
@@ -1863,10 +1933,18 @@
   }
   .hit-counts { display: inline-flex; gap: 0.4rem; font-size: 0.78rem; }
   .hit-rate-form { display: inline-flex; margin: 0; }
+  /* Both rating controls share this class, but one is a native <button> (the
+     👍) and the other a <summary> (the 👎). Without appearance:none the
+     <button> picks up the platform's native button chrome — a bright blue
+     fill on some renderers — while the <summary> stays flat, so the pair
+     looked mismatched. Normalise to a flat, transparent control for both. */
   .hit-rate-btn {
     cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
     border: 1px solid transparent;
-    background: none;
+    background: transparent;
+    color: var(--fg-muted);
     border-radius: 6px;
     padding: 0.05rem 0.3rem;
     font-size: 0.92rem;
@@ -1874,9 +1952,9 @@
     list-style: none;
   }
   .hit-rate-btn::-webkit-details-marker { display: none; }
-  .hit-rate-btn:hover { border-color: var(--line-strong); background: var(--bg-elev-1); }
+  .hit-rate-btn:hover { border-color: var(--line-strong); background: var(--bg-elev-2); color: var(--fg); }
   .hit-dislike { position: relative; display: inline-flex; }
-  .hit-dislike[open] > .hit-rate-btn { border-color: var(--line-strong); background: var(--bg-elev-1); }
+  .hit-dislike[open] > .hit-rate-btn { border-color: var(--line-strong); background: var(--bg-elev-2); color: var(--fg); }
   .hit-dislike-form {
     position: absolute;
     top: 1.6rem;
@@ -1960,24 +2038,53 @@
   /* ============================================================
      Dashboard (project overview)
      ============================================================ */
-  /* Lead phases-with-waves block — the dashboard's primary surface, sitting
-     directly under the header above the (now secondary) metric cards. */
-  .phase-lead { margin-bottom: 1.5rem; }
-  .phase-lead-head {
+  /* Compact phases readout on the project overview — one row per phase (name +
+     the shared PhaseMeta mini-bar/counts), reading like a tidy table. This is
+     the dashboard's *summary* of phases; the full collapsible wave drill-down
+     lives on /phases. */
+  .phase-summary {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .phase-summary-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 0.5rem;
+    border-radius: 6px;
+    transition: background 0.08s;
+  }
+  .phase-summary-row + .phase-summary-row { border-top: 1px solid var(--line); }
+  .phase-summary-row:hover { background: var(--bg-hover); }
+  .phase-summary-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .phase-summary-name:hover { color: var(--accent); text-decoration: none; }
+  .phase-summary-row-unphased .phase-summary-name em {
+    font-style: italic;
+    font-weight: 600;
+    color: var(--fg-muted);
+  }
+  .phase-summary-meta {
     display: flex;
     align-items: center;
     gap: 0.85rem;
-    margin-bottom: 0.75rem;
+    flex-shrink: 0;
+    margin-left: auto;
   }
-  .phase-lead-head h2 {
-    margin: 0;
-    font-size: 1.05rem;
-  }
-  .phase-lead-head .btn { margin-left: auto; }
 
   .dashboard .metric-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
     gap: 0.85rem;
     margin-bottom: 1.25rem;
   }
@@ -2202,6 +2309,11 @@
     color: var(--fg);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    /* Fixed, right-aligned width so a 1- vs 2- vs 3-digit count can't widen
+       this cell and shove the fixed-width bar to a different x on each row —
+       that drift was what made the phase-list bars fail to line up. */
+    min-width: 8.5rem;
+    text-align: right;
   }
   .phase-row-counts strong { font-weight: 600; }
 
@@ -2344,6 +2456,31 @@
     white-space: nowrap;
   }
   .phase-wave-ticket-title:hover { color: var(--accent); text-decoration: none; }
+  /* Trailing meta (badge + archived pill + attribution chip) lives in a single
+     grid cell so the row stays a true 3-column grid (dot · title · meta).
+     Before this wrapper the chip auto-placed into an implicit 2nd-row column,
+     blowing out column 1's width and shoving the title rightward. */
+  .phase-wave-ticket-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    min-width: 0;
+  }
+  /* Give the trailing meta fixed-width columns so the status badge, author,
+     and time line up vertically down the expanded ticket list instead of
+     drifting with each row's title/author length. The status badge is a
+     centred fixed pill; the attribution chip is a fixed block whose content
+     is right-anchored so the relative-time sits flush at the row's right edge
+     on every row. */
+  .phase-wave-ticket-meta > .badge {
+    min-width: 5.5rem;
+    justify-content: center;
+  }
+  .phase-wave-ticket-meta > .ticket-attribution {
+    min-width: 10rem;
+    justify-content: flex-end;
+  }
 
   .phase-row-empty {
     display: flex;

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -233,6 +234,92 @@ func (s *Service) GetTicket(ctx context.Context, id string) (*domain.Ticket, err
 	}
 	t.BlockedBy = computeBlockedBy(t.DependsOn, lp.Tickets)
 	return cloneTicket(t), nil
+}
+
+// ResolveTicketRef resolves a human-facing ticket reference to its UUID so the
+// ticket-targeting tools can accept the shortcode agents actually see (the
+// global ticket number that shows up in commit messages and conversation)
+// instead of forcing the opaque UUID. ref may be:
+//
+//   - a UUID or any other opaque id — returned unchanged; existence is checked
+//     by the downstream operation, so this stays a pure passthrough.
+//   - "<project-slug>/<number>" e.g. "tickets-please/76" or "tickets-please/076"
+//     — resolved within the named project regardless of the bound session.
+//   - a bare "<number>" e.g. "76" — resolved within defaultSlug, which callers
+//     supply from the session's bound project; errors if defaultSlug is empty.
+//
+// Resolution walks the host store's ticket records by Number (domain.Ticket
+// carries no number; only the store record + on-disk dir name do). O(tickets)
+// is fine at this scale. A missing shortcode yields an actionable error naming
+// the slug + number rather than a generic not-found.
+func (s *Service) ResolveTicketRef(ctx context.Context, defaultSlug, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", fmt.Errorf("%w: ticket reference is empty", domain.ErrInvalidArgument)
+	}
+
+	slug, numStr, isShortcode := parseTicketShortcode(ref, defaultSlug)
+	if !isShortcode {
+		// Opaque id (UUID or otherwise) — pass through untouched.
+		return ref, nil
+	}
+	if slug == "" {
+		return "", fmt.Errorf("%w: ticket number %q has no project — bind a project via register_agent or use the \"<project-slug>/%s\" form", domain.ErrInvalidArgument, numStr, numStr)
+	}
+	num, err := strconv.Atoi(numStr)
+	if err != nil {
+		return "", fmt.Errorf("%w: %q is not a valid ticket number", domain.ErrInvalidArgument, numStr)
+	}
+
+	st, err := s.ResolveProjectStore(ctx, slug)
+	if err != nil {
+		return "", err
+	}
+	var found string
+	walkErr := st.WalkTickets(slug, func(_, _ string, tr *store.TicketRecord) error {
+		if tr.Number == num && found == "" {
+			found = tr.ID
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return "", fmt.Errorf("walk tickets: %w", walkErr)
+	}
+	if found == "" {
+		return "", fmt.Errorf("%w: no ticket %s/%d in project %s", domain.ErrNotFound, slug, num, slug)
+	}
+	return found, nil
+}
+
+// parseTicketShortcode classifies a ticket reference. It reports isShortcode
+// false for anything that isn't a bare number or "<slug>/<number>" (i.e. an
+// opaque UUID), leaving slug/numStr empty. A bare number adopts defaultSlug.
+// Project slugs are single-segment and URL-safe (no "/"), so splitting on the
+// last "/" is unambiguous.
+func parseTicketShortcode(ref, defaultSlug string) (slug, numStr string, isShortcode bool) {
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		s, n := ref[:i], ref[i+1:]
+		if s != "" && isAllDigits(n) {
+			return s, n, true
+		}
+		return "", "", false
+	}
+	if isAllDigits(ref) {
+		return defaultSlug, ref, true
+	}
+	return "", "", false
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ListTickets returns a filtered, paginated slice of tickets in a project.

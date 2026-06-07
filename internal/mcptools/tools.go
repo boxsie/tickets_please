@@ -73,6 +73,42 @@ func (t *Tools) resolveProjectSlug(ctx context.Context, req mcp.CallToolRequest)
 	return "", fmt.Errorf("no project bound to this session — call register_agent or pass project_id_or_slug explicitly")
 }
 
+// defaultProjectSlug is the lenient sibling of resolveProjectSlug: it returns
+// the project slug bound to the session (or passed as project_id_or_slug)
+// without erroring when none is set. Used by ticket-shortcode resolution, where
+// a bare UUID needs no project context — only a bare "<number>" does.
+func (t *Tools) defaultProjectSlug(ctx context.Context, req mcp.CallToolRequest) string {
+	if args, err := decodeArgEnvelope(req); err == nil {
+		if v, ok := args["project_id_or_slug"].(string); ok && v != "" {
+			return v
+		}
+	}
+	sessionID := t.sessionIDFromContext(ctx)
+	if sess, ok := t.registry.Get(sessionID); ok {
+		return sess.ProjectSlug
+	}
+	return ""
+}
+
+// resolveTicketID turns a raw ticket_id argument into a UUID, accepting either
+// a UUID (passthrough) or a "<project-slug>/<number>" / bare "<number>"
+// shortcode resolved against the session-bound project. See
+// svc.ResolveTicketRef.
+func (t *Tools) resolveTicketID(ctx context.Context, req mcp.CallToolRequest, raw string) (string, error) {
+	return t.svc.ResolveTicketRef(ctx, t.defaultProjectSlug(ctx, req), raw)
+}
+
+// resolveTicketArg reads the ticket_id argument (envelope-robust) and resolves
+// any shortcode to a UUID. Convenience for the handlers whose only required
+// string is ticket_id.
+func (t *Tools) resolveTicketArg(ctx context.Context, req mcp.CallToolRequest) (string, error) {
+	required, err := requireStringArgs(req, "ticket_id")
+	if err != nil {
+		return "", err
+	}
+	return t.resolveTicketID(ctx, req, required["ticket_id"])
+}
+
 // RegisterAll attaches every tool's schema + handler to the supplied MCP
 // server. The server is then served over stdio by the caller.
 //
@@ -127,7 +163,7 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if a session is bound")),
 	), t.handleReembedProject)
 
-	// Phases (7)
+	// Phases (8)
 	s.AddTool(mcp.NewTool("list_phases",
 		mcp.WithDescription("List phases in a project with active and total ticket counts."),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
@@ -168,6 +204,13 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("phase_id_or_slug", mcp.Required(), mcp.Description("Phase id or slug")),
 	), t.handleDeletePhase)
 
+	s.AddTool(mcp.NewTool("archive_phase",
+		mcp.WithDescription("Bulk-archive every active ticket in a phase in one call — the phase counterpart to `archive_ticket`. Each ticket gets its own `system_archive` audit comment (done tickets included: completion fields stay frozen, the archived flag still flips), drops out of default `search_*`/`list_tickets`, and can be individually unarchived later. The phase record itself is left in place (it just ends up with zero active tickets) — use `delete_phase` to remove an empty phase. Already-archived tickets are skipped. Comment is required. Returns a report of archived vs skipped tickets."),
+		mcp.WithString("project_id_or_slug", mcp.Description("Parent project id or slug; optional if register_agent has bound a project to the session")),
+		mcp.WithString("phase_id_or_slug", mcp.Required(), mcp.Description("Phase id or slug")),
+		mcp.WithString("comment", mcp.Required(), mcp.Description("Reason for archiving; recorded on each ticket as a system_archive comment")),
+	), t.handleArchivePhase)
+
 	s.AddTool(mcp.NewTool("list_waves",
 		mcp.WithDescription("List the waves in a phase (or in the phase-less area of a project) with per-wave ticket counts. A wave is a soft integer grouping on tickets — no enforcement, just organization. Use this to see how a body of work decomposes."),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
@@ -200,12 +243,12 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcp.NewTool("get_ticket",
 		mcp.WithDescription("Fetch a ticket by id, including its current column, completion fields if done, blockers, and who created/completed it."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 	), t.handleGetTicket)
 
 	s.AddTool(mcp.NewTool("update_ticket",
 		mcp.WithDescription("Edit a ticket's title or body. **Cannot** change the column — use `move_ticket` or `complete_ticket`."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 		mcp.WithString("title", mcp.Description("New title (optional)")),
 		mcp.WithString("body", mcp.Description("New body markdown (optional)")),
 		mcp.WithNumber("wave", mcp.Description("New wave number (optional)")),
@@ -213,14 +256,14 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcp.NewTool("move_ticket",
 		mcp.WithDescription("Move a ticket between columns. Requires a comment explaining *why* you're moving it. Cannot be used to move to `done` — use `complete_ticket` for that."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 		mcp.WithString("target_column", mcp.Required(), mcp.Description("One of: todo, in_progress, testing")),
 		mcp.WithString("comment", mcp.Required(), mcp.Description("Reason for the move; becomes a system_move comment")),
 	), t.handleMoveTicket)
 
 	s.AddTool(mcp.NewTool("complete_ticket",
-		mcp.WithDescription("Mark a ticket done. Only `learnings` is required (≥10 chars) — that's the field future agents search, so write it for them. `testing_evidence` and `work_summary` are optional audit-trail fields; supply them when there's substantive content, omit on small/obvious work."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithDescription("Mark a ticket done. Only `learnings` is required (≥10 chars) — that's the field future agents search, so write it for them. `testing_evidence` and `work_summary` are optional audit-trail fields; supply them when there's substantive content, omit on small/obvious work. Before you finish: if any `search_learnings`/`search_tickets` hits actually helped (or misled) you on this ticket, rate them with `rate_search_result` — that's what keeps the learnings you just searched worth searching."),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 		mcp.WithString("testing_evidence", mcp.Description("Optional. What you tested and how. Omit on small/obvious work rather than padding.")),
 		mcp.WithString("work_summary", mcp.Description("Optional. What you actually changed. Omit on small/obvious work rather than padding.")),
 		mcp.WithString("learnings", mcp.Required(), mcp.Description("Required (≥10 chars). Gotchas, surprises, and insights for future work — this field is searchable by future tickets.")),
@@ -228,25 +271,25 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcp.NewTool("assign_ticket_to_phase",
 		mcp.WithDescription("Move a ticket between phases (or to no phase). Requires a comment explaining why — same audit-trail rule as `move_ticket`."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 		mcp.WithString("phase_id_or_slug", mcp.Description("Target phase id or slug; omit to make the ticket phase-less")),
 		mcp.WithString("comment", mcp.Required(), mcp.Description("Reason for the reassignment; becomes a system_move comment")),
 	), t.handleAssignTicketToPhase)
 
 	s.AddTool(mcp.NewTool("delete_ticket",
 		mcp.WithDescription("**Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once a ticket is finished it stays finished, per SPEC's no-reopen/no-delete rule). Any other tickets in the same project that reference this one in `depends_on` or `parallelizable_with` are auto-updated to drop the reference, atomically with the delete — no dangling refs, no manual cleanup. For finished work that you regret, file a new ticket instead."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 	), t.handleDeleteTicket)
 
 	s.AddTool(mcp.NewTool("archive_ticket",
 		mcp.WithDescription("Archive a ticket — flips a separate `archived` flag without changing the column. Done tickets are explicitly allowed: completion fields stay frozen but the archived flag can flip. Archived tickets are excluded from `search_*` and `list_tickets` by default; pass `include_archived: true` to bring them back, or use `get_ticket` for direct id lookup (which always succeeds). Comment is required and is written as a `system_archive` audit comment. Vec index entries stay in place so `unarchive_ticket` is free."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 		mcp.WithString("comment", mcp.Required(), mcp.Description("Reason for archiving; becomes a system_archive comment")),
 	), t.handleArchiveTicket)
 
 	s.AddTool(mcp.NewTool("unarchive_ticket",
 		mcp.WithDescription("Unarchive a previously-archived ticket. Comment is required (becomes a `system_unarchive` audit comment). The ticket re-enters default search and list surfaces immediately."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 		mcp.WithString("comment", mcp.Required(), mcp.Description("Reason for unarchiving; becomes a system_unarchive comment")),
 	), t.handleUnarchiveTicket)
 
@@ -260,20 +303,20 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 	// Comments (2)
 	s.AddTool(mcp.NewTool("add_comment",
 		mcp.WithDescription("Add a free-form comment to a ticket. Comments are immutable once created."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 		mcp.WithString("body", mcp.Required(), mcp.Description("Comment body markdown")),
 	), t.handleAddComment)
 
 	s.AddTool(mcp.NewTool("list_comments",
 		mcp.WithDescription("List all comments on a ticket, including system-generated move and completion entries, with author attribution."),
-		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket id")),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 	), t.handleListComments)
 
 	s.AddTool(mcp.NewTool("list_comments_scoped",
 		mcp.WithDescription("List comments across a whole project (optionally narrowed to a phase or one ticket) with plain filters — author, system-vs-user, kind, time window. The direct way to surface operator feedback on your recent work: e.g. `exclude_author_id`=<your agent id> + `since`=<when you filed the tickets> returns just the human's notes in one call, no semantic guessing. By default system move/completion comments are excluded; pass `exclude_system=false` to include them. Sorted oldest-first; paginate via `cursor`."),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("phase_id_or_slug", mcp.Description("Narrow to a phase (id or slug); \"-\" = phase-less tickets only")),
-		mcp.WithString("ticket_id", mcp.Description("Narrow to a single ticket")),
+		mcp.WithString("ticket_id", mcp.Description("Narrow to a single ticket — UUID or a `<project-slug>/<number>` (or bare `<number>`) shortcode")),
 		mcp.WithString("author_id", mcp.Description("Keep only comments by this exact author id")),
 		mcp.WithString("author_name", mcp.Description("Keep only comments by this exact author display name")),
 		mcp.WithString("exclude_author_id", mcp.Description("Drop comments by this author id (\"everything NOT mine\")")),
@@ -308,7 +351,7 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithDescription("Semantic search across comments. Comments on archived tickets are excluded by default."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
 		mcp.WithString("project_id_or_slug", mcp.Description("Optional project id/slug to scope the search")),
-		mcp.WithString("ticket_id", mcp.Description("Optional ticket id to scope to one ticket's comments")),
+		mcp.WithString("ticket_id", mcp.Description("Optional ticket to scope to one ticket's comments — UUID or a `<project-slug>/<number>` (or bare `<number>`) shortcode")),
 		mcp.WithBoolean("include_archived", mcp.Description("If true, include comments on archived tickets (default false)")),
 		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
 	), t.handleSearchComments)
@@ -868,6 +911,41 @@ func (t *Tools) handleDeletePhase(ctx context.Context, req mcp.CallToolRequest) 
 	})
 }
 
+func (t *Tools) handleArchivePhase(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	pid, err := t.resolveProjectSlug(ctx, req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	phid, err := req.RequireString("phase_id_or_slug")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	comment, err := req.RequireString("comment")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	var report *svc.ArchivePhaseReport
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		out, err := t.svc.ArchivePhase(ctx, pid, phid, comment)
+		if err != nil {
+			return err
+		}
+		report = out
+		return nil
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	return jsonResult(map[string]any{
+		"phase_id":           report.PhaseID,
+		"phase_name":         report.PhaseName,
+		"project_id_or_slug": pid,
+		"archived_count":     len(report.Archived),
+		"archived":           entriesToMaps(report.Archived),
+		"skipped":            entriesToMaps(report.Skipped),
+	})
+}
+
 func (t *Tools) handleListWaves(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
@@ -963,15 +1041,24 @@ func (t *Tools) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	title, err := req.RequireString("title")
+	// Envelope-robust decode: req.RequireString/GetString/GetArguments all read
+	// via GetArguments(), which returns nil for a json.RawMessage envelope and
+	// makes every field read as "not found" — the misleading error that mangled
+	// rich bodies. requireStringArgs/decodeArgEnvelope fall back to BindArguments.
+	required, err := requireStringArgs(req, "title")
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	args := req.GetArguments()
+	args, err := decodeArgEnvelope(req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
 	in := domain.CreateTicketInput{
 		ProjectIDOrSlug: pid,
-		Title:           title,
-		Body:            req.GetString("body", ""),
+		Title:           required["title"],
+	}
+	if v, ok := args["body"].(string); ok {
+		in.Body = v
 	}
 	if v, ok := args["phase_id_or_slug"].(string); ok && v != "" {
 		in.PhaseIDOrSlug = &v
@@ -1000,7 +1087,7 @@ func (t *Tools) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest)
 }
 
 func (t *Tools) handleGetTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("ticket_id")
+	id, err := t.resolveTicketArg(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -1020,11 +1107,20 @@ func (t *Tools) handleGetTicket(ctx context.Context, req mcp.CallToolRequest) (*
 }
 
 func (t *Tools) handleUpdateTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("ticket_id")
+	// Envelope-robust decode (see handleCreateTicket) so a rich markdown body
+	// delivered as a json.RawMessage envelope round-trips instead of failing.
+	required, err := requireStringArgs(req, "ticket_id")
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	args := req.GetArguments()
+	id, err := t.resolveTicketID(ctx, req, required["ticket_id"])
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	args, err := decodeArgEnvelope(req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
 	in := domain.UpdateTicketInput{}
 	if v, ok := args["title"].(string); ok {
 		in.Title = &v
@@ -1054,18 +1150,17 @@ func (t *Tools) handleUpdateTicket(ctx context.Context, req mcp.CallToolRequest)
 }
 
 func (t *Tools) handleMoveTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("ticket_id")
+	// Envelope-robust decode (see handleCreateTicket) so a rich/long move
+	// comment delivered as a json.RawMessage envelope isn't reported missing.
+	required, err := requireStringArgs(req, "ticket_id", "target_column", "comment")
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	target, err := req.RequireString("target_column")
+	id, err := t.resolveTicketID(ctx, req, required["ticket_id"])
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	comment, err := req.RequireString("comment")
-	if err != nil {
-		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
-	}
+	target, comment := required["target_column"], required["comment"]
 	var tk *domain.Ticket
 	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
 		out, err := t.svc.MoveTicket(ctx, id, domain.Column(target), comment)
@@ -1093,7 +1188,11 @@ func (t *Tools) handleCompleteTicket(ctx context.Context, req mcp.CallToolReques
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	id, ln := required["ticket_id"], required["learnings"]
+	id, err := t.resolveTicketID(ctx, req, required["ticket_id"])
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	ln := required["learnings"]
 	te, ws := optional["testing_evidence"], optional["work_summary"]
 	var tk *domain.Ticket
 	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
@@ -1111,15 +1210,20 @@ func (t *Tools) handleCompleteTicket(ctx context.Context, req mcp.CallToolReques
 }
 
 func (t *Tools) handleAssignTicketToPhase(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("ticket_id")
+	// Envelope-robust decode (see handleCreateTicket).
+	required, err := requireStringArgs(req, "ticket_id", "comment")
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	comment, err := req.RequireString("comment")
+	id, err := t.resolveTicketID(ctx, req, required["ticket_id"])
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	args := req.GetArguments()
+	comment := required["comment"]
+	args, err := decodeArgEnvelope(req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
 	var phasePtr *string
 	if v, ok := args["phase_id_or_slug"].(string); ok && v != "" {
 		phasePtr = &v
@@ -1212,14 +1316,18 @@ func (t *Tools) archiveFlipHandler(ctx context.Context, req mcp.CallToolRequest,
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
+	id, err := t.resolveTicketID(ctx, req, args["ticket_id"])
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
 	var tk *domain.Ticket
 	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
 		var out *domain.Ticket
 		var err error
 		if wantArchived {
-			out, err = t.svc.ArchiveTicket(ctx, args["ticket_id"], args["comment"])
+			out, err = t.svc.ArchiveTicket(ctx, id, args["comment"])
 		} else {
-			out, err = t.svc.UnarchiveTicket(ctx, args["ticket_id"], args["comment"])
+			out, err = t.svc.UnarchiveTicket(ctx, id, args["comment"])
 		}
 		if err != nil {
 			return err
@@ -1234,7 +1342,7 @@ func (t *Tools) archiveFlipHandler(ctx context.Context, req mcp.CallToolRequest,
 }
 
 func (t *Tools) handleDeleteTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("ticket_id")
+	id, err := t.resolveTicketArg(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -1250,14 +1358,17 @@ func (t *Tools) handleDeleteTicket(ctx context.Context, req mcp.CallToolRequest)
 // ---- Comments ----
 
 func (t *Tools) handleAddComment(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("ticket_id")
+	// Envelope-robust decode (see handleCreateTicket) so a rich/long comment
+	// body delivered as a json.RawMessage envelope round-trips intact.
+	required, err := requireStringArgs(req, "ticket_id", "body")
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
-	body, err := req.RequireString("body")
+	id, err := t.resolveTicketID(ctx, req, required["ticket_id"])
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
+	body := required["body"]
 	var c *domain.Comment
 	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
 		out, err := t.svc.CreateComment(ctx, id, body)
@@ -1274,7 +1385,7 @@ func (t *Tools) handleAddComment(ctx context.Context, req mcp.CallToolRequest) (
 }
 
 func (t *Tools) handleListComments(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("ticket_id")
+	id, err := t.resolveTicketArg(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
 	}
@@ -1307,6 +1418,14 @@ func (t *Tools) handleListCommentsScoped(ctx context.Context, req mcp.CallToolRe
 	pid, err := t.resolveProjectSlug(ctx, req)
 	if err != nil {
 		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+
+	// A single-ticket scope may be given as a shortcode; resolve it to a UUID.
+	if ticketID != "" {
+		ticketID, err = t.resolveTicketID(ctx, req, ticketID)
+		if err != nil {
+			return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+		}
 	}
 
 	in := domain.ListCommentsScopedInput{

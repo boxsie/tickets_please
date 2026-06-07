@@ -94,6 +94,37 @@ templ UnphasedRow(projectSlug string, total int, waves []WaveSectionProps, force
 	</details>
 }
 
+// PhaseSummary is the compact, non-collapsible phases readout for the project
+// overview. It shows each phase as a single row — name + the shared PhaseMeta
+// mini-bar/counts — and an Unphased tally, then links out to the full phases
+// page. Deliberately NOT the collapsible wave dump (PhaseList): the overview is
+// a dashboard, so it summarises phases and sends you to /phases to drill in.
+templ PhaseSummary(p PhaseListProps) {
+	<ul class="phase-summary" data-project-id={ p.ProjectID }>
+		for _, row := range p.Phases {
+			<li class="phase-summary-row" id={ "phase-summary-" + row.Phase.ID }>
+				<a class="phase-summary-name" href={ templ.SafeURL("/p/" + p.ProjectSlug + "/phases/" + row.Phase.Slug) }>{ row.Phase.Name }</a>
+				<div class="phase-summary-meta">
+					@PhaseMeta(row)
+				</div>
+			</li>
+		}
+		if p.UnphasedTotal > 0 {
+			<li class="phase-summary-row phase-summary-row-unphased">
+				<a class="phase-summary-name" href={ templ.SafeURL("/p/" + p.ProjectSlug + "/phases#unphased") }>
+					<em>No phase</em>
+				</a>
+				<div class="phase-summary-meta">
+					<span class="phase-row-counts">
+						<strong>{ itoa(p.UnphasedTotal) }</strong>
+						<span class="muted">{ UnphasedCountLabel(p.UnphasedTotal) }</span>
+					</span>
+				</div>
+			</li>
+		}
+	</ul>
+}
+
 // phaseRow is one collapsible row on the index — the summary line + the
 // expanded body holding wave sections. Split out from Index so the
 // per-phase block doesn't bloat the index template.

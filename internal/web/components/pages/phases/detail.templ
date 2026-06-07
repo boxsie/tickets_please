@@ -53,6 +53,26 @@ templ Detail(p DetailProps) {
 		<div class="phase-row-waves phase-detail-waves" id={ "phase-waves-" + p.Phase.ID }>
 			@PhaseWaves(p.Project.Slug, p.Waves)
 		</div>
+		if p.Phase.ActiveTicketCount > 0 {
+			<details class="archive-zone">
+				<summary>Archive phase</summary>
+				<p class="hint">
+					Archives all <strong>{ itoa(p.Phase.ActiveTicketCount) }</strong> active
+					{ TicketCountWord(p.Phase.ActiveTicketCount) } in <code>{ p.Phase.Slug }</code> in
+					one go — each gets an audit comment and drops out of the default lists and
+					search. Reversible: unarchive any ticket individually to bring it back.
+				</p>
+				<form
+					method="post"
+					action={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/archive") }
+					onsubmit={ templ.JSUnsafeFuncCall(ArchiveConfirmJS(p.Phase.Slug)) }
+				>
+					<input type="hidden" name="_csrf" value={ p.CSRF }/>
+					<input type="hidden" name="confirm" value="yes"/>
+					<button type="submit" class="btn btn-warn">Archive { itoa(p.Phase.ActiveTicketCount) } active { TicketCountWord(p.Phase.ActiveTicketCount) }</button>
+				</form>
+			</details>
+		}
 		<details class="danger-zone">
 			<summary>Delete phase</summary>
 			<p class="hint">

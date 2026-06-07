@@ -71,6 +71,13 @@ type Config struct {
 type AuthConfig struct {
 	BaseURL   string                        `koanf:"base_url"`
 	Providers map[string]AuthProviderConfig `koanf:"providers"`
+	// SessionMaxAgeHours controls how long a web-UI sign-in stays valid (the
+	// tp_user login cookie). >0 = that many hours; 0 (the default) = indefinite
+	// — you stay signed in until you explicitly log out. This is a single-user
+	// homelab UI, so convenience wins over tight session hygiene. Independent
+	// of the MCP agent-session TTL (agent_session_ttl_minutes), which is a
+	// different mechanism and auto-refreshes.
+	SessionMaxAgeHours int `koanf:"session_max_age_hours"`
 }
 
 // AuthProviderConfig is a single OAuth app's credentials.
@@ -81,23 +88,24 @@ type AuthProviderConfig struct {
 
 // Defaults mirrors examples/config.yaml. Keep them in lockstep.
 var defaults = map[string]any{
-	"data_dir":                  "./.tickets_please",
-	"data_root":                 "~/.tickets_please",
-	"remote_project_root":       "~/.tickets_please/projects",
-	"auto_commit":               true,
-	"embed_provider":            "ollama",
-	"ollama_url":                "http://localhost:11434",
-	"ollama_model":              "bge-m3",
-	"openai_api_key":            "",
-	"mcp_agent_key":             "", // empty = generated at startup
-	"mcp_agent_name":            "tickets_please_mcp",
-	"agent_session_ttl_minutes": 60,
-	"agent_session_max_minutes": 240,
-	"project_idle_minutes":      15,
-	"max_loaded_projects":       16,
-	"lock_timeout_seconds":      10,
-	"fsnotify_enabled":          true,
-	"enforce_dependencies":      false,
+	"data_dir":                   "./.tickets_please",
+	"data_root":                  "~/.tickets_please",
+	"remote_project_root":        "~/.tickets_please/projects",
+	"auto_commit":                true,
+	"embed_provider":             "ollama",
+	"ollama_url":                 "http://localhost:11434",
+	"ollama_model":               "bge-m3",
+	"openai_api_key":             "",
+	"mcp_agent_key":              "", // empty = generated at startup
+	"mcp_agent_name":             "tickets_please_mcp",
+	"agent_session_ttl_minutes":  60,
+	"agent_session_max_minutes":  240,
+	"project_idle_minutes":       15,
+	"max_loaded_projects":        16,
+	"lock_timeout_seconds":       10,
+	"fsnotify_enabled":           true,
+	"enforce_dependencies":       false,
+	"auth.session_max_age_hours": 0, // 0 = indefinite web sign-in
 }
 
 // configPath returns the absolute path of the per-user config file.

@@ -14,7 +14,8 @@ func TestAuthConfigUnmarshal(t *testing.T) {
 	k := koanf.New(".")
 	src := map[string]any{
 		"auth": map[string]any{
-			"base_url": "https://tickets.example.com",
+			"base_url":              "https://tickets.example.com",
+			"session_max_age_hours": 24,
 			"providers": map[string]any{
 				"github": map[string]any{"client_id": "gh-id", "client_secret": "gh-secret"},
 				"google": map[string]any{"client_id": "g-id", "client_secret": "g-secret"},
@@ -31,6 +32,9 @@ func TestAuthConfigUnmarshal(t *testing.T) {
 
 	if cfg.Auth.BaseURL != "https://tickets.example.com" {
 		t.Errorf("base_url = %q", cfg.Auth.BaseURL)
+	}
+	if cfg.Auth.SessionMaxAgeHours != 24 {
+		t.Errorf("session_max_age_hours = %d, want 24", cfg.Auth.SessionMaxAgeHours)
 	}
 	gh, ok := cfg.Auth.Providers["github"]
 	if !ok || gh.ClientID != "gh-id" || gh.ClientSecret != "gh-secret" {

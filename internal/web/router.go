@@ -126,6 +126,7 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /p/{slug}/phases/{phase}", slugRole(domain.RoleMember, a.handlePhaseUpdate))
 	mux.Handle("GET /p/{slug}/phases/{phase}/edit", slugRole(domain.RoleMember, a.handlePhaseEditForm))
 	mux.Handle("POST /p/{slug}/phases/{phase}/delete", slugRole(domain.RoleMember, a.handlePhaseDelete))
+	mux.Handle("POST /p/{slug}/phases/{phase}/archive", slugRole(domain.RoleMember, a.handlePhaseArchive))
 	mux.Handle("GET /p/{slug}/phases/{phase}/summary", slugRole(domain.RoleViewer, a.handlePhaseSummaryView))
 	mux.Handle("POST /p/{slug}/phases/{phase}/summary", slugRole(domain.RoleMember, a.handlePhaseSummaryUpdate))
 

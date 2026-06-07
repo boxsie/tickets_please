@@ -37,20 +37,6 @@ templ Detail(props DetailProps) {
 				@ui.ArchivedToggle(props.ToggleHref, props.ShowArchived)
 			</div>
 		</header>
-		<section class="phase-lead" aria-label="Phases">
-			<div class="phase-lead-head">
-				<h2>Phases</h2>
-				<a class="btn btn-sm" href={ templ.SafeURL("/p/" + p.Slug + "/phases/new") }>+ New phase</a>
-			</div>
-			if len(props.PhaseLead.Phases) > 0 || props.PhaseLead.UnphasedTotal > 0 {
-				@phases.PhaseList(props.PhaseLead)
-			} else {
-				<p class="hint">
-					No phases yet.
-					<a href={ templ.SafeURL("/p/" + p.Slug + "/phases/new") }>Create the first phase &rarr;</a>
-				</p>
-			}
-		</section>
 		<section class="metric-grid" aria-label="Headline metrics">
 			<div class="metric-card">
 				<div class="metric-label">Total</div>
@@ -70,7 +56,12 @@ templ Detail(props DetailProps) {
 			<div class="metric-card metric-card-success">
 				<div class="metric-label">Done</div>
 				<div class="metric-value">{ strconv.Itoa(m.Done) }</div>
-				<div class="metric-hint">completed</div>
+				<div class="metric-hint">{ donePercentHint(m) }</div>
+			</div>
+			<div class="metric-card">
+				<div class="metric-label">Phases</div>
+				<div class="metric-value">{ strconv.Itoa(len(props.PhaseLead.Phases)) }</div>
+				<div class="metric-hint">{ unphasedHint(props.PhaseLead.UnphasedTotal) }</div>
 			</div>
 		</section>
 		if m.Total > 0 {
@@ -95,6 +86,16 @@ templ Detail(props DetailProps) {
 						</li>
 					}
 				</ul>
+			}
+		}
+		@ui.Card(ui.CardProps{Title: "Phases", Href: "/p/" + p.Slug + "/phases", LinkLabel: "Browse all phases →"}) {
+			if len(props.PhaseLead.Phases) > 0 || props.PhaseLead.UnphasedTotal > 0 {
+				@phases.PhaseSummary(props.PhaseLead)
+			} else {
+				<p class="hint">
+					No phases yet.
+					<a href={ templ.SafeURL("/p/" + p.Slug + "/phases/new") }>Create the first phase &rarr;</a>
+				</p>
 			}
 		}
 		<div class="dashboard-grid">

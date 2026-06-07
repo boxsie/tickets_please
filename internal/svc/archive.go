@@ -204,6 +204,77 @@ func (s *Service) flipArchive(ctx context.Context, ticketID, comment string, wan
 	return cp, nil
 }
 
+// ArchivePhaseReport is the result of an ArchivePhase sweep: the phase that was
+// targeted plus the per-ticket outcome. Archived are the tickets this call
+// flipped; Skipped covers tickets already archived or that errored mid-sweep
+// (each carries the reason).
+type ArchivePhaseReport struct {
+	PhaseID   string
+	PhaseName string
+	Archived  []ApplyPolicyEntry
+	Skipped   []ApplyPolicyEntry
+}
+
+// ArchivePhase archives every active ticket assigned to a phase in one call —
+// the bulk counterpart to ArchiveTicket. It snapshots the phase's non-archived
+// tickets under the cache read lock, then archives each via ArchiveTicket so
+// every ticket still gets its own audit comment, commit, and event (the freeze
+// rule covers completion fields, not the archived flag, so done tickets archive
+// fine). Tickets already archived are reported as skipped, not re-flipped. A
+// ticket that errors mid-sweep (e.g. a concurrent delete) is recorded as skipped
+// rather than aborting the whole sweep. The phase record itself is untouched —
+// it simply ends up with zero active tickets, and any ticket can be individually
+// unarchived to undo.
+func (s *Service) ArchivePhase(ctx context.Context, projectIDOrSlug, phaseIDOrSlug, comment string) (*ArchivePhaseReport, error) {
+	if _, _, err := s.requireSession(ctx); err != nil {
+		return nil, err
+	}
+	if err := requireNonEmptyTrimmed("comment", comment); err != nil {
+		return nil, err
+	}
+	lp, _, err := s.Cache.Get(ctx, projectIDOrSlug)
+	if err != nil {
+		return nil, err
+	}
+
+	type candidate struct{ id, title string }
+	var candidates []candidate
+
+	lp.Lock.RLock()
+	ph, ok := resolvePhase(lp, phaseIDOrSlug)
+	if !ok {
+		lp.Lock.RUnlock()
+		return nil, fmt.Errorf("%w: phase %q in project %s", domain.ErrNotFound, phaseIDOrSlug, lp.Project.Slug)
+	}
+	report := &ArchivePhaseReport{PhaseID: ph.ID, PhaseName: ph.Name}
+	for id, t := range lp.Tickets {
+		if t.PhaseID == nil || *t.PhaseID != ph.ID {
+			continue
+		}
+		if t.Archived {
+			report.Skipped = append(report.Skipped, ApplyPolicyEntry{
+				TicketID: id, Title: t.Title, Reason: "already archived",
+			})
+			continue
+		}
+		candidates = append(candidates, candidate{id: id, title: t.Title})
+	}
+	lp.Lock.RUnlock()
+
+	// Deterministic order so the sweep (and its audit commits) are reproducible.
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].id < candidates[j].id })
+	for _, c := range candidates {
+		if _, err := s.ArchiveTicket(ctx, c.id, comment); err != nil {
+			report.Skipped = append(report.Skipped, ApplyPolicyEntry{
+				TicketID: c.id, Title: c.title, Reason: "archive failed: " + err.Error(),
+			})
+			continue
+		}
+		report.Archived = append(report.Archived, ApplyPolicyEntry{TicketID: c.id, Title: c.title})
+	}
+	return report, nil
+}
+
 // GetArchivePolicy returns the project's currently-resolved archive policy
 // (defaults merged with the project.yaml `archive` block). Read-only — used to
 // populate the settings form. Falls back to the canonical defaults when the

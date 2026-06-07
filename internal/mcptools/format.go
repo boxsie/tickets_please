@@ -182,7 +182,7 @@ func feedbackHint(entryKeys []string) map[string]any {
 	return map[string]any{
 		"tool":       "rate_search_result",
 		"entry_keys": entryKeys,
-		"note":       "If any of these were useful or misleading, rate them with rate_search_result so future searches improve.",
+		"note":       "Now rate these: call rate_search_result with these entry_keys and rating \"like\" (helpful) or \"dislike\" (stale/wrong — add a reason that records the fix). One call takes the whole batch. This is what tunes ranking; skipping it lets good results sink and rot float.",
 	}
 }
 

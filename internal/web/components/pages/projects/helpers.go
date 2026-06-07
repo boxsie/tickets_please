@@ -23,6 +23,26 @@ func segmentTitle(seg StatusSegment) string {
 	return fmt.Sprintf("%s: %d (%d%%)", seg.Label, seg.Count, seg.Percent)
 }
 
+// donePercentHint renders the sub-label on the "Done" metric card — the share
+// of the project that's complete, e.g. "62% complete". Falls back to a static
+// "completed" when there are no tickets to divide by.
+func donePercentHint(m DashboardMetrics) string {
+	if m.Total <= 0 {
+		return "completed"
+	}
+	return strconv.Itoa(m.Done*100/m.Total) + "% complete"
+}
+
+// unphasedHint renders the sub-label on the "Phases" metric card, noting how
+// many tickets sit outside any phase (the bucket worth surfacing on an
+// overview). Reads "all tickets phased" when none are loose.
+func unphasedHint(unphased int) string {
+	if unphased <= 0 {
+		return "all tickets phased"
+	}
+	return strconv.Itoa(unphased) + " unphased"
+}
+
 // confirmDelete builds the inline JS the danger-zone form uses to ask "are
 // you sure?" before POSTing the delete. Slugs are already URL-safe
 // (`[a-z0-9-]+`) so the JS-string escape is belt-and-braces — kept anyway so

@@ -963,7 +963,7 @@ When the LLM client spawns `tickets_please mcp` (the default subcommand of the s
 
 HTTP clients (centralised mode) connect via `/mcp` and **must** call `register_agent` once per connection to declare their identity and bind a `project_path`. After that, every `project_id_or_slug` parameter on subsequent tools becomes optional and falls back to the bound project. The one exception is `create_project`, which is auth-soft: an HTTP client with no project yet calls `create_project` first (passing `project_path`), then `register_agent` against the freshly-created project. Stdio clients pre-register at startup; they can still call `register_agent` to override the defaults.
 
-Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **35 tools** across projects, phases, tickets, comments, search, feedback, archive policy, and introspection.
+Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **36 tools** across projects, phases, tickets, comments, search, feedback, archive policy, and introspection.
 
 ### Projects (8)
 
@@ -978,7 +978,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `delete_project` | **Irreversibly delete** a project and everything in it — every phase, every ticket (active or done), every comment, every embedding. The data dir survives but its project content is wiped, the project is unmounted, and it's removed from the persistent registry. Per-ticket completion immutability is a per-ticket rule; the project-level delete bypasses it. |
 | `reembed_project` | Delete all `*.embedding.json` sidecars in a project and enqueue an async re-embed using the project's currently configured embedder. Use after switching `embed_provider`/`embed_model` in `project.yaml`, or to recover from corrupted sidecars. |
 
-### Phases (7)
+### Phases (8)
 
 | Tool | Description |
 |---|---|
@@ -988,6 +988,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `get_phase_summary` | Fetch a phase's full summary markdown. Read this when entering a phase, the same way you'd read a project summary. |
 | `update_phase` | Edit a phase's name, description, or summary. |
 | `delete_phase` | Delete a phase. Refuses if any tickets are still assigned to it. |
+| `archive_phase` | Bulk-archive every active ticket in a phase in one call — the phase counterpart to `archive_ticket`. Each ticket gets its own `system_archive` audit comment (done tickets included), drops out of default search/list, and can be individually unarchived. The phase record is left in place (use `delete_phase` to remove an empty phase). Comment required; returns an archived-vs-skipped report. |
 | `list_waves` | List the waves in a phase (or in the phase-less area of a project) with per-wave ticket counts. A wave is a soft integer grouping on tickets — no enforcement, just organization. Use this to see how a body of work decomposes. |
 
 ### Tickets (8)

@@ -208,6 +208,66 @@ func TestArchiveAndUnarchive_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestArchivePhase_BulkArchivesActiveTickets: ArchivePhase flips every active
+// ticket in the phase, skips ones already archived, and leaves phase-less
+// tickets (and the phase record) untouched.
+func TestArchivePhase_BulkArchivesActiveTickets(t *testing.T) {
+	s := freshServiceWithCfg(t, config.Config{})
+	ctx, _ := authedCtx(t, s)
+
+	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
+		t.Fatal(err)
+	}
+	ph, err := s.CreatePhase(ctx, "alpha", "Phase One", "", validSummary())
+	if err != nil {
+		t.Fatal(err)
+	}
+	phSlug := ph.Slug
+
+	mk := func(title string, phase *string) *domain.Ticket {
+		tk, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+			ProjectIDOrSlug: "alpha", Title: title, Body: "b", PhaseIDOrSlug: phase,
+		})
+		if err != nil {
+			t.Fatalf("CreateTicket %q: %v", title, err)
+		}
+		return tk
+	}
+	active := mk("in-phase-active", &phSlug)
+	prearchived := mk("in-phase-prearchived", &phSlug)
+	loose := mk("phase-less", nil)
+
+	if _, err := s.ArchiveTicket(ctx, prearchived.ID, "pre-archived"); err != nil {
+		t.Fatalf("pre-archive: %v", err)
+	}
+
+	rep, err := s.ArchivePhase(ctx, "alpha", phSlug, "retiring phase")
+	if err != nil {
+		t.Fatalf("ArchivePhase: %v", err)
+	}
+	if len(rep.Archived) != 1 || rep.Archived[0].TicketID != active.ID {
+		t.Errorf("archived = %+v, want just %s", rep.Archived, active.ID)
+	}
+	if len(rep.Skipped) != 1 || rep.Skipped[0].TicketID != prearchived.ID {
+		t.Errorf("skipped = %+v, want just %s (already archived)", rep.Skipped, prearchived.ID)
+	}
+	if got, _ := s.GetTicket(ctx, active.ID); !got.Archived {
+		t.Errorf("active ticket should be archived after ArchivePhase")
+	}
+	if got, _ := s.GetTicket(ctx, loose.ID); got.Archived {
+		t.Errorf("phase-less ticket must NOT be archived by ArchivePhase")
+	}
+
+	// Empty comment is rejected (every archive needs an audit rationale).
+	if _, err := s.ArchivePhase(ctx, "alpha", phSlug, "   "); err == nil {
+		t.Error("ArchivePhase with empty comment should reject")
+	}
+	// Unknown phase is a not-found, not a silent no-op.
+	if _, err := s.ArchivePhase(ctx, "alpha", "no-such-phase", "x"); err == nil {
+		t.Error("ArchivePhase on unknown phase should error")
+	}
+}
+
 // TestSearchTickets_IncludeArchivedFilter: archived tickets are excluded by
 // default; flipping the flag brings them back.
 func TestSearchTickets_IncludeArchivedFilter(t *testing.T) {

@@ -555,10 +555,12 @@ func TestPhaseDetail_WaveFocusFilter(t *testing.T) {
 	}
 }
 
-// TestProjectOverview_LeadsWithPhases: the project dashboard renders the lead
-// phases-with-waves block (reusing the index's PhaseList) with a "+ New phase"
-// action, and a phase holding open tickets defaults to expanded.
-func TestProjectOverview_LeadsWithPhases(t *testing.T) {
+// TestProjectOverview_ShowsCompactPhaseSummary: the project dashboard leads with
+// the headline stat cards and renders a *compact* phases summary (one row per
+// phase: name + mini-bar/counts) that links out to the full /phases page. It
+// must NOT dump the collapsible per-wave ticket drill-down — that belongs on
+// /phases, not the overview.
+func TestProjectOverview_ShowsCompactPhaseSummary(t *testing.T) {
 	srv, client, deps := freshServerWithDeps(t)
 	slug, _ := seedPhaseWaveTickets(t, deps, "lead") // phase "Alpha" with open tickets
 
@@ -570,18 +572,20 @@ func TestProjectOverview_LeadsWithPhases(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
 	}
-	for _, want := range []string{`class="phase-lead"`, "+ New phase", "/p/" + slug + "/phases/new", "Alpha", "ticket-w1", "data-phase-id="} {
+	// Stat cards lead; the compact phase summary names the phase and links to
+	// the full phases page.
+	for _, want := range []string{`class="metric-grid"`, `class="phase-summary"`, "Alpha", "/p/" + slug + "/phases", "Browse all phases"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("overview lead block missing %q\n%s", want, body)
+			t.Errorf("overview missing %q\n%s", want, body)
 		}
 	}
-	// A phase with open tickets defaults to expanded on the overview.
-	if !strings.Contains(body, ` open><summary class="phase-row-summary"`) {
-		t.Errorf("phase with open tickets should default to expanded on overview\n%s", body)
-	}
-	// The old tiny phases <table> is gone.
-	if strings.Contains(body, `<table class="data-table">`) {
-		t.Errorf("old phases table should be removed from the overview\n%s", body)
+	// The overview must NOT dump the phases page: no per-wave ticket rows, no
+	// collapsible phase <details>. (The ticket titles themselves can still show
+	// in the Ready/Recent lists — that's the dashboard doing its job.)
+	for _, unwanted := range []string{"phase-wave-ticket", "phase-row-summary"} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("overview should not dump the phases drill-down (found %q)\n%s", unwanted, body)
+		}
 	}
 }
 

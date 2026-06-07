@@ -12,6 +12,9 @@ func TestServerInstructionsContainsLoadBearingPhrases(t *testing.T) {
 	wants := []string{
 		"get_project_summary",
 		"search_learnings",
+		// The rate-after-search reflex — the other half of the feedback loop.
+		// Absent before ticket d40cf2c6; pinned so it can't silently regress.
+		"rate_search_result",
 		"ready_only=true",
 		"complete_ticket",
 		"Every column move requires a non-empty comment",

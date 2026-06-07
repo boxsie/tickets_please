@@ -311,6 +311,23 @@ func DeleteConfirmJS(slug string) string {
 	return "return confirm('Delete phase " + slug + "? Tickets must be reassigned or deleted first.');"
 }
 
+// TicketCountWord returns the bare noun "ticket"/"tickets" for a count — used
+// inline in copy where the number is rendered separately (e.g. "3 active
+// tickets"), unlike TicketCountLabel which prefixes the number itself.
+func TicketCountWord(n int) string {
+	if n == 1 {
+		return "ticket"
+	}
+	return "tickets"
+}
+
+// ArchiveConfirmJS is DeleteConfirmJS's gentler sibling: a final yes/no before
+// bulk-archiving every active ticket in a phase. Same trust boundary (slugs are
+// [a-z0-9-]+ server-side), and the copy makes clear it's reversible per-ticket.
+func ArchiveConfirmJS(slug string) string {
+	return "return confirm('Archive every active ticket in phase " + slug + "? Each can be unarchived individually later.');"
+}
+
 // BarWidthStyle returns the inline `width: X%` style for one progress-bar
 // segment — the single inline-style escape hatch the W1 brief permits for
 // server-computed widths. Returned as templ.SafeCSS so the templ runtime

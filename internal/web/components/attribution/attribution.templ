@@ -11,10 +11,24 @@ import (
 // doesn't glue the author to the time.
 templ Chip(t *domain.Ticket) {
 	<span class="ticket-attribution">
-		<span class="attribution-author">{ Label(t) }</span>
+		<span class="attribution-author">@authorLink(t)</span>
 		<span class="attribution-sep" aria-hidden="true">·</span>
 		@reltime.Time(t.CreatedAt)
 	</span>
+}
+
+// authorLink renders the credited author as a link where we have an id to link
+// to: the creating agent's /agents/{id} page, else the acting-for human's
+// /u/{id} page, else plain "unknown" text. Mirrors Label's fallback order so
+// the displayed name is identical — only now it's clickable.
+templ authorLink(t *domain.Ticket) {
+	if t.CreatedBy != nil && t.CreatedBy.ID != "" && t.CreatedBy.Name != "" {
+		@AgentLink(t.CreatedBy.ID, t.CreatedBy.Name)
+	} else if t.CreatedFor != nil && t.CreatedFor.UserID != "" && t.CreatedFor.DisplayName != "" {
+		@UserLink(t.CreatedFor.UserID, t.CreatedFor.DisplayName)
+	} else {
+		{ Label(t) }
+	}
 }
 
 // AgentLink renders an agent's name as a link to its /agents/{id} detail page.
@@ -53,7 +67,15 @@ templ ArchivedPill(archived bool) {
 // comment author and when they wrote it.
 templ CommentChip(c *domain.Comment) {
 	<span class="ticket-attribution">
-		<span class="attribution-author">{ commentLabel(c) }</span>
+		<span class="attribution-author">
+			if c.Author != nil && c.Author.ID != "" && c.Author.Name != "" {
+				@AgentLink(c.Author.ID, c.Author.Name)
+			} else if c.AuthorFor != nil && c.AuthorFor.UserID != "" && c.AuthorFor.DisplayName != "" {
+				@UserLink(c.AuthorFor.UserID, c.AuthorFor.DisplayName)
+			} else {
+				{ commentLabel(c) }
+			}
+		</span>
 		<span class="attribution-sep" aria-hidden="true">·</span>
 		@reltime.Time(c.CreatedAt)
 	</span>

@@ -4,125 +4,504 @@
 version: 1
 entries:
     learning:0aabb5af-5680-4be2-86cb-3220f0605e7e:
-        last_used_at: 2026-05-30T22:35:46.892037278Z
-        retrievals: 3
+        last_used_at: 2026-06-06T18:15:46.748838707Z
+        retrievals: 5
     learning:0bd25eb6-0dab-40a3-8541-d83872a096d7:
-        last_used_at: 2026-05-31T08:44:53.887546223Z
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 6
+    learning:0eb5c071-2e0e-40b5-bd88-b99dbe5e1431:
+        last_used_at: 2026-05-31T10:36:22.073023716Z
+        retrievals: 1
+    learning:00c6150a-4a9e-4832-8afc-826f284b2ed7:
+        last_used_at: 2026-06-06T18:59:05.740024266Z
+        retrievals: 2
+    learning:1ae08510-1a15-4e5b-bad7-e475e65b1df8:
+        likes: 1
+        last_feedback_at: 2026-06-06T10:55:11.892367418Z
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 5
+        reasons:
+            - 'Directly load-bearing for #083: confirmed Datastar @get(''/sse?topics='') subscribe form, patch-by-selector no-op-when-absent design (so the same delivery can carry index + detail patches), stable-id discipline for morph targets, and that sseTestServerDeps must SetPublisher(bus). Reused all of it.'
+    learning:1f0cda58-bb3c-4abe-acf7-50e85b1f8220:
+        last_used_at: 2026-06-06T18:15:46.748838707Z
         retrievals: 1
     learning:2e85a781-988e-4a0c-a8c1-3bfe120ebd5a:
-        last_used_at: 2026-05-30T22:35:46.892037278Z
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 4
+    learning:3a138760-be3d-4ca0-9562-2e081c7a22d2:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 2
     learning:3d543207-fca8-4d88-8be9-833730c0e757:
         last_used_at: 2026-05-30T21:59:27.621953558Z
         retrievals: 1
+    learning:3f2b1a5b-0b41-4307-978e-d4bbb6ba4b7b:
+        last_used_at: 2026-06-07T13:29:33.493018042Z
+        retrievals: 5
+    learning:4e5f97d5-1c58-4b46-96f0-3d22fa6b46ba:
+        last_used_at: 2026-06-06T18:15:46.748838707Z
+        retrievals: 2
     learning:5b91424f-c674-4421-a6d0-43200c9fbb74:
-        last_used_at: 2026-05-30T22:35:46.892037278Z
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 3
+    learning:5bb597ce-a55e-407f-b88a-165934602582:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 2
+    learning:5e5a3e26-2f45-480a-b5d5-d495b6969353:
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 6
     learning:5f8bcc39-f453-426a-96f4-d79582c2fe8b:
-        last_used_at: 2026-05-30T22:13:09.707909573Z
-        retrievals: 3
+        likes: 1
+        last_feedback_at: 2026-06-07T14:00:57.853026431Z
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 15
+        reasons:
+            - Explained the web cookie/session model (cookie holds agent_id, HMAC-signed, mint-on-miss) which clarified the tp_sid vs tp_user split for the sign-in TTL ticket (95b00884).
+    learning:6dc8d112-8c94-4546-acae-33b279089dbb:
+        last_used_at: 2026-06-07T13:29:33.493018042Z
+        retrievals: 1
     learning:7a5f29ac-df59-4a20-bd36-ba5d4b2cf015:
-        last_used_at: 2026-05-31T08:44:53.887546223Z
-        retrievals: 1
-    learning:9b06036c-c1e7-4f0e-b944-e7ce551822ff:
-        last_used_at: 2026-05-30T22:13:09.707909573Z
-        retrievals: 1
-    learning:9b39533a-b49c-4b60-9201-558566a2af89:
-        last_used_at: 2026-05-30T22:35:46.892037278Z
-        retrievals: 2
-    learning:9d0215ad-15d6-4d34-86c9-a2af7aae18a7:
-        last_used_at: 2026-05-30T21:59:27.621953558Z
-        retrievals: 2
-    learning:18b03ea4-b627-43ab-927e-40393740a5f6:
-        last_used_at: 2026-05-31T08:44:53.887546223Z
-        retrievals: 2
-    learning:60fd4d8c-4384-4a5b-adef-792b400a1470:
-        last_used_at: 2026-05-31T08:44:53.887546223Z
+        last_used_at: 2026-06-07T13:29:33.493018042Z
+        retrievals: 6
+    learning:7e0778e2-3944-41fb-bf26-c25662f74da9:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 5
+    learning:7e24731c-3a18-4904-ba1a-f295af0d74f8:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 3
+    learning:7e260496-5d06-4eef-85e9-712df0411d61:
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 5
+    learning:9b06036c-c1e7-4f0e-b944-e7ce551822ff:
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 6
+    learning:9b39533a-b49c-4b60-9201-558566a2af89:
+        last_used_at: 2026-05-31T11:15:57.839102218Z
+        retrievals: 3
+    learning:9d0215ad-15d6-4d34-86c9-a2af7aae18a7:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 5
+    learning:10b302f6-805b-4398-910e-d4aaa60983d1:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 1
+    learning:18b03ea4-b627-43ab-927e-40393740a5f6:
+        last_used_at: 2026-06-06T18:15:46.748838707Z
+        retrievals: 4
+    learning:19b36064-4082-41c3-896b-356b4e406695:
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 4
+    learning:60fd4d8c-4384-4a5b-adef-792b400a1470:
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 14
+    learning:63c73101-1db6-4f0e-ace3-5a29840f092b:
+        last_used_at: 2026-05-31T09:06:17.509755057Z
+        retrievals: 1
+    learning:67de6377-896b-46df-a718-6ce6b836db64:
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 4
+    learning:67f3323e-22b2-4f1f-8cc7-55376b62eb95:
+        likes: 1
+        last_feedback_at: 2026-06-06T10:55:11.866086164Z
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 8
+        reasons:
+            - 'Directly load-bearing for #083: confirmed Datastar @get(''/sse?topics='') subscribe form, patch-by-selector no-op-when-absent design (so the same delivery can carry index + detail patches), stable-id discipline for morph targets, and that sseTestServerDeps must SetPublisher(bus). Reused all of it.'
+    learning:69c057de-475e-4d7f-b32c-1c818538688f:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 1
+    learning:73e63f34-49f4-4923-ad42-8cb8fda539ea:
+        last_used_at: 2026-06-06T17:05:30.150225404Z
+        retrievals: 2
     learning:82ff144b-3a84-44d8-b153-3ee6b055bb2c:
-        last_used_at: 2026-05-30T22:34:44.017709294Z
+        last_used_at: 2026-06-06T17:05:30.150225404Z
+        retrievals: 3
+    learning:84ed32f2-feea-4458-9976-78558d3567ac:
+        last_used_at: 2026-06-06T19:33:16.053021795Z
         retrievals: 1
+    learning:86c81164-4e01-4e1e-9274-c87317a282b9:
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 4
+    learning:89efc4cf-6efc-4020-8edd-c657db035376:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 1
+    learning:249ce6f7-692e-4513-bedc-225846bbaea9:
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 5
     learning:251f3ad6-545d-4918-b246-934d88574a58:
-        last_used_at: 2026-05-30T22:13:09.707909573Z
-        retrievals: 1
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 5
     learning:346a3f21-f6f8-438d-a09c-5fc7012e3607:
-        last_used_at: 2026-05-30T22:34:44.017709294Z
+        last_used_at: 2026-06-06T19:11:49.904835142Z
+        retrievals: 4
+    learning:543a4382-f5b5-4a38-af32-4a4fb98f387a:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 1
     learning:631f4c4d-cb0a-4742-a32a-ede98c4e7b01:
-        last_used_at: 2026-05-30T22:13:09.707909573Z
-        retrievals: 1
-    learning:51153b49-dbaf-4810-9869-244127652e81:
-        last_used_at: 2026-05-30T22:34:44.017709294Z
-        retrievals: 1
-    learning:56354bfd-a1c1-4c49-80ae-27ae2735a7b2:
-        last_used_at: 2026-05-30T22:34:44.017709294Z
-        retrievals: 1
-    learning:398152e8-7d52-49bb-ad96-5de8e70cadef:
-        last_used_at: 2026-05-31T08:44:53.887546223Z
-        retrievals: 1
-    learning:a83c9df3-b3cd-4fa6-8805-d3ccd75b8237:
-        last_used_at: 2026-05-30T22:34:44.017709294Z
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 5
+    learning:926fabb0-cf17-4be3-b0ce-baa29bdf5087:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 4
+    learning:5688ace3-37cc-40bb-827d-fa0c8fd3d1d3:
+        likes: 1
+        last_feedback_at: 2026-06-07T13:34:50.094206544Z
+        last_used_at: 2026-06-07T13:29:33.493018042Z
+        retrievals: 3
+        reasons:
+            - 'Pinpointed the exact root cause and fix for the rich-text body bug (ticket 118/3d6cbfd7): RequireString reads only via GetArguments() which is nil on a json.RawMessage envelope; port to requireStringArgs/BindArguments. Directly actionable.'
+    learning:5689a5ca-f3f3-41ef-8586-4e581c7cf908:
+        last_used_at: 2026-06-07T13:35:05.476489612Z
+        retrievals: 4
+    learning:5830e479-ec7c-4b62-ad14-ecac9f3cf32a:
+        last_used_at: 2026-06-07T13:35:05.476489612Z
+        retrievals: 5
+    learning:6106d6ed-726e-441f-905b-89abb5de3d4a:
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 6
+    learning:6115a046-bd14-4701-b6f6-268a6b8012d6:
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 6
+    learning:7266d758-697d-4f35-afd6-ed73e81cbe40:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 2
+    learning:8888d70d-dca3-4cf4-b6a7-d5572bb1e77f:
+        last_used_at: 2026-06-07T13:35:05.476489612Z
+        retrievals: 8
+    learning:51153b49-dbaf-4810-9869-244127652e81:
+        last_used_at: 2026-06-07T13:35:05.476489612Z
+        retrievals: 7
+    learning:56354bfd-a1c1-4c49-80ae-27ae2735a7b2:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 4
+    learning:302616f8-1dde-4875-a6ad-e1d0eded019d:
+        last_used_at: 2026-06-06T18:15:46.748838707Z
+        retrievals: 2
+    learning:398152e8-7d52-49bb-ad96-5de8e70cadef:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 5
+    learning:8841449f-29bc-4ac4-9896-dfb5ac3a3df6:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 5
+    learning:54779339-2197-461b-9644-86be64b2958c:
+        last_used_at: 2026-06-06T18:37:19.765747293Z
+        retrievals: 2
+    learning:98403023-605b-45f3-8461-2a389b06fce2:
+        last_used_at: 2026-06-07T13:29:33.493018042Z
+        retrievals: 5
+    learning:a7f80d53-ade2-43e2-bd3e-8dafeb7a06e2:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 2
+    learning:a35a1468-0ca6-449e-b4cd-ad9b9baa504f:
+        last_used_at: 2026-06-06T18:37:19.765747293Z
+        retrievals: 3
+    learning:a35d3dbe-9b56-471e-9469-418b68f29609:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 2
+    learning:a83c9df3-b3cd-4fa6-8805-d3ccd75b8237:
+        likes: 1
+        last_feedback_at: 2026-06-07T13:43:51.390125208Z
+        last_used_at: 2026-06-07T13:35:05.476489612Z
+        retrievals: 8
+        reasons:
+            - Confirmed Service.GetTicket walks to find the host project and there's no slug-direct entry; guided where to add ResolveTicketRef and that resolution must walk store records (domain.Ticket has no Number). Accurate for ticket 118-shortcodes work.
+    learning:a28797b8-51c3-490b-bd6c-fda9f7cfd1bc:
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 4
+    learning:adac9c80-0698-435a-a7ad-eeac774e54a1:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 3
+    learning:adcc2e82-df85-44bc-aab9-4f9ff4cdbbdf:
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 5
     learning:b0e89cfd-168a-43fb-9434-5bd3ac913e32:
-        last_used_at: 2026-05-30T22:34:44.017709294Z
+        last_used_at: 2026-06-07T13:35:05.476489612Z
+        retrievals: 5
+    learning:b4c3fa13-95b3-47bb-a36a-137a1418db03:
+        likes: 1
+        last_feedback_at: 2026-06-06T11:46:05.334480847Z
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 13
+        reasons:
+            - 'Both load-bearing for #077: the User+Membership store learning gave the exact per-project-subdir layout + central-data-root + GrantMembership idempotency I mirrored for InvitationStore; the acting-for learning confirmed the membership-check seam (GetMembership / GrantMembership) the invitations UI populates. Reused both patterns verbatim.'
+    learning:b8b70091-38b5-4696-a6b5-c4b5f2197ba8:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 2
     learning:b26f2ced-5fec-48b4-af89-9b76ed544ddc:
-        last_used_at: 2026-05-30T22:34:44.017709294Z
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 8
+    learning:b776f3d1-fc7a-4321-bd7a-7e49eb55c48d:
+        last_used_at: 2026-06-07T13:35:05.476489612Z
         retrievals: 1
-    learning:c9d8e384-39a8-4ec2-8a69-d1e83230ba95:
-        last_used_at: 2026-05-31T08:44:53.887546223Z
+    learning:b69056f8-a0b8-4ff5-bd2e-ecc8659290e1:
+        last_used_at: 2026-06-06T10:56:05.870596536Z
+        retrievals: 1
+    learning:bb3ebb84-db2e-43a0-a1e8-6b271990c90d:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 1
+    learning:bda1ec08-865c-499f-bc75-76baabcabd42:
+        last_used_at: 2026-06-07T13:35:05.476489612Z
         retrievals: 4
-    learning:cd10ba84-bd78-44d5-99a3-184433311132:
-        last_used_at: 2026-05-30T22:34:44.017709294Z
+    learning:c9d8e384-39a8-4ec2-8a69-d1e83230ba95:
+        last_used_at: 2026-06-06T18:15:46.748838707Z
+        retrievals: 7
+    learning:c8589bad-09e5-4c97-8cd4-b8959adde05b:
+        last_used_at: 2026-06-07T13:29:33.493018042Z
         retrievals: 1
+    learning:c455009c-87b1-461d-a517-a9d051a28567:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 1
+    learning:c4325502-ca3c-448f-9b0c-214318da30fc:
+        last_used_at: 2026-06-06T18:37:19.765747293Z
+        retrievals: 1
+    learning:cd10ba84-bd78-44d5-99a3-184433311132:
+        last_used_at: 2026-06-06T18:15:46.748838707Z
+        retrievals: 2
     learning:d0578ee4-c4dc-43df-91cf-2f1a2093301d:
-        last_used_at: 2026-05-30T22:35:46.892037278Z
-        retrievals: 3
+        last_used_at: 2026-06-06T18:15:46.748838707Z
+        retrievals: 5
+    learning:d692b96c-5af6-43b6-9ac8-e6957c607e05:
+        last_used_at: 2026-06-06T18:59:05.740024266Z
+        retrievals: 1
     learning:dc6b7865-4c20-4ffc-8c6e-189fd71c9e7e:
         last_used_at: 2026-05-30T22:35:46.892037278Z
         retrievals: 1
+    learning:dc20c148-0e8d-41f3-9a41-4ea1494b49de:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 2
     learning:de1a552e-d51b-4867-85e5-a5e910de23c8:
-        last_used_at: 2026-05-30T22:13:09.707909573Z
-        retrievals: 2
+        last_used_at: 2026-06-06T19:33:16.053021795Z
+        retrievals: 6
     learning:e0366d37-7ca0-45c1-8532-3402c9ab0172:
-        last_used_at: 2026-05-30T22:35:46.892037278Z
-        retrievals: 2
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 3
+    learning:e749b038-cab9-4794-9d26-1f246843c17d:
+        last_used_at: 2026-06-07T13:35:05.476489612Z
+        retrievals: 6
     learning:e26978cd-54ef-4a12-85ba-42c1b65970dc:
-        last_used_at: 2026-05-30T22:13:09.707909573Z
-        retrievals: 1
+        last_used_at: 2026-06-07T10:11:55.724827191Z
+        retrievals: 8
+    learning:ea7117f6-ed16-4724-b733-cbc464057412:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 2
+    learning:edfb2ea5-ad6b-450c-8345-c3a97e695005:
+        last_used_at: 2026-06-07T13:29:33.493018042Z
+        retrievals: 4
+    learning:ef7e0770-45b3-4d8a-b4d7-ef68d7acdb4f:
+        last_used_at: 2026-06-06T20:26:47.619129093Z
+        retrievals: 3
     learning:f0e9dce9-8e7b-4127-805b-848fa6ad09bc:
-        last_used_at: 2026-05-31T08:44:53.887546223Z
-        retrievals: 1
+        last_used_at: 2026-06-06T18:15:46.748838707Z
+        retrievals: 5
     learning:f01eeefa-59a9-4701-a39a-a7fbfdc93c00:
-        last_used_at: 2026-05-31T08:44:53.887546223Z
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 8
+    learning:f9bb5d13-8b39-43da-a4de-c90352218df4:
+        likes: 1
+        last_feedback_at: 2026-06-06T11:46:05.361822984Z
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 10
+        reasons:
+            - 'Both load-bearing for #077: the User+Membership store learning gave the exact per-project-subdir layout + central-data-root + GrantMembership idempotency I mirrored for InvitationStore; the acting-for learning confirmed the membership-check seam (GetMembership / GrantMembership) the invitations UI populates. Reused both patterns verbatim.'
+    learning:f988dea5-790f-4ea1-a817-6c388fed961c:
+        last_used_at: 2026-06-07T12:04:05.918915863Z
+        retrievals: 3
+    learning:fc82b003-5b0f-434d-a6cd-fa1c9d92e022:
+        last_used_at: 2026-06-07T13:52:09.607717354Z
+        retrievals: 6
+    learning:fe3abf79-9e61-4c88-9ea1-7836a7199d6f:
+        last_used_at: 2026-05-31T14:01:22.892222023Z
         retrievals: 1
+    ticket:0c72c748-a115-4d54-b115-1d51e77dfb36:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 3
+    ticket:0eb5c071-2e0e-40b5-bd88-b99dbe5e1431:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 1
+    ticket:1ae08510-1a15-4e5b-bad7-e475e65b1df8:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 2
+    ticket:2e85a781-988e-4a0c-a8c1-3bfe120ebd5a:
+        last_used_at: 2026-06-06T18:15:46.57168363Z
+        retrievals: 1
+    ticket:3a138760-be3d-4ca0-9562-2e081c7a22d2:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 4
+    ticket:3d6cbfd7-67ca-4d93-b679-1039001fa686:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 3
+    ticket:3e3c942c-ee79-4a03-ad91-79c97fe4460f:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 4
+    ticket:3f2b1a5b-0b41-4307-978e-d4bbb6ba4b7b:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 4
+    ticket:5b91424f-c674-4421-a6d0-43200c9fbb74:
+        last_used_at: 2026-06-02T21:48:38.492988157Z
+        retrievals: 1
+    ticket:5e5a3e26-2f45-480a-b5d5-d495b6969353:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 1
+    ticket:5f8bcc39-f453-426a-96f4-d79582c2fe8b:
+        last_used_at: 2026-05-31T14:03:00.040777152Z
+        retrievals: 2
+    ticket:7e24d658-4c78-4fc3-9e51-53f1948c410d:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 2
+    ticket:7e0778e2-3944-41fb-bf26-c25662f74da9:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 4
+    ticket:7e24731c-3a18-4904-ba1a-f295af0d74f8:
+        last_used_at: 2026-06-02T21:53:37.604570205Z
+        retrievals: 2
+    ticket:7e260496-5d06-4eef-85e9-712df0411d61:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 1
+    ticket:9b06036c-c1e7-4f0e-b944-e7ce551822ff:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 4
+    ticket:9b39533a-b49c-4b60-9201-558566a2af89:
+        last_used_at: 2026-06-06T18:15:46.57168363Z
+        retrievals: 1
+    ticket:9d0215ad-15d6-4d34-86c9-a2af7aae18a7:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 2
     ticket:14f0726d-b486-46b1-a04d-6a52df2ca092:
         last_used_at: 2026-05-31T09:02:42.370727628Z
+        retrievals: 1
+    ticket:67de6377-896b-46df-a718-6ce6b836db64:
+        last_used_at: 2026-06-02T21:53:37.604570205Z
+        retrievals: 2
+    ticket:86c81164-4e01-4e1e-9274-c87317a282b9:
+        last_used_at: 2026-05-31T14:03:00.040777152Z
+        retrievals: 3
+    ticket:95b00884-c7e5-4e71-b114-9d19eff8dd9e:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 3
+    ticket:249ce6f7-692e-4513-bedc-225846bbaea9:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 2
+    ticket:251f3ad6-545d-4918-b246-934d88574a58:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 5
+    ticket:346a3f21-f6f8-438d-a09c-5fc7012e3607:
+        last_used_at: 2026-06-02T21:48:35.55183606Z
+        retrievals: 1
+    ticket:453e38fa-3786-4613-a715-de6e7a204e30:
+        last_used_at: 2026-05-31T10:37:34.131826938Z
         retrievals: 1
     ticket:543a4382-f5b5-4a38-af32-4a4fb98f387a:
         last_used_at: 2026-05-31T09:02:42.370727628Z
         retrievals: 1
+    ticket:631f4c4d-cb0a-4742-a32a-ede98c4e7b01:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 5
     ticket:5688ace3-37cc-40bb-827d-fa0c8fd3d1d3:
-        last_used_at: 2026-05-31T09:02:42.370727628Z
-        retrievals: 1
+        likes: 1
+        last_feedback_at: 2026-06-02T21:50:17.815122921Z
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 6
+        reasons:
+            - Root-cause writeup for the RequireString/GetArguments envelope bug — directly applicable to the new "rich text in ticket bodies" ticket (3d6cbfd7); its learnings named create_ticket/update_ticket as the next likely victims.
     ticket:5689a5ca-f3f3-41ef-8586-4e581c7cf908:
         last_used_at: 2026-05-31T09:02:42.370727628Z
         retrievals: 1
     ticket:5830e479-ec7c-4b62-ad14-ecac9f3cf32a:
         last_used_at: 2026-05-31T09:02:42.370727628Z
         retrievals: 1
+    ticket:8888d70d-dca3-4cf4-b6a7-d5572bb1e77f:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 4
+    ticket:9068aa1e-15db-446b-8f95-4d7ddc2a7742:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 1
+    ticket:51153b49-dbaf-4810-9869-244127652e81:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 3
+    ticket:8841449f-29bc-4ac4-9896-dfb5ac3a3df6:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 7
     ticket:54779339-2197-461b-9644-86be64b2958c:
         last_used_at: 2026-05-31T09:02:42.370727628Z
         retrievals: 1
+    ticket:98403023-605b-45f3-8461-2a389b06fce2:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 4
+    ticket:a35a1468-0ca6-449e-b4cd-ad9b9baa504f:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 4
+    ticket:a35d3dbe-9b56-471e-9469-418b68f29609:
+        last_used_at: 2026-06-06T18:15:46.57168363Z
+        retrievals: 1
     ticket:a83c9df3-b3cd-4fa6-8805-d3ccd75b8237:
-        last_used_at: 2026-05-31T09:02:42.370727628Z
+        last_used_at: 2026-06-02T21:48:38.492988157Z
+        retrievals: 3
+    ticket:a28797b8-51c3-490b-bd6c-fda9f7cfd1bc:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 3
+    ticket:adac9c80-0698-435a-a7ad-eeac774e54a1:
+        last_used_at: 2026-06-06T18:15:46.57168363Z
+        retrievals: 3
+    ticket:adcc2e82-df85-44bc-aab9-4f9ff4cdbbdf:
+        likes: 1
+        last_feedback_at: 2026-06-06T19:41:23.479115579Z
+        last_used_at: 2026-06-06T19:41:23.637553697Z
         retrievals: 1
     ticket:b0e89cfd-168a-43fb-9434-5bd3ac913e32:
         last_used_at: 2026-05-31T09:02:42.370727628Z
         retrievals: 1
-    ticket:bda1ec08-865c-499f-bc75-76baabcabd42:
-        last_used_at: 2026-05-31T09:02:42.370727628Z
+    ticket:b4c3fa13-95b3-47bb-a36a-137a1418db03:
+        last_used_at: 2026-06-02T21:53:37.604570205Z
+        retrievals: 3
+    ticket:b8b70091-38b5-4696-a6b5-c4b5f2197ba8:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 5
+    ticket:b26f2ced-5fec-48b4-af89-9b76ed544ddc:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 4
+    ticket:b69056f8-a0b8-4ff5-bd2e-ecc8659290e1:
+        last_used_at: 2026-06-06T18:15:46.57168363Z
         retrievals: 1
+    ticket:ba05e2f9-d6a2-4466-aebb-26567c9ad266:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 1
+    ticket:bd3b7fb8-c230-4ecc-8edf-2bb227962607:
+        last_used_at: 2026-06-06T18:15:46.57168363Z
+        retrievals: 1
+    ticket:bda1ec08-865c-499f-bc75-76baabcabd42:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 6
+    ticket:c9d8e384-39a8-4ec2-8a69-d1e83230ba95:
+        last_used_at: 2026-06-02T21:48:35.55183606Z
+        retrievals: 1
+    ticket:c8589bad-09e5-4c97-8cd4-b8959adde05b:
+        last_used_at: 2026-06-06T18:15:46.57168363Z
+        retrievals: 3
+    ticket:ca4cfeb3-98d7-4c6d-b85e-ccb8fc783f17:
+        last_used_at: 2026-06-06T18:15:46.57168363Z
+        retrievals: 1
+    ticket:cd10ba84-bd78-44d5-99a3-184433311132:
+        last_used_at: 2026-06-06T18:15:46.57168363Z
+        retrievals: 2
+    ticket:cedc96f6-05de-4fc2-a364-b240ad33c899:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 3
+    ticket:da60fd70-abd5-4a6d-a1aa-f7f2c73cb665:
+        last_used_at: 2026-05-31T10:37:35.905808638Z
+        retrievals: 2
+    ticket:dc20c148-0e8d-41f3-9a41-4ea1494b49de:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 3
+    ticket:e26978cd-54ef-4a12-85ba-42c1b65970dc:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 1
+    ticket:ef7e0770-45b3-4d8a-b4d7-ef68d7acdb4f:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 3
     ticket:f6c8d7a6-51a9-4f5f-a2fc-a715ab762b4a:
         last_used_at: 2026-05-31T09:02:42.370727628Z
         retrievals: 1
+    ticket:f9bb5d13-8b39-43da-a4de-c90352218df4:
+        last_used_at: 2026-06-06T20:26:46.614977914Z
+        retrievals: 4
+    ticket:f73091f2-e46c-4d65-9ac3-b5a486fb2117:
+        last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 2

@@ -68,3 +68,23 @@ fsnotify_enabled: true
 # enforce_dependencies — when true, MoveTicket → in_progress blocks if BlockedBy is non-empty.
 #                         Default false: warn-log + annotate the move comment.
 enforce_dependencies: false
+
+# Web UI auth (the `serve` browser frontend). Optional — omit the whole block
+# for a localhost-only instance with no OAuth login.
+auth:
+  # base_url — public origin used to build OAuth redirect URLs and to decide
+  # whether cookies get the Secure flag. Leave empty to infer from the request.
+  base_url: ""
+  # session_max_age_hours — how long a web sign-in stays valid (the tp_user
+  # login cookie). 0 (default) = indefinite: you stay signed in until you
+  # explicitly log out. Set e.g. 24 for a one-day window. This is the
+  # human login window only; it's independent of agent_session_ttl_minutes.
+  session_max_age_hours: 0
+  # providers — OAuth apps. A provider is shown only when both id+secret are set.
+  # providers:
+  #   github:
+  #     client_id: ""
+  #     client_secret: ""
+  #   google:
+  #     client_id: ""
+  #     client_secret: ""

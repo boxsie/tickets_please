@@ -528,6 +528,44 @@ func (a *app) handlePhaseDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/p/"+slug+"/phases", http.StatusSeeOther)
 }
 
+// handlePhaseArchive serves POST /p/{slug}/phases/{phase}/archive — bulk-archive
+// every active ticket in the phase. Requires explicit confirmation (the form
+// submits confirm=yes) since it touches many tickets at once. Archiving is
+// reversible per-ticket via unarchive, so this is a warn-level action, not the
+// red danger-zone delete.
+func (a *app) handlePhaseArchive(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	phaseSlug := r.PathValue("phase")
+	if r.Form.Get("confirm") != "yes" {
+		a.renderer.RenderTemplError(w, r, http.StatusBadRequest, errors.New("archive requires explicit confirmation; use the form on the phase page"))
+		return
+	}
+	comment := strings.TrimSpace(r.Form.Get("comment"))
+	if comment == "" {
+		comment = "Bulk-archived with phase " + phaseSlug
+	}
+	report, err := a.deps.Service.ArchivePhase(r.Context(), slug, phaseSlug, comment)
+	if err != nil {
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
+		return
+	}
+	n := len(report.Archived)
+	msg := "Archived " + strconv.Itoa(n) + " " + pluralTickets(n) + " in phase " + report.PhaseName + "."
+	if n == 0 {
+		msg = "No active tickets to archive in phase " + report.PhaseName + "."
+	}
+	SetFlash(w, r, "success", msg)
+	http.Redirect(w, r, "/p/"+slug+"/phases/"+phaseSlug, http.StatusSeeOther)
+}
+
+// pluralTickets returns "ticket" / "tickets" for a count, for flash copy.
+func pluralTickets(n int) string {
+	if n == 1 {
+		return "ticket"
+	}
+	return "tickets"
+}
+
 // --- summary view + in-place editor ---------------------------------------
 
 func (a *app) handlePhaseSummaryView(w http.ResponseWriter, r *http.Request) {

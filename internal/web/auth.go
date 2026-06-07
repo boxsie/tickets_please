@@ -27,7 +27,11 @@ const (
 	// same server secret as tp_sid but a distinct purpose label.
 	userCookieName    = "tp_user"
 	userCookiePurpose = "tp-user-v1"
-	userCookieMaxAge  = 30 * 24 * 60 * 60 // 30 days, sliding (re-set on each login)
+	// indefiniteCookieMaxAge is what "indefinite" resolves to: a ~10-year
+	// cookie. (http.Cookie MaxAge==0 means a session cookie that dies on
+	// browser close — the opposite of what we want — so indefinite is encoded
+	// as a very long finite Max-Age instead.)
+	indefiniteCookieMaxAge = 10 * 365 * 24 * 60 * 60
 
 	// oauthStateCookie holds the short-lived signed CSRF state + redirect
 	// target for an in-flight OAuth handshake. Per the ticket hint, state lives
@@ -226,11 +230,23 @@ func (a *app) writeUserCookie(w http.ResponseWriter, r *http.Request, userID str
 		Name:     userCookieName,
 		Value:    value,
 		Path:     "/",
-		MaxAge:   userCookieMaxAge,
+		MaxAge:   a.userCookieMaxAge(),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   a.secureCookies(r),
 	})
+}
+
+// userCookieMaxAge returns the tp_user login cookie's Max-Age in seconds,
+// driven by auth.session_max_age_hours: >0 → that many hours; <=0 (the
+// default) → indefinite. This is the web sign-in window the user asked to make
+// long-lived for the single-user homelab; it's independent of the MCP
+// agent-session TTL.
+func (a *app) userCookieMaxAge() int {
+	if h := a.deps.Cfg.Auth.SessionMaxAgeHours; h > 0 {
+		return h * 60 * 60
+	}
+	return indefiniteCookieMaxAge
 }
 
 // userIDFromCookie returns the user id from a valid tp_user cookie, or "" when
