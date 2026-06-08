@@ -31,6 +31,9 @@ entries:
     learning:3a138760-be3d-4ca0-9562-2e081c7a22d2:
         last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 2
+    learning:3d6cbfd7-67ca-4d93-b679-1039001fa686:
+        last_used_at: 2026-06-08T15:34:23.452876519Z
+        retrievals: 1
     learning:3d543207-fca8-4d88-8be9-833730c0e757:
         last_used_at: 2026-05-30T21:59:27.621953558Z
         retrievals: 1
@@ -52,8 +55,8 @@ entries:
     learning:5f8bcc39-f453-426a-96f4-d79582c2fe8b:
         likes: 1
         last_feedback_at: 2026-06-07T14:00:57.853026431Z
-        last_used_at: 2026-06-07T13:52:09.607717354Z
-        retrievals: 15
+        last_used_at: 2026-06-08T15:34:23.452876519Z
+        retrievals: 16
         reasons:
             - Explained the web cookie/session model (cookie holds agent_id, HMAC-signed, mint-on-miss) which clarified the tp_sid vs tp_user split for the sign-in TTL ticket (95b00884).
     learning:6dc8d112-8c94-4546-acae-33b279089dbb:
@@ -132,6 +135,13 @@ entries:
     learning:346a3f21-f6f8-438d-a09c-5fc7012e3607:
         last_used_at: 2026-06-06T19:11:49.904835142Z
         retrievals: 4
+    learning:534adaa9-950a-468a-b490-1b269ac6f25c:
+        likes: 1
+        last_feedback_at: 2026-06-08T15:34:45.831653251Z
+        last_used_at: 2026-06-08T15:34:23.452876519Z
+        retrievals: 1
+        reasons:
+            - 'Exact context for adding UUID-prefix resolution: parseTicketShortcode shape-classification, WalkTickets number lookup, ResolveProjectStore(slug), defaultProjectSlug lenient helper. Building prefix matching on the same WalkTickets pass.'
     learning:543a4382-f5b5-4a38-af32-4a4fb98f387a:
         last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 1
@@ -149,11 +159,11 @@ entries:
         reasons:
             - 'Pinpointed the exact root cause and fix for the rich-text body bug (ticket 118/3d6cbfd7): RequireString reads only via GetArguments() which is nil on a json.RawMessage envelope; port to requireStringArgs/BindArguments. Directly actionable.'
     learning:5689a5ca-f3f3-41ef-8586-4e581c7cf908:
-        last_used_at: 2026-06-07T13:35:05.476489612Z
-        retrievals: 4
-    learning:5830e479-ec7c-4b62-ad14-ecac9f3cf32a:
-        last_used_at: 2026-06-07T13:35:05.476489612Z
+        last_used_at: 2026-06-08T15:34:23.452876519Z
         retrievals: 5
+    learning:5830e479-ec7c-4b62-ad14-ecac9f3cf32a:
+        last_used_at: 2026-06-08T15:34:23.452876519Z
+        retrievals: 6
     learning:6106d6ed-726e-441f-905b-89abb5de3d4a:
         last_used_at: 2026-06-07T10:11:55.724827191Z
         retrievals: 6
@@ -164,8 +174,8 @@ entries:
         last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 2
     learning:8888d70d-dca3-4cf4-b6a7-d5572bb1e77f:
-        last_used_at: 2026-06-07T13:35:05.476489612Z
-        retrievals: 8
+        last_used_at: 2026-06-08T15:34:23.452876519Z
+        retrievals: 9
     learning:51153b49-dbaf-4810-9869-244127652e81:
         last_used_at: 2026-06-07T13:35:05.476489612Z
         retrievals: 7
@@ -199,8 +209,8 @@ entries:
     learning:a83c9df3-b3cd-4fa6-8805-d3ccd75b8237:
         likes: 1
         last_feedback_at: 2026-06-07T13:43:51.390125208Z
-        last_used_at: 2026-06-07T13:35:05.476489612Z
-        retrievals: 8
+        last_used_at: 2026-06-08T15:34:23.452876519Z
+        retrievals: 9
         reasons:
             - Confirmed Service.GetTicket walks to find the host project and there's no slug-direct entry; guided where to add ResolveTicketRef and that resolution must walk store records (domain.Ticket has no Number). Accurate for ticket 118-shortcodes work.
     learning:a28797b8-51c3-490b-bd6c-fda9f7cfd1bc:
@@ -229,8 +239,8 @@ entries:
         last_used_at: 2026-06-07T10:11:55.724827191Z
         retrievals: 8
     learning:b776f3d1-fc7a-4321-bd7a-7e49eb55c48d:
-        last_used_at: 2026-06-07T13:35:05.476489612Z
-        retrievals: 1
+        last_used_at: 2026-06-08T15:34:23.452876519Z
+        retrievals: 2
     learning:b69056f8-a0b8-4ff5-bd2e-ecc8659290e1:
         last_used_at: 2026-06-06T10:56:05.870596536Z
         retrievals: 1
@@ -238,11 +248,11 @@ entries:
         last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 1
     learning:bda1ec08-865c-499f-bc75-76baabcabd42:
-        last_used_at: 2026-06-07T13:35:05.476489612Z
-        retrievals: 4
+        last_used_at: 2026-06-08T15:34:23.452876519Z
+        retrievals: 5
     learning:c9d8e384-39a8-4ec2-8a69-d1e83230ba95:
-        last_used_at: 2026-06-06T18:15:46.748838707Z
-        retrievals: 7
+        last_used_at: 2026-06-08T15:34:23.452876519Z
+        retrievals: 8
     learning:c8589bad-09e5-4c97-8cd4-b8959adde05b:
         last_used_at: 2026-06-07T13:29:33.493018042Z
         retrievals: 1

@@ -87,6 +87,59 @@ func TestResolveTicketRef(t *testing.T) {
 	if _, err := s.ResolveTicketRef(ctx, slug, ""); !errors.Is(err, domain.ErrInvalidArgument) {
 		t.Fatalf("empty ref: want ErrInvalidArgument, got %v", err)
 	}
+
+	// Truncated UUID prefix (the id[:8] stub the web UI shows) resolves to the
+	// full UUID, both bare (against defaultSlug) and as "<slug>/<prefix>".
+	full := ids[0]
+	pfx := full[:8]
+	if got, err := s.ResolveTicketRef(ctx, slug, pfx); err != nil || got != full {
+		t.Fatalf("ResolveTicketRef(prefix %q) = %q, %v; want %q", pfx, got, err, full)
+	}
+	if got, err := s.ResolveTicketRef(ctx, "", slug+"/"+pfx); err != nil || got != full {
+		t.Fatalf("ResolveTicketRef(%s/%s) = %q, %v; want %q", slug, pfx, got, err, full)
+	}
+	// A hex prefix matching nothing falls back to passthrough (not an error) so
+	// genuine opaque ids still reach the downstream existence check.
+	if got, err := s.ResolveTicketRef(ctx, slug, "ffffffff"); err != nil || got != "ffffffff" {
+		t.Fatalf("ResolveTicketRef(unmatched prefix) = %q, %v; want passthrough", got, err)
+	}
+}
+
+// TestMatchPrefix covers the pure prefix matcher that backs resolveTicketPrefix.
+// Crafted ids let us exercise the ambiguous (>1 match) decision deterministically
+// — random UUIDs in a live store effectively never share a 4+ hex prefix.
+func TestMatchPrefix(t *testing.T) {
+	ids := []string{
+		"abcd1234-0000-0000-0000-000000000001",
+		"abcd5678-0000-0000-0000-000000000002",
+		"ef009999-0000-0000-0000-000000000003",
+	}
+	if got := matchPrefix(ids, "ef00"); len(got) != 1 || got[0] != ids[2] {
+		t.Fatalf("matchPrefix(ef00) = %v; want [%s]", got, ids[2])
+	}
+	if got := matchPrefix(ids, "ABCD"); len(got) != 2 { // case-insensitive, ambiguous
+		t.Fatalf("matchPrefix(ABCD) = %v; want 2 matches", got)
+	}
+	if got := matchPrefix(ids, "deadbeef"); len(got) != 0 {
+		t.Fatalf("matchPrefix(deadbeef) = %v; want none", got)
+	}
+}
+
+func TestIsUUIDPrefix(t *testing.T) {
+	cases := map[string]bool{
+		"31ca06c1":                             true,  // the id[:8] stub
+		"abc":                                  false, // too short (<4)
+		"1234":                                 false, // pure digits → number-shortcode, not a prefix
+		"12ab":                                 true,  // hex with a letter
+		"534adaa9-950a-468a-b490-1b269ac6f25c": false, // full UUID (dashes, too long)
+		"not-a-shortcode-xyz":                  false, // non-hex
+		"deadbeefdeadbeefdeadbeefdeadbeef0":    false, // 33 chars (>31)
+	}
+	for s, want := range cases {
+		if got := isUUIDPrefix(s); got != want {
+			t.Errorf("isUUIDPrefix(%q) = %v; want %v", s, got, want)
+		}
+	}
 }
 
 func TestParseTicketShortcode(t *testing.T) {

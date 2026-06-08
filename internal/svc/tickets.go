@@ -247,6 +247,11 @@ func (s *Service) GetTicket(ctx context.Context, id string) (*domain.Ticket, err
 //     — resolved within the named project regardless of the bound session.
 //   - a bare "<number>" e.g. "76" — resolved within defaultSlug, which callers
 //     supply from the session's bound project; errors if defaultSlug is empty.
+//   - a truncated UUID prefix e.g. "31ca06c1" (the id[:8] stub the web UI shows
+//     and agents copy into memory), optionally as "<slug>/<prefix>" — resolved
+//     to the unique ticket whose UUID starts with it. This is a best-effort
+//     backstop: an unmatched prefix falls back to passthrough, an ambiguous one
+//     errors. See resolveTicketPrefix.
 //
 // Resolution walks the host store's ticket records by Number (domain.Ticket
 // carries no number; only the store record + on-disk dir name do). O(tickets)
@@ -260,7 +265,15 @@ func (s *Service) ResolveTicketRef(ctx context.Context, defaultSlug, ref string)
 
 	slug, numStr, isShortcode := parseTicketShortcode(ref, defaultSlug)
 	if !isShortcode {
-		// Opaque id (UUID or otherwise) — pass through untouched.
+		// Not a number-shortcode. It may be a full opaque id (UUID etc.) or a
+		// truncated UUID prefix an agent copied from the UI/a log. Try the
+		// prefix backstop; on no match (or no resolvable project) fall through
+		// to passthrough so opaque ids reach the downstream existence check.
+		if id, ok, err := s.resolveTicketPrefix(ctx, defaultSlug, ref); err != nil {
+			return "", err
+		} else if ok {
+			return id, nil
+		}
 		return ref, nil
 	}
 	if slug == "" {
@@ -320,6 +333,93 @@ func isAllDigits(s string) bool {
 		}
 	}
 	return true
+}
+
+// resolveTicketPrefix is the best-effort UUID-prefix backstop for
+// ResolveTicketRef. ref is the id[:8]-style stub the web UI renders (see
+// internal/web/components/pages/tickets/props.go) and agents tend to copy into
+// memory, optionally as "<slug>/<prefix>". It reports:
+//
+//   - (id, true, nil)   — exactly one ticket UUID in the project starts with the prefix
+//   - ("", false, nil)  — ref isn't a plausible prefix, the project can't be
+//     resolved, or nothing matched; caller falls back to passthrough
+//   - ("", false, err)  — the prefix is ambiguous (>1 match): ErrInvalidArgument
+//
+// Scope is the slug embedded in ref, else defaultSlug. The prefix must be pure
+// hex with at least one hex letter (pure-digit refs are number-shortcodes,
+// handled before we get here) and shorter than a full dashed UUID, so real
+// UUIDs and arbitrary opaque ids never reach the walk — they stay passthrough.
+func (s *Service) resolveTicketPrefix(ctx context.Context, defaultSlug, ref string) (string, bool, error) {
+	slug := defaultSlug
+	prefix := ref
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		if ref[:i] != "" {
+			slug = ref[:i]
+		}
+		prefix = ref[i+1:]
+	}
+	if slug == "" || !isUUIDPrefix(prefix) {
+		return "", false, nil
+	}
+
+	st, err := s.ResolveProjectStore(ctx, slug)
+	if err != nil {
+		// Unknown/unbound project — not a hard error here; let the ref pass
+		// through so a genuine opaque id still reaches its downstream check.
+		return "", false, nil
+	}
+	var ids []string
+	walkErr := st.WalkTickets(slug, func(_, _ string, tr *store.TicketRecord) error {
+		ids = append(ids, tr.ID)
+		return nil
+	})
+	if walkErr != nil {
+		return "", false, fmt.Errorf("walk tickets: %w", walkErr)
+	}
+	matches := matchPrefix(ids, prefix)
+	switch len(matches) {
+	case 0:
+		return "", false, nil
+	case 1:
+		return matches[0], true, nil
+	default:
+		return "", false, fmt.Errorf("%w: ticket id prefix %q is ambiguous in project %s (%d matches) — use the full UUID or the <slug>/<number> shortcode", domain.ErrInvalidArgument, prefix, slug, len(matches))
+	}
+}
+
+// matchPrefix returns the ids that start with prefix (case-insensitive).
+// Pure so the unique/none/ambiguous decision is testable with crafted ids —
+// random UUIDs effectively never collide on a 4+ hex prefix in a live store.
+func matchPrefix(ids []string, prefix string) []string {
+	lower := strings.ToLower(prefix)
+	var out []string
+	for _, id := range ids {
+		if strings.HasPrefix(strings.ToLower(id), lower) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// isUUIDPrefix reports whether s is a plausible truncated UUID: pure hex,
+// 4..31 chars, with at least one a–f letter so a pure-digit ref stays a
+// number-shortcode. A full UUID (36 chars, dashes) fails the length/charset
+// test and is left to pass through untouched.
+func isUUIDPrefix(s string) bool {
+	if len(s) < 4 || len(s) > 31 {
+		return false
+	}
+	hasLetter := false
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F'):
+			hasLetter = true
+		default:
+			return false
+		}
+	}
+	return hasLetter
 }
 
 // ListTickets returns a filtered, paginated slice of tickets in a project.
