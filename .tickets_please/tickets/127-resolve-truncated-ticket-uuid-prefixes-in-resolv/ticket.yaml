@@ -2,7 +2,9 @@ id: 8751a42b-82e1-468f-a1b4-b117a6905788
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 127
 title: Resolve truncated ticket UUID prefixes in ResolveTicketRef (the id[:8] form agents copy from the web UI)
-column: in_progress
+column: done
 created_by: 810fd9f0-59b3-4f36-8b85-8c3dc0b7fd30
+completed_by: 810fd9f0-59b3-4f36-8b85-8c3dc0b7fd30
+completed_at: 2026-06-08T16:38:09.563479851+01:00
 created_at: 2026-06-08T16:34:50.189400626+01:00
-updated_at: 2026-06-08T16:34:56.767626201+01:00
+updated_at: 2026-06-08T16:38:09.563479851+01:00
