@@ -1,0 +1,8 @@
+id: 9789bb94-4ed2-4cbe-a00e-62e7f8c0bce4
+project_id: 920db607-6449-4019-826c-28ba39b6a8d0
+number: 128
+title: depends_on is immutable after creation — no way to add/edit a ticket's dependencies post-create
+column: todo
+created_by: 875c9a34-49ca-4fec-b088-b42c1d3514d6
+created_at: 2026-06-09T14:20:26.883843491+01:00
+updated_at: 2026-06-09T14:20:26.883843491+01:00
