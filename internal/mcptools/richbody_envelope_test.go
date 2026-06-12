@@ -124,6 +124,82 @@ func TestUpdateTicket_RawMessageEnvelope_RichBody(t *testing.T) {
 	assertRichRoundTrip(t, body)
 }
 
+func TestUpdateTicket_RawMessageEnvelope_DependencyLists(t *testing.T) {
+	tools, repo, _ := freshToolsForRegister(t)
+	registerForRichBody(t, tools, repo)
+	ctx := context.Background()
+	create := func(title string) string {
+		t.Helper()
+		req := mcp.CallToolRequest{}
+		req.Params.Arguments = map[string]any{"title": title}
+		res, err := tools.handleCreateTicket(ctx, req)
+		if err != nil {
+			t.Fatalf("handleCreateTicket: %v", err)
+		}
+		if res.IsError {
+			t.Fatalf("create_ticket failed: %s", extractText(t, res))
+		}
+		var created map[string]any
+		if err := json.Unmarshal([]byte(extractText(t, res)), &created); err != nil {
+			t.Fatalf("unmarshal created ticket: %v", err)
+		}
+		id, _ := created["id"].(string)
+		if id == "" {
+			t.Fatalf("created ticket has no id: %v", created)
+		}
+		return id
+	}
+	upstream := create("upstream")
+	parallel := create("parallel")
+	child := create("child")
+
+	req := rawReq(t, map[string]any{
+		"ticket_id":           child,
+		"depends_on":          []string{upstream},
+		"parallelizable_with": []string{parallel},
+	})
+	res, err := tools.handleUpdateTicket(ctx, req)
+	if err != nil {
+		t.Fatalf("handleUpdateTicket: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("update_ticket rejected dependency lists: %s", extractText(t, res))
+	}
+	var updated map[string]any
+	if err := json.Unmarshal([]byte(extractText(t, res)), &updated); err != nil {
+		t.Fatalf("unmarshal updated ticket: %v", err)
+	}
+	deps, _ := updated["depends_on"].([]any)
+	parallelWith, _ := updated["parallelizable_with"].([]any)
+	if len(deps) != 1 || deps[0] != upstream {
+		t.Fatalf("depends_on = %v, want [%s]", deps, upstream)
+	}
+	if len(parallelWith) != 1 || parallelWith[0] != parallel {
+		t.Fatalf("parallelizable_with = %v, want [%s]", parallelWith, parallel)
+	}
+
+	clearReq := rawReq(t, map[string]any{
+		"ticket_id":           child,
+		"depends_on":          []string{},
+		"parallelizable_with": []string{},
+	})
+	res, err = tools.handleUpdateTicket(ctx, clearReq)
+	if err != nil {
+		t.Fatalf("handleUpdateTicket clear: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("update_ticket rejected dependency clear: %s", extractText(t, res))
+	}
+	if err := json.Unmarshal([]byte(extractText(t, res)), &updated); err != nil {
+		t.Fatalf("unmarshal cleared ticket: %v", err)
+	}
+	deps, _ = updated["depends_on"].([]any)
+	parallelWith, _ = updated["parallelizable_with"].([]any)
+	if len(deps) != 0 || len(parallelWith) != 0 {
+		t.Fatalf("dependency lists not cleared: depends=%v parallel=%v", deps, parallelWith)
+	}
+}
+
 // TestAddComment_RawMessageEnvelope_RichBody covers the comment set path.
 func TestAddComment_RawMessageEnvelope_RichBody(t *testing.T) {
 	tools, repo, _ := freshToolsForRegister(t)

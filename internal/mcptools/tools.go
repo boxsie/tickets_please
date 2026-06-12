@@ -247,11 +247,13 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 	), t.handleGetTicket)
 
 	s.AddTool(mcp.NewTool("update_ticket",
-		mcp.WithDescription("Edit a ticket's title or body. **Cannot** change the column — use `move_ticket` or `complete_ticket`."),
+		mcp.WithDescription("Edit a ticket's title, body, wave, or dependency lists. `depends_on` / `parallelizable_with` use replace-set semantics when supplied. **Cannot** change the column — use `move_ticket` or `complete_ticket`."),
 		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
 		mcp.WithString("title", mcp.Description("New title (optional)")),
 		mcp.WithString("body", mcp.Description("New body markdown (optional)")),
 		mcp.WithNumber("wave", mcp.Description("New wave number (optional)")),
+		mcp.WithArray("depends_on", mcp.Description("Replace the ticket ids this ticket depends on; supply [] to clear"), mcp.WithStringItems()),
+		mcp.WithArray("parallelizable_with", mcp.Description("Replace the ticket ids this ticket can be worked in parallel with; supply [] to clear"), mcp.WithStringItems()),
 	), t.handleUpdateTicket)
 
 	s.AddTool(mcp.NewTool("move_ticket",
@@ -1133,6 +1135,14 @@ func (t *Tools) handleUpdateTicket(ctx context.Context, req mcp.CallToolRequest)
 			n := int(f)
 			in.Wave = &n
 		}
+	}
+	if _, ok := args["depends_on"]; ok {
+		deps := stringSliceFromAny(args["depends_on"])
+		in.DependsOn = &deps
+	}
+	if _, ok := args["parallelizable_with"]; ok {
+		parallel := stringSliceFromAny(args["parallelizable_with"])
+		in.ParallelizableWith = &parallel
 	}
 	var tk *domain.Ticket
 	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {

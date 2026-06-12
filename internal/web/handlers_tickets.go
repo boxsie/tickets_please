@@ -353,9 +353,11 @@ func (a *app) handleTicketUpdate(w http.ResponseWriter, r *http.Request) {
 	in := parseTicketForm(r)
 	wave := in.Wave
 	upd := domain.UpdateTicketInput{
-		Title: &in.Title,
-		Body:  &in.Body,
-		Wave:  &wave,
+		Title:              &in.Title,
+		Body:               &in.Body,
+		Wave:               &wave,
+		DependsOn:          &in.DependsOn,
+		ParallelizableWith: &in.Parallelizable,
 	}
 	tkt, err := a.deps.Service.UpdateTicket(r.Context(), id, upd)
 	if err != nil {

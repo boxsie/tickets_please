@@ -816,7 +816,7 @@ Note the architecture shift: the embedding `Worker` and the vec indexes are **no
 - `CreateTicket(ctx, in CreateTicketInput) (*domain.Ticket, error)` — always lands in `todo`. Carries optional `phase_id_or_slug`, `wave`, `depends_on`, `parallelizable_with`.
 - `GetTicket(ctx, id string) (*domain.Ticket, error)`
 - `ListTickets(ctx, in ListTicketsInput) (tickets []*domain.Ticket, nextCursor string, err error)` — supports `phase_id_or_slug`, `column`, `ready_only`, `wave` filter, pagination.
-- `UpdateTicket(ctx, id string, in UpdateTicketInput) (*domain.Ticket, error)` — title/body only; no column.
+- `UpdateTicket(ctx, id string, in UpdateTicketInput) (*domain.Ticket, error)` — title/body/wave plus replace-set `depends_on` / `parallelizable_with`; no column.
 - `MoveTicket(ctx, id string, target domain.Column, comment string) (*domain.Ticket, error)` — both required; rejects `done`.
 - `CompleteTicket(ctx, id string, testingEvidence, workSummary, learnings string) (*domain.Ticket, error)` — `learnings` required (≥10 chars after trim); `testingEvidence` and `workSummary` are optional audit-trail fields (empty string accepted, no min length).
 - `AssignTicketToPhase(ctx, id string, phaseIDOrSlug *string, comment string) (*domain.Ticket, error)` — `nil` = phase-less.
@@ -998,7 +998,7 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `list_tickets` | List tickets in a project, optionally filtered by column or phase. Use `ready_only=true` to surface only unblocked tickets. |
 | `create_ticket` | Create a new ticket in a project. Tickets always start in the `todo` column. Provide a clear title and a body that describes the work; both will be searchable. Optional `phase_id_or_slug`, `depends_on`, `parallelizable_with`. |
 | `get_ticket` | Fetch a ticket by id, including its current column, completion fields if done, blockers, and who created/completed it. |
-| `update_ticket` | Edit a ticket's title or body. **Cannot** change the column — use `move_ticket` or `complete_ticket`. |
+| `update_ticket` | Edit a ticket's title, body, wave, or dependency lists. `depends_on` / `parallelizable_with` use replace-set semantics when supplied. **Cannot** change the column — use `move_ticket` or `complete_ticket`. |
 | `move_ticket` | Move a ticket between columns. Requires a comment explaining *why* you're moving it. Cannot be used to move to `done` — use `complete_ticket` for that. |
 | `complete_ticket` | Mark a ticket done. Only `learnings` is required (≥10 chars) — that's the field future agents search, so write it for them. `testing_evidence` and `work_summary` are optional audit-trail fields; supply them when there's substantive content, omit on small/obvious work. |
 | `assign_ticket_to_phase` | Move a ticket between phases (or to no phase). Requires a comment explaining why — same audit-trail rule as `move_ticket`. |

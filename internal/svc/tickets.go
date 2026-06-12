@@ -509,9 +509,8 @@ func (s *Service) ListTickets(ctx context.Context, in domain.ListTicketsInput) (
 	return cp, nextCursor, nil
 }
 
-// UpdateTicket mutates title / body / wave on an existing ticket. Column,
-// phase, and dep edges are owned by other methods (T07/T16) and rejected
-// here-by-omission since UpdateTicketInput doesn't carry those fields.
+// UpdateTicket mutates title / body / wave / dependency edges on an existing
+// ticket. Column and phase are owned by MoveTicket / AssignTicketToPhase.
 func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateTicketInput) (*domain.Ticket, error) {
 	ctx, agent, err := s.requireSession(ctx)
 	if err != nil {
@@ -554,6 +553,8 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 	newTitle := t.Title
 	newBody := t.Body
 	newWave := t.Wave
+	newDependsOn := append([]string(nil), t.DependsOn...)
+	newParallelizableWith := append([]string(nil), t.ParallelizableWith...)
 	if in.Title != nil {
 		nt := normalizeLabel(*in.Title)
 		if nt == "" {
@@ -573,6 +574,21 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 	if in.Wave != nil {
 		newWave = *in.Wave
 	}
+	if in.DependsOn != nil {
+		if err := validateTicketRefs(lp, id, "depends_on", *in.DependsOn); err != nil {
+			return nil, err
+		}
+		if dependencyUpdateCreatesCycle(lp, id, *in.DependsOn) {
+			return nil, fmt.Errorf("%w: depends_on would create a dependency cycle for ticket %s", domain.ErrInvalidArgument, id)
+		}
+		newDependsOn = compactTicketRefs(*in.DependsOn)
+	}
+	if in.ParallelizableWith != nil {
+		if err := validateTicketRefs(lp, id, "parallelizable_with", *in.ParallelizableWith); err != nil {
+			return nil, err
+		}
+		newParallelizableWith = compactTicketRefs(*in.ParallelizableWith)
+	}
 
 	// Re-read the on-disk record so we don't drop fields the cache doesn't
 	// model (e.g. CompletedByAgentID after a T07 lands and then this T05
@@ -587,6 +603,8 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 	}
 	rec.Title = newTitle
 	rec.Wave = newWave
+	rec.DependsOn = append([]string(nil), newDependsOn...)
+	rec.ParallelizableWith = append([]string(nil), newParallelizableWith...)
 	rec.UpdatedAt = time.Now()
 
 	yamlBytes, err := store.MarshalYAML(rec)
@@ -632,6 +650,9 @@ func (s *Service) UpdateTicket(ctx context.Context, id string, in domain.UpdateT
 		t.Body = newBody
 	}
 	t.Wave = newWave
+	t.DependsOn = append([]string(nil), newDependsOn...)
+	t.ParallelizableWith = append([]string(nil), newParallelizableWith...)
+	t.BlockedBy = computeBlockedBy(t.DependsOn, lp.Tickets)
 	t.UpdatedAt = rec.UpdatedAt
 
 	cp := cloneTicket(t)
@@ -1314,6 +1335,65 @@ func computeBlockedBy(depIDs []string, tickets map[string]*domain.Ticket) []stri
 		}
 	}
 	return out
+}
+
+func validateTicketRefs(lp *cache.LoadedProject, ticketID, field string, refs []string) error {
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		if ref == ticketID {
+			return fmt.Errorf("%w: %s cannot reference the ticket itself", domain.ErrInvalidArgument, field)
+		}
+		if _, ok := lp.Tickets[ref]; !ok {
+			return fmt.Errorf("%w: %s ticket %q not in project", domain.ErrInvalidArgument, field, ref)
+		}
+	}
+	return nil
+}
+
+func compactTicketRefs(refs []string) []string {
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref = strings.TrimSpace(ref); ref != "" {
+			out = append(out, ref)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func dependencyUpdateCreatesCycle(lp *cache.LoadedProject, ticketID string, newDependsOn []string) bool {
+	visited := map[string]bool{}
+	var reachesTarget func(string) bool
+	reachesTarget = func(id string) bool {
+		if id == ticketID {
+			return true
+		}
+		if visited[id] {
+			return false
+		}
+		visited[id] = true
+		t, ok := lp.Tickets[id]
+		if !ok {
+			return false
+		}
+		for _, dep := range t.DependsOn {
+			if reachesTarget(dep) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, dep := range compactTicketRefs(newDependsOn) {
+		if reachesTarget(dep) {
+			return true
+		}
+	}
+	return false
 }
 
 // findTicketDir returns the relative-to-Store.Root and absolute path of the

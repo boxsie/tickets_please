@@ -27,8 +27,10 @@ type CreateTicketInput struct {
 // MoveTicket / CompleteTicket own column transitions. Phase is intentionally
 // absent — AssignTicketToPhase owns phase transitions.
 type UpdateTicketInput struct {
-	Title *string
-	Body  *string
+	Title              *string
+	Body               *string
+	DependsOn          *[]string
+	ParallelizableWith *[]string
 	// Wave: nil = leave unchanged; non-nil = set to this value (a *int
 	// pointing at 0 means "set to unassigned").
 	Wave *int

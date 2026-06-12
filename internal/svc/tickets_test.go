@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -349,6 +350,94 @@ func TestUpdateTicket_TitleOnly_KeepsBody(t *testing.T) {
 	}
 	if !strings.Contains(string(disk), "important body") {
 		t.Fatalf("disk body lost original content: %q", string(disk))
+	}
+}
+
+func TestUpdateTicket_ReplacesDependencyLists(t *testing.T) {
+	s, ctx, _, slug := freshServiceWithProject(t)
+	upstream, err := s.CreateTicket(ctx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "upstream"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parallel, err := s.CreateTicket(ctx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "parallel"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := s.CreateTicket(ctx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "child"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deps := []string{upstream.ID}
+	parallelWith := []string{parallel.ID}
+	got, err := s.UpdateTicket(ctx, child.ID, domain.UpdateTicketInput{
+		DependsOn:          &deps,
+		ParallelizableWith: &parallelWith,
+	})
+	if err != nil {
+		t.Fatalf("UpdateTicket set deps: %v", err)
+	}
+	if !slices.Equal(got.DependsOn, deps) {
+		t.Fatalf("DependsOn = %v, want %v", got.DependsOn, deps)
+	}
+	if !slices.Equal(got.ParallelizableWith, parallelWith) {
+		t.Fatalf("ParallelizableWith = %v, want %v", got.ParallelizableWith, parallelWith)
+	}
+	if !slices.Equal(got.BlockedBy, deps) {
+		t.Fatalf("BlockedBy = %v, want %v", got.BlockedBy, deps)
+	}
+
+	var rec store.TicketRecord
+	if err := store.ReadYAML(filepath.Join(s.Store.Root, "tickets", "003-child", "ticket.yaml"), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(rec.DependsOn, deps) {
+		t.Fatalf("disk DependsOn = %v, want %v", rec.DependsOn, deps)
+	}
+	if !slices.Equal(rec.ParallelizableWith, parallelWith) {
+		t.Fatalf("disk ParallelizableWith = %v, want %v", rec.ParallelizableWith, parallelWith)
+	}
+
+	empty := []string{}
+	got, err = s.UpdateTicket(ctx, child.ID, domain.UpdateTicketInput{
+		DependsOn:          &empty,
+		ParallelizableWith: &empty,
+	})
+	if err != nil {
+		t.Fatalf("UpdateTicket clear deps: %v", err)
+	}
+	if len(got.DependsOn) != 0 || len(got.ParallelizableWith) != 0 || len(got.BlockedBy) != 0 {
+		t.Fatalf("deps not cleared: depends=%v parallel=%v blocked=%v", got.DependsOn, got.ParallelizableWith, got.BlockedBy)
+	}
+}
+
+func TestUpdateTicket_DependencyValidation(t *testing.T) {
+	s, ctx, _, slug := freshServiceWithProject(t)
+	a, err := s.CreateTicket(ctx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.CreateTicket(ctx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	self := []string{a.ID}
+	if _, err := s.UpdateTicket(ctx, a.ID, domain.UpdateTicketInput{DependsOn: &self}); !errors.Is(err, domain.ErrInvalidArgument) {
+		t.Fatalf("self dependency: expected ErrInvalidArgument, got %v", err)
+	}
+	missing := []string{uuid.NewString()}
+	if _, err := s.UpdateTicket(ctx, a.ID, domain.UpdateTicketInput{DependsOn: &missing}); !errors.Is(err, domain.ErrInvalidArgument) {
+		t.Fatalf("missing dependency: expected ErrInvalidArgument, got %v", err)
+	}
+
+	aDependsOnB := []string{b.ID}
+	if _, err := s.UpdateTicket(ctx, a.ID, domain.UpdateTicketInput{DependsOn: &aDependsOnB}); err != nil {
+		t.Fatalf("seed dependency: %v", err)
+	}
+	bDependsOnA := []string{a.ID}
+	if _, err := s.UpdateTicket(ctx, b.ID, domain.UpdateTicketInput{DependsOn: &bDependsOnA}); !errors.Is(err, domain.ErrInvalidArgument) {
+		t.Fatalf("cycle dependency: expected ErrInvalidArgument, got %v", err)
 	}
 }
 
