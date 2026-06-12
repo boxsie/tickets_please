@@ -253,6 +253,7 @@ type projectDetailData struct {
 	PhaseLead       phasescomp.PhaseListProps
 	Metrics         dashboardMetrics
 	StatusSegments  []statusSegment
+	InFlightTickets []*domain.Ticket
 	ReadyTickets    []*domain.Ticket
 	RecentActivity  []activityItem
 	RecentLearnings []learningExcerpt
@@ -331,6 +332,7 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 		PhaseLead:       toPhaseListProps(proj, enriched, unphased, true),
 		Metrics:         computeMetrics(tickets),
 		StatusSegments:  computeStatusSegments(tickets),
+		InFlightTickets: pickInFlight(tickets),
 		ReadyTickets:    pickReady(tickets, 5),
 		RecentActivity:  pickRecentActivity(tickets, 10),
 		RecentLearnings: pickRecentLearnings(tickets, 3),
@@ -357,10 +359,11 @@ func detailToProps(d projectDetailData, csrf string) projectspg.DetailProps {
 			InProgress: d.Metrics.InProgress,
 			Done:       d.Metrics.Done,
 		},
-		ReadyTickets: d.ReadyTickets,
-		CSRF:         csrf,
-		ShowArchived: d.ShowArchived,
-		ToggleHref:   d.ToggleHref,
+		InFlightTickets: d.InFlightTickets,
+		ReadyTickets:    d.ReadyTickets,
+		CSRF:            csrf,
+		ShowArchived:    d.ShowArchived,
+		ToggleHref:      d.ToggleHref,
 	}
 	out.StatusSegments = make([]projectspg.StatusSegment, len(d.StatusSegments))
 	for i, s := range d.StatusSegments {
@@ -428,6 +431,19 @@ func computeStatusSegments(tickets []*domain.Ticket) []statusSegment {
 			percent = (count * 100) / total
 		}
 		out = append(out, statusSegment{Column: c.col, Label: c.label, Count: count, Percent: percent})
+	}
+	return out
+}
+
+// pickInFlight returns every ticket currently being worked or tested. Unlike
+// pickReady/recent lists, this is not capped: the section is meant to show the
+// full active handoff surface between queued work and completed work.
+func pickInFlight(tickets []*domain.Ticket) []*domain.Ticket {
+	out := make([]*domain.Ticket, 0)
+	for _, t := range tickets {
+		if t.Column == domain.ColumnInProgress || t.Column == domain.ColumnTesting {
+			out = append(out, t)
+		}
 	}
 	return out
 }

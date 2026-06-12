@@ -36,6 +36,7 @@ type DetailProps struct {
 	PhaseLead       phases.PhaseListProps
 	Metrics         DashboardMetrics
 	StatusSegments  []StatusSegment
+	InFlightTickets []*domain.Ticket
 	ReadyTickets    []*domain.Ticket
 	RecentActivity  []ActivityItem
 	RecentLearnings []LearningExcerpt

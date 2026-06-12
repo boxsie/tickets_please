@@ -218,19 +218,34 @@ func toIndexProps(proj *domain.Project, phases []phaseWithWaves, unphased []wave
 	}
 	out.Phases = make([]phasescomp.PhaseRowProps, 0, len(phases))
 	for _, pw := range phases {
+		dist, total := phaseRowDisplayProgress(pw)
 		out.Phases = append(out.Phases, phasescomp.PhaseRowProps{
 			Phase: pw.Phase,
 			Waves: toWaveProps(proj.Slug, pw.Waves),
 			Dist: phasescomp.PhaseDist{
-				Todo:       pw.Dist.Todo,
-				InProgress: pw.Dist.InProgress,
-				Testing:    pw.Dist.Testing,
-				Done:       pw.Dist.Done,
+				Todo:       dist.Todo,
+				InProgress: dist.InProgress,
+				Testing:    dist.Testing,
+				Done:       dist.Done,
 			},
-			Total: pw.Total,
+			Total: total,
 		})
 	}
 	return out
+}
+
+// phaseRowDisplayProgress normally mirrors the visible ticket slice used for
+// wave rows. If archived tickets are hidden, an all-done phase can have no
+// visible tickets while the hydrated phase counts still say "0 active / N
+// total"; render that as a full done bar instead of an empty one.
+func phaseRowDisplayProgress(pw phaseWithWaves) (phaseDist, int) {
+	if pw.Total > 0 {
+		return pw.Dist, pw.Total
+	}
+	if pw.Phase != nil && pw.Phase.TicketCount > 0 && pw.Phase.ActiveTicketCount == 0 {
+		return phaseDist{Done: pw.Phase.TicketCount}, pw.Phase.TicketCount
+	}
+	return pw.Dist, pw.Total
 }
 
 // toPhaseListProps builds the shared phases-with-waves block reused by the

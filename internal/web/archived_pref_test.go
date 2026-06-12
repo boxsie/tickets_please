@@ -153,6 +153,61 @@ func TestArchived_PhaseDetail_TogglesVisibility(t *testing.T) {
 	}
 }
 
+func TestArchived_PhasesIndex_AllDoneArchivedPhaseKeepsDoneBar(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, "arxdone-fixture", "arxdone-fixture",
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(ctx, id)
+	slug := "arxdone"
+	if _, err := deps.Service.CreateProject(authed, slug, slug, "test", strings.Repeat("z", 220)); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	ph, err := deps.Service.CreatePhase(authed, slug, "Archived Done Phase", "all done", strings.Repeat("p", 220))
+	if err != nil {
+		t.Fatalf("CreatePhase: %v", err)
+	}
+	for _, title := range []string{"hidden-done-a", "hidden-done-b"} {
+		phaseSlug := ph.Slug
+		tk, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+			ProjectIDOrSlug: slug,
+			Title:           title,
+			PhaseIDOrSlug:   &phaseSlug,
+		})
+		if err != nil {
+			t.Fatalf("CreateTicket %q: %v", title, err)
+		}
+		if _, err := deps.Service.CompleteTicket(authed, tk.ID, "", "", "done archived progress stays visible"); err != nil {
+			t.Fatalf("CompleteTicket %q: %v", title, err)
+		}
+		if _, err := deps.Service.ArchiveTicket(authed, tk.ID, "archived after completion"); err != nil {
+			t.Fatalf("ArchiveTicket %q: %v", title, err)
+		}
+	}
+
+	resp, err := client.Get(srv.URL + "/p/" + slug + "/phases")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	if strings.Contains(body, "hidden-done-a") || strings.Contains(body, "hidden-done-b") {
+		t.Fatalf("archived ticket titles should stay hidden by default\n%s", body)
+	}
+	if !strings.Contains(body, "phase-row-bar-done") || !strings.Contains(body, "width: 100%") {
+		t.Fatalf("all-done archived phase should render a full done progress bar\n%s", body)
+	}
+	if strings.Contains(body, "phase-row-bar-empty") {
+		t.Fatalf("all-done archived phase must not render the empty progress bar\n%s", body)
+	}
+}
+
 // TestArchived_Search_ToggleAndCookie: the search page renders the toggle and
 // persists the param to the cookie (search-hit matching itself rides the async
 // embed worker, so this asserts the param/cookie plumbing, not a live hit).

@@ -7,7 +7,10 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"tickets_please/internal/domain"
+	"tickets_please/internal/svc"
 	"tickets_please/internal/web/components/md"
 )
 
@@ -239,6 +242,83 @@ func TestProjects_Detail(t *testing.T) {
 	for _, want := range []string{"demo-slug", "/p/demo-slug/settings", "/p/demo-slug/summary", "/p/demo-slug/phases"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("detail missing %q", want)
+		}
+	}
+}
+
+// TestProjects_Detail_InFlightSection lists in_progress/testing work on the
+// overview without pulling in queued or completed tickets.
+func TestProjects_Detail_InFlightSection(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+	ctx := context.Background()
+	aid, _, err := deps.Service.RegisterAgent(ctx, "dash-flight-agent", "dash-flight", map[string]string{"client_name": "test"}, 5*time.Minute, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(ctx, aid)
+	if _, err := deps.Service.CreateProject(authed, "dash-flight", "dash-flight", "test", strings.Repeat("z", 220)); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	todo, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{ProjectIDOrSlug: "dash-flight", Title: "Queued Only"})
+	if err != nil {
+		t.Fatalf("CreateTicket todo: %v", err)
+	}
+	inProgress, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{ProjectIDOrSlug: "dash-flight", Title: "Building Now"})
+	if err != nil {
+		t.Fatalf("CreateTicket in_progress: %v", err)
+	}
+	if _, err := deps.Service.MoveTicket(authed, inProgress.ID, domain.ColumnInProgress, "starting active work"); err != nil {
+		t.Fatalf("MoveTicket in_progress: %v", err)
+	}
+	testingTicket, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{ProjectIDOrSlug: "dash-flight", Title: "Awaiting Review"})
+	if err != nil {
+		t.Fatalf("CreateTicket testing: %v", err)
+	}
+	if _, err := deps.Service.MoveTicket(authed, testingTicket.ID, domain.ColumnTesting, "ready for review"); err != nil {
+		t.Fatalf("MoveTicket testing: %v", err)
+	}
+	done, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{ProjectIDOrSlug: "dash-flight", Title: "Already Landed"})
+	if err != nil {
+		t.Fatalf("CreateTicket done: %v", err)
+	}
+	if _, err := deps.Service.CompleteTicket(authed, done.ID, "", "", "completed work should stay out of in flight"); err != nil {
+		t.Fatalf("CompleteTicket: %v", err)
+	}
+
+	resp, err := client.Get(srv.URL + "/p/dash-flight")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := mustReadAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", resp.StatusCode, body)
+	}
+	start := strings.Index(body, "In flight")
+	if start < 0 {
+		t.Fatalf("missing In flight section\n%s", body)
+	}
+	rest := body[start:]
+	end := strings.Index(rest, "Phases")
+	if end < 0 {
+		t.Fatalf("missing Phases section after In flight\n%s", body)
+	}
+	section := rest[:end]
+	for _, want := range []string{
+		"Building Now",
+		"Awaiting Review",
+		"/tickets/" + inProgress.ID + "?slug=dash-flight",
+		"/tickets/" + testingTicket.ID + "?slug=dash-flight",
+		"badge-in_progress",
+		"badge-testing",
+	} {
+		if !strings.Contains(section, want) {
+			t.Errorf("in-flight section missing %q\n%s", want, section)
+		}
+	}
+	for _, dontWant := range []string{todo.Title, done.Title} {
+		if strings.Contains(section, dontWant) {
+			t.Errorf("in-flight section included %q\n%s", dontWant, section)
 		}
 	}
 }

@@ -88,6 +88,26 @@ templ Detail(props DetailProps) {
 				</ul>
 			}
 		}
+		@ui.Card(ui.CardProps{Title: "In flight"}) {
+			if len(props.InFlightTickets) > 0 {
+				<ul class="ticket-list">
+					for _, t := range props.InFlightTickets {
+						<li>
+							<a class="ticket-list-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.Slug) }>{ t.Title }</a>
+							<div class="ticket-list-meta">
+								<span class={ "badge badge-" + string(t.Column) }>{ string(t.Column) }</span>
+								if t.Wave != 0 {
+									<span class="muted">w{ strconv.Itoa(t.Wave) }</span>
+								}
+								@attribution.Chip(t)
+							</div>
+						</li>
+					}
+				</ul>
+			} else {
+				<p class="hint">Nothing is currently in progress or testing.</p>
+			}
+		}
 		@ui.Card(ui.CardProps{Title: "Phases", Href: "/p/" + p.Slug + "/phases", LinkLabel: "Browse all phases →"}) {
 			if len(props.PhaseLead.Phases) > 0 || props.PhaseLead.UnphasedTotal > 0 {
 				@phases.PhaseSummary(props.PhaseLead)
