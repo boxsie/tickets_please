@@ -435,6 +435,13 @@ func (a *app) handlePhaseDetail(w http.ResponseWriter, r *http.Request) {
 	// Pull tickets scoped to this phase, then bucket by wave the same way the
 	// phases-index expanded view does so both pages render identically.
 	showArchived := a.resolveShowArchived(w, r)
+	_, archivedExplicit := r.URL.Query()["include_archived"]
+	// A fully inactive phase reports totals that include archived done tickets.
+	// Auto-show them on detail so "0 active / N total" doesn't render as a
+	// mysteriously sparse wave list, while still respecting an explicit toggle.
+	if !archivedExplicit && !showArchived && phase.ActiveTicketCount == 0 && phase.TicketCount > 0 {
+		showArchived = true
+	}
 	tickets, _, err := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
 		ProjectIDOrSlug: slug,
 		PhaseIDOrSlug:   &phaseSlug,

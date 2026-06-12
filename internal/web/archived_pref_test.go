@@ -153,6 +153,64 @@ func TestArchived_PhaseDetail_TogglesVisibility(t *testing.T) {
 	}
 }
 
+func TestArchived_PhaseDetail_AllDonePhaseShowsArchivedByDefault(t *testing.T) {
+	srv, client, deps := freshServerWithDeps(t)
+
+	ctx := context.Background()
+	id, _, err := deps.Service.RegisterAgent(ctx, "arxdetaildone-fixture", "arxdetaildone-fixture",
+		map[string]string{"client_name": "test"}, 5*time.Minute, "")
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	authed := svc.WithSessionID(ctx, id)
+	slug := "arxdetaildone"
+	if _, err := deps.Service.CreateProject(authed, slug, slug, "test", strings.Repeat("z", 220)); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	ph, err := deps.Service.CreatePhase(authed, slug, "Done Phase", "all done", strings.Repeat("p", 220))
+	if err != nil {
+		t.Fatalf("CreatePhase: %v", err)
+	}
+	phaseSlug := ph.Slug
+	visibleTitle := "VISIBLE-DONE-PHASE"
+	archivedTitle := "ARCHIVED-DONE-PHASE"
+	for _, title := range []string{visibleTitle, archivedTitle} {
+		tk, err := deps.Service.CreateTicket(authed, domain.CreateTicketInput{
+			ProjectIDOrSlug: slug,
+			Title:           title,
+			PhaseIDOrSlug:   &phaseSlug,
+		})
+		if err != nil {
+			t.Fatalf("CreateTicket %q: %v", title, err)
+		}
+		if _, err := deps.Service.CompleteTicket(authed, tk.ID, "", "", "done phase detail visibility"); err != nil {
+			t.Fatalf("CompleteTicket %q: %v", title, err)
+		}
+		if title == archivedTitle {
+			if _, err := deps.Service.ArchiveTicket(authed, tk.ID, "archived after completion"); err != nil {
+				t.Fatalf("ArchiveTicket %q: %v", title, err)
+			}
+		}
+	}
+
+	base := srv.URL + "/p/" + slug + "/phases/" + phaseSlug
+	body := getBody(t, client, base)
+	if !strings.Contains(body, visibleTitle) || !strings.Contains(body, archivedTitle) {
+		t.Fatalf("all-done phase detail should show archived tickets by default\n%s", body)
+	}
+	if !strings.Contains(body, `aria-checked="true"`) {
+		t.Fatalf("archived toggle should reflect the auto-included state\n%s", body)
+	}
+
+	body = getBody(t, client, base+"?include_archived=false")
+	if !strings.Contains(body, visibleTitle) {
+		t.Fatalf("explicit hide should keep visible done tickets\n%s", body)
+	}
+	if strings.Contains(body, archivedTitle) {
+		t.Fatalf("explicit hide should still hide archived done tickets\n%s", body)
+	}
+}
+
 func TestArchived_PhasesIndex_AllDoneArchivedPhaseKeepsDoneBar(t *testing.T) {
 	srv, client, deps := freshServerWithDeps(t)
 
