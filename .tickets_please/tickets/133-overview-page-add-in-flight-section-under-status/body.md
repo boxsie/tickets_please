@@ -1,11 +1,11 @@
-Add a new section to the **project overview page** that surfaces the work actually in flight right now: tickets in `in_progress` and `testing`, each shown with a link.
+Add a new section to the **project overview page** that surfaces the work actually in flight right now: tickets in `in_progress` and `testing`, each shown with a link. Project-wide — no phase scoping.
 
 ## Where
 - Page: `internal/web/components/pages/projects/detail.templ` (the project overview/dashboard).
 - Placement: a new `@ui.Card` inserted **directly under the "Status distribution" card** (currently `detail.templ:67-90`), before the "Phases" card (`:91`).
 
 ## What it shows
-- Tickets in the `in_progress` and `testing` columns only — the things being actively worked.
+- Tickets in the `in_progress` and `testing` columns only — the things being actively worked, across the whole project.
 - Each row: ticket title linking to the ticket (reuse the existing pattern `/tickets/<id>?slug=<slug>`), plus a column badge (`badge badge-<column>`) like the "Ready to pick up" / "Recent activity" cards already use. Reuse `.ticket-list` markup for consistency.
 
 ## What it deliberately excludes (and why)
@@ -13,13 +13,6 @@ Add a new section to the **project overview page** that surfaces the work actual
 - **No `done`** — already covered by the "Recent activity" panel at the bottom (`detail.templ:122-141`, the `dashboard-grid`).
 
 So this card is the missing middle: between "what's queued" (Ready) and "what just landed" (Recent activity), show "what's in hand."
-
-## Open design question — what is "the current phase"?
-The request was phrased as "tickets in a **current phase**", but the overview page is **project-level**, and the data model has no single "current/active phase" pointer. Resolve one of:
-- **(a)** List in-flight tickets **project-wide**, optionally labelled with their phase name per row. Simplest, matches how Ready/Recent already work (project-wide). **Recommended default.**
-- **(b)** Introduce/derive a notion of an "active phase" (e.g. the phase containing the most recently-updated in-flight ticket, or a phase the project explicitly marks current) and scope the card to it.
-
-Lean (a) unless we actually want a first-class "current phase" concept — that's a bigger change and a separate ticket.
 
 ## Plumbing
 - `internal/web/components/pages/projects/data.go` — add an `InFlightTickets` field to the detail props (mirror `ReadyTickets`).
