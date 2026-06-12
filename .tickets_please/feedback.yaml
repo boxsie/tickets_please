@@ -13,8 +13,12 @@ entries:
         last_used_at: 2026-05-31T10:36:22.073023716Z
         retrievals: 1
     learning:00c6150a-4a9e-4832-8afc-826f284b2ed7:
-        last_used_at: 2026-06-06T18:59:05.740024266Z
-        retrievals: 2
+        likes: 1
+        last_feedback_at: 2026-06-12T15:40:39.041502099Z
+        last_used_at: 2026-06-12T15:40:21.204729Z
+        retrievals: 3
+        reasons:
+            - All five are relevant to phase ticket bucketing, hidden tickets, and wave render behavior for ticket 130.
     learning:1ae08510-1a15-4e5b-bad7-e475e65b1df8:
         likes: 1
         last_feedback_at: 2026-06-06T10:55:11.892367418Z
@@ -32,8 +36,12 @@ entries:
         last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 2
     learning:3d6cbfd7-67ca-4d93-b679-1039001fa686:
-        last_used_at: 2026-06-08T15:34:23.452876519Z
-        retrievals: 1
+        likes: 1
+        last_feedback_at: 2026-06-12T19:51:47.887451318Z
+        last_used_at: 2026-06-12T19:51:31.258994268Z
+        retrievals: 2
+        reasons:
+            - Helpful dependency/update-ticket/tooling context for mutable dependency implementation.
     learning:3d543207-fca8-4d88-8be9-833730c0e757:
         last_used_at: 2026-05-30T21:59:27.621953558Z
         retrievals: 1
@@ -92,6 +100,13 @@ entries:
     learning:19b36064-4082-41c3-896b-356b4e406695:
         last_used_at: 2026-06-07T10:11:55.724827191Z
         retrievals: 4
+    learning:36baed6f-32ec-4ba9-a21a-98ee30903228:
+        likes: 1
+        last_feedback_at: 2026-06-12T15:40:39.189468118Z
+        last_used_at: 2026-06-12T15:40:21.204729Z
+        retrievals: 1
+        reasons:
+            - All five are relevant to phase ticket bucketing, hidden tickets, and wave render behavior for ticket 130.
     learning:60fd4d8c-4384-4a5b-adef-792b400a1470:
         last_used_at: 2026-06-07T10:11:55.724827191Z
         retrievals: 14
@@ -112,11 +127,19 @@ entries:
         last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 1
     learning:73e63f34-49f4-4923-ad42-8cb8fda539ea:
-        last_used_at: 2026-06-06T17:05:30.150225404Z
-        retrievals: 2
-    learning:82ff144b-3a84-44d8-b153-3ee6b055bb2c:
-        last_used_at: 2026-06-06T17:05:30.150225404Z
+        likes: 1
+        last_feedback_at: 2026-06-12T15:40:39.196227724Z
+        last_used_at: 2026-06-12T15:40:21.204729Z
         retrievals: 3
+        reasons:
+            - All five are relevant to phase ticket bucketing, hidden tickets, and wave render behavior for ticket 130.
+    learning:82ff144b-3a84-44d8-b153-3ee6b055bb2c:
+        likes: 1
+        last_feedback_at: 2026-06-12T15:40:39.200878831Z
+        last_used_at: 2026-06-12T15:40:21.204729Z
+        retrievals: 5
+        reasons:
+            - All five are relevant to phase ticket bucketing, hidden tickets, and wave render behavior for ticket 130.
     learning:84ed32f2-feea-4458-9976-78558d3567ac:
         last_used_at: 2026-06-06T19:33:16.053021795Z
         retrievals: 1
@@ -133,8 +156,12 @@ entries:
         last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 5
     learning:346a3f21-f6f8-438d-a09c-5fc7012e3607:
-        last_used_at: 2026-06-06T19:11:49.904835142Z
-        retrievals: 4
+        likes: 1
+        last_feedback_at: 2026-06-12T19:51:47.869220606Z
+        last_used_at: 2026-06-12T19:51:31.258994268Z
+        retrievals: 5
+        reasons:
+            - Helpful dependency/update-ticket/tooling context for mutable dependency implementation.
     learning:534adaa9-950a-468a-b490-1b269ac6f25c:
         likes: 1
         last_feedback_at: 2026-06-08T15:34:45.831653251Z
@@ -174,8 +201,12 @@ entries:
         last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 2
     learning:8888d70d-dca3-4cf4-b6a7-d5572bb1e77f:
-        last_used_at: 2026-06-08T15:34:23.452876519Z
-        retrievals: 9
+        likes: 1
+        last_feedback_at: 2026-06-12T19:51:47.874951408Z
+        last_used_at: 2026-06-12T19:51:31.258994268Z
+        retrievals: 10
+        reasons:
+            - Helpful dependency/update-ticket/tooling context for mutable dependency implementation.
     learning:51153b49-dbaf-4810-9869-244127652e81:
         last_used_at: 2026-06-07T13:35:05.476489612Z
         retrievals: 7
@@ -198,8 +229,8 @@ entries:
         last_used_at: 2026-06-07T13:29:33.493018042Z
         retrievals: 5
     learning:a7f80d53-ade2-43e2-bd3e-8dafeb7a06e2:
-        last_used_at: 2026-06-07T12:04:05.918915863Z
-        retrievals: 2
+        last_used_at: 2026-06-12T15:29:58.823033558Z
+        retrievals: 3
     learning:a35a1468-0ca6-449e-b4cd-ad9b9baa504f:
         last_used_at: 2026-06-06T18:37:19.765747293Z
         retrievals: 3
@@ -223,8 +254,12 @@ entries:
         last_used_at: 2026-06-07T10:11:55.724827191Z
         retrievals: 5
     learning:b0e89cfd-168a-43fb-9434-5bd3ac913e32:
-        last_used_at: 2026-06-07T13:35:05.476489612Z
-        retrievals: 5
+        likes: 1
+        last_feedback_at: 2026-06-12T19:51:47.918818068Z
+        last_used_at: 2026-06-12T19:51:31.258994268Z
+        retrievals: 6
+        reasons:
+            - Helpful dependency/update-ticket/tooling context for mutable dependency implementation.
     learning:b4c3fa13-95b3-47bb-a36a-137a1418db03:
         likes: 1
         last_feedback_at: 2026-06-06T11:46:05.334480847Z
@@ -236,23 +271,49 @@ entries:
         last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 2
     learning:b26f2ced-5fec-48b4-af89-9b76ed544ddc:
-        last_used_at: 2026-06-07T10:11:55.724827191Z
-        retrievals: 8
+        likes: 1
+        last_feedback_at: 2026-06-12T19:51:47.943870768Z
+        last_used_at: 2026-06-12T19:51:31.258994268Z
+        retrievals: 9
+        reasons:
+            - Helpful dependency/update-ticket/tooling context for mutable dependency implementation.
     learning:b776f3d1-fc7a-4321-bd7a-7e49eb55c48d:
-        last_used_at: 2026-06-08T15:34:23.452876519Z
-        retrievals: 2
+        likes: 1
+        last_feedback_at: 2026-06-12T15:40:39.012803228Z
+        last_used_at: 2026-06-12T15:40:21.204729Z
+        retrievals: 4
+        reasons:
+            - All five are relevant to phase ticket bucketing, hidden tickets, and wave render behavior for ticket 130.
     learning:b69056f8-a0b8-4ff5-bd2e-ecc8659290e1:
         last_used_at: 2026-06-06T10:56:05.870596536Z
         retrievals: 1
+    learning:b9787884-551d-4f6f-9b28-b0030125c04d:
+        likes: 1
+        last_feedback_at: 2026-06-12T19:51:47.863477413Z
+        last_used_at: 2026-06-12T19:51:31.258994268Z
+        retrievals: 1
+        reasons:
+            - Helpful dependency/update-ticket/tooling context for mutable dependency implementation.
     learning:bb3ebb84-db2e-43a0-a1e8-6b271990c90d:
         last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 1
     learning:bda1ec08-865c-499f-bc75-76baabcabd42:
-        last_used_at: 2026-06-08T15:34:23.452876519Z
-        retrievals: 5
+        likes: 1
+        last_feedback_at: 2026-06-12T19:51:47.881202528Z
+        last_used_at: 2026-06-12T19:51:31.258994268Z
+        retrievals: 6
+        reasons:
+            - Helpful dependency/update-ticket/tooling context for mutable dependency implementation.
     learning:c9d8e384-39a8-4ec2-8a69-d1e83230ba95:
         last_used_at: 2026-06-08T15:34:23.452876519Z
         retrievals: 8
+    learning:c938d432-2581-49bc-93e6-5a08e030866c:
+        likes: 1
+        last_feedback_at: 2026-06-12T15:30:33.048877717Z
+        last_used_at: 2026-06-12T15:29:58.823033558Z
+        retrievals: 1
+        reasons:
+            - Directly relevant to the phase-wave ticket row metadata layout and the existing wrapper around badge plus attribution.
     learning:c8589bad-09e5-4c97-8cd4-b8959adde05b:
         last_used_at: 2026-06-07T13:29:33.493018042Z
         retrievals: 1
@@ -275,8 +336,8 @@ entries:
         last_used_at: 2026-05-30T22:35:46.892037278Z
         retrievals: 1
     learning:dc20c148-0e8d-41f3-9a41-4ea1494b49de:
-        last_used_at: 2026-06-06T20:26:47.619129093Z
-        retrievals: 2
+        last_used_at: 2026-06-12T15:29:58.823033558Z
+        retrievals: 3
     learning:de1a552e-d51b-4867-85e5-a5e910de23c8:
         last_used_at: 2026-06-06T19:33:16.053021795Z
         retrievals: 6
@@ -305,12 +366,13 @@ entries:
         last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 8
     learning:f9bb5d13-8b39-43da-a4de-c90352218df4:
-        likes: 1
-        last_feedback_at: 2026-06-06T11:46:05.361822984Z
-        last_used_at: 2026-06-07T13:52:09.607717354Z
-        retrievals: 10
+        likes: 2
+        last_feedback_at: 2026-06-12T19:51:47.893279981Z
+        last_used_at: 2026-06-12T19:51:31.258994268Z
+        retrievals: 11
         reasons:
             - 'Both load-bearing for #077: the User+Membership store learning gave the exact per-project-subdir layout + central-data-root + GrantMembership idempotency I mirrored for InvitationStore; the acting-for learning confirmed the membership-check seam (GetMembership / GrantMembership) the invitations UI populates. Reused both patterns verbatim.'
+            - Helpful dependency/update-ticket/tooling context for mutable dependency implementation.
     learning:f988dea5-790f-4ea1-a817-6c388fed961c:
         last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 3
@@ -344,6 +406,9 @@ entries:
     ticket:3f2b1a5b-0b41-4307-978e-d4bbb6ba4b7b:
         last_used_at: 2026-06-06T20:26:46.614977914Z
         retrievals: 4
+    ticket:3fc1c4a9-426a-439b-a369-4a7d700e57ff:
+        last_used_at: 2026-06-12T09:12:31.22926876Z
+        retrievals: 1
     ticket:5b91424f-c674-4421-a6d0-43200c9fbb74:
         last_used_at: 2026-06-02T21:48:38.492988157Z
         retrievals: 1
@@ -380,12 +445,18 @@ entries:
     ticket:67de6377-896b-46df-a718-6ce6b836db64:
         last_used_at: 2026-06-02T21:53:37.604570205Z
         retrievals: 2
+    ticket:74fa2753-7379-4df7-be7b-f5f712d66038:
+        last_used_at: 2026-06-12T09:08:47.815080684Z
+        retrievals: 1
     ticket:86c81164-4e01-4e1e-9274-c87317a282b9:
         last_used_at: 2026-05-31T14:03:00.040777152Z
         retrievals: 3
     ticket:95b00884-c7e5-4e71-b114-9d19eff8dd9e:
         last_used_at: 2026-06-06T20:26:46.614977914Z
         retrievals: 3
+    ticket:150d7367-36ff-423a-a59c-098673bb7b0a:
+        last_used_at: 2026-06-12T09:12:31.22926876Z
+        retrievals: 1
     ticket:249ce6f7-692e-4513-bedc-225846bbaea9:
         last_used_at: 2026-06-06T19:41:23.637553697Z
         retrievals: 2
@@ -393,10 +464,13 @@ entries:
         last_used_at: 2026-06-06T20:26:46.614977914Z
         retrievals: 5
     ticket:346a3f21-f6f8-438d-a09c-5fc7012e3607:
-        last_used_at: 2026-06-02T21:48:35.55183606Z
-        retrievals: 1
+        last_used_at: 2026-06-12T09:12:31.22926876Z
+        retrievals: 2
     ticket:453e38fa-3786-4613-a715-de6e7a204e30:
-        last_used_at: 2026-05-31T10:37:34.131826938Z
+        last_used_at: 2026-06-12T09:12:31.22926876Z
+        retrievals: 2
+    ticket:534adaa9-950a-468a-b490-1b269ac6f25c:
+        last_used_at: 2026-06-12T09:08:47.815080684Z
         retrievals: 1
     ticket:543a4382-f5b5-4a38-af32-4a4fb98f387a:
         last_used_at: 2026-05-31T09:02:42.370727628Z
@@ -407,21 +481,24 @@ entries:
     ticket:5688ace3-37cc-40bb-827d-fa0c8fd3d1d3:
         likes: 1
         last_feedback_at: 2026-06-02T21:50:17.815122921Z
-        last_used_at: 2026-06-06T20:26:46.614977914Z
-        retrievals: 6
+        last_used_at: 2026-06-12T09:12:31.22926876Z
+        retrievals: 7
         reasons:
             - Root-cause writeup for the RequireString/GetArguments envelope bug — directly applicable to the new "rich text in ticket bodies" ticket (3d6cbfd7); its learnings named create_ticket/update_ticket as the next likely victims.
     ticket:5689a5ca-f3f3-41ef-8586-4e581c7cf908:
-        last_used_at: 2026-05-31T09:02:42.370727628Z
-        retrievals: 1
+        last_used_at: 2026-06-12T09:12:31.22926876Z
+        retrievals: 2
     ticket:5830e479-ec7c-4b62-ad14-ecac9f3cf32a:
-        last_used_at: 2026-05-31T09:02:42.370727628Z
-        retrievals: 1
+        last_used_at: 2026-06-12T09:08:47.815080684Z
+        retrievals: 2
     ticket:8888d70d-dca3-4cf4-b6a7-d5572bb1e77f:
         last_used_at: 2026-06-06T19:41:23.637553697Z
         retrievals: 4
     ticket:9068aa1e-15db-446b-8f95-4d7ddc2a7742:
         last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 1
+    ticket:9789bb94-4ed2-4cbe-a00e-62e7f8c0bce4:
+        last_used_at: 2026-06-12T09:12:31.22926876Z
         retrievals: 1
     ticket:51153b49-dbaf-4810-9869-244127652e81:
         last_used_at: 2026-06-06T20:26:46.614977914Z
@@ -442,8 +519,8 @@ entries:
         last_used_at: 2026-06-06T18:15:46.57168363Z
         retrievals: 1
     ticket:a83c9df3-b3cd-4fa6-8805-d3ccd75b8237:
-        last_used_at: 2026-06-02T21:48:38.492988157Z
-        retrievals: 3
+        last_used_at: 2026-06-12T09:08:47.815080684Z
+        retrievals: 4
     ticket:a28797b8-51c3-490b-bd6c-fda9f7cfd1bc:
         last_used_at: 2026-06-06T20:26:46.614977914Z
         retrievals: 3
@@ -453,8 +530,8 @@ entries:
     ticket:adcc2e82-df85-44bc-aab9-4f9ff4cdbbdf:
         likes: 1
         last_feedback_at: 2026-06-06T19:41:23.479115579Z
-        last_used_at: 2026-06-06T19:41:23.637553697Z
-        retrievals: 1
+        last_used_at: 2026-06-12T09:08:47.815080684Z
+        retrievals: 2
     ticket:b0e89cfd-168a-43fb-9434-5bd3ac913e32:
         last_used_at: 2026-05-31T09:02:42.370727628Z
         retrievals: 1
@@ -462,8 +539,8 @@ entries:
         last_used_at: 2026-06-02T21:53:37.604570205Z
         retrievals: 3
     ticket:b8b70091-38b5-4696-a6b5-c4b5f2197ba8:
-        last_used_at: 2026-06-06T20:26:46.614977914Z
-        retrievals: 5
+        last_used_at: 2026-06-12T09:12:31.22926876Z
+        retrievals: 6
     ticket:b26f2ced-5fec-48b4-af89-9b76ed544ddc:
         last_used_at: 2026-06-06T20:26:46.614977914Z
         retrievals: 4
@@ -471,14 +548,14 @@ entries:
         last_used_at: 2026-06-06T18:15:46.57168363Z
         retrievals: 1
     ticket:ba05e2f9-d6a2-4466-aebb-26567c9ad266:
-        last_used_at: 2026-06-06T19:41:23.637553697Z
-        retrievals: 1
+        last_used_at: 2026-06-12T09:08:47.815080684Z
+        retrievals: 2
     ticket:bd3b7fb8-c230-4ecc-8edf-2bb227962607:
         last_used_at: 2026-06-06T18:15:46.57168363Z
         retrievals: 1
     ticket:bda1ec08-865c-499f-bc75-76baabcabd42:
-        last_used_at: 2026-06-06T20:26:46.614977914Z
-        retrievals: 6
+        last_used_at: 2026-06-12T09:12:31.22926876Z
+        retrievals: 7
     ticket:c9d8e384-39a8-4ec2-8a69-d1e83230ba95:
         last_used_at: 2026-06-02T21:48:35.55183606Z
         retrievals: 1
@@ -492,23 +569,29 @@ entries:
         last_used_at: 2026-06-06T18:15:46.57168363Z
         retrievals: 2
     ticket:cedc96f6-05de-4fc2-a364-b240ad33c899:
-        last_used_at: 2026-06-06T19:41:23.637553697Z
-        retrievals: 3
+        last_used_at: 2026-06-12T09:08:47.815080684Z
+        retrievals: 4
     ticket:da60fd70-abd5-4a6d-a1aa-f7f2c73cb665:
         last_used_at: 2026-05-31T10:37:35.905808638Z
         retrievals: 2
     ticket:dc20c148-0e8d-41f3-9a41-4ea1494b49de:
-        last_used_at: 2026-06-06T19:41:23.637553697Z
-        retrievals: 3
+        last_used_at: 2026-06-12T09:08:47.815080684Z
+        retrievals: 4
+    ticket:e749b038-cab9-4794-9d26-1f246843c17d:
+        last_used_at: 2026-06-12T09:08:47.815080684Z
+        retrievals: 1
     ticket:e26978cd-54ef-4a12-85ba-42c1b65970dc:
         last_used_at: 2026-06-06T19:41:23.637553697Z
+        retrievals: 1
+    ticket:edfb2ea5-ad6b-450c-8345-c3a97e695005:
+        last_used_at: 2026-06-12T09:12:31.22926876Z
         retrievals: 1
     ticket:ef7e0770-45b3-4d8a-b4d7-ef68d7acdb4f:
         last_used_at: 2026-06-06T20:26:46.614977914Z
         retrievals: 3
     ticket:f6c8d7a6-51a9-4f5f-a2fc-a715ab762b4a:
-        last_used_at: 2026-05-31T09:02:42.370727628Z
-        retrievals: 1
+        last_used_at: 2026-06-12T09:08:47.815080684Z
+        retrievals: 2
     ticket:f9bb5d13-8b39-43da-a4de-c90352218df4:
         last_used_at: 2026-06-06T20:26:46.614977914Z
         retrievals: 4
