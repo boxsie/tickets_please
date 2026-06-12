@@ -1,54 +1,47 @@
 ## Goal
 
-Add a first-class **ideation** ticket kind, distinct from normal work tickets. Today brainstorm/idea tickets get filed alongside actionable work and clutter the board, search, and `ready_only` work queues. We want ideas tracked in the same store but cleanly separable from "things to actually build".
+Add an **ideation** flag on tickets, modelled exactly on the existing `archived` flag: an idea/brainstorm ticket is hidden from the default work surfaces and you opt into seeing it with an `include_ideation` filter (the mirror of `include_archived`). Ideas live in the same store and use the same columns; they're just filtered out by default so they don't clutter the work queue, board, or search.
 
-## Why
+## Why this shape
 
-- Ideation tickets are open-ended thought, not a unit of work with acceptance criteria. They don't really flow `todo → in_progress → testing → done`, and they shouldn't show up when an agent asks "what's ready to work on".
-- Mixing them in pollutes `list_tickets`, the board, and `search_learnings` (an idea has no "gotchas / how I fixed it" learnings).
+`archived` already solves the "second-class, hidden-by-default, opt-in-to-see" problem and is wired cleanly through the whole stack. Ideation is the same idea with a different intent, so we copy the plumbing rather than invent a new `kind` enum. This also dissolves the earlier open questions: no new lifecycle, no learnings-gate special-case, and **promotion is just "unset the flag"** — an idea graduates into real work the way `unarchive_ticket` brings a ticket back.
 
-## Proposed shape (open for discussion)
+The one semantic difference from archived: archived = "this is finished/dead, get it out of the way"; ideation = "this isn't actionable work yet". A ticket could in principle be both (an abandoned idea), so ideation is an independent boolean, not a state in the archived axis.
 
-Add an orthogonal `kind` field on tickets — default `work`, plus `ideation`. Kind is independent of column/wave/phase. Decisions still to make are listed at the bottom; this ticket can be promoted to its own phase if the surface proves large.
+## Implementation: mirror `archived` at every touch point
 
-## Integration surface (mapped from the codebase)
+**Data model**
+- `internal/domain/types.go:146` — add `Ideation bool` next to `Archived` (the doc comment at `:140-146` is the template: "independent of Column… excluded from search_*/list_tickets by default"). Probably no timestamp needed; add `IdeationAt *time.Time` only if we want the audit parity.
+- `internal/store/records.go` — add `Ideation` (yaml `ideation,omitempty`) to `TicketRecord`; cache hydration maps it through.
 
-There are a lot of touch points — this is why it's worth a dedicated ticket rather than an ad-hoc field:
+**Filter inputs** (each already carries `IncludeArchived`, add `IncludeIdeation` beside it)
+- `internal/domain/inputs.go:55,70,84,133` — `ListTicketsInput`, `SearchTicketsInput`, `SearchCommentsInput`, `SearchLearningsInput`.
 
-**Data model & persistence**
-- `internal/domain/types.go:107` — add `Kind` to `Ticket` struct (alongside the existing `CommentKind` enum at ~`:24`, which is unrelated).
-- `internal/store/records.go:71` — add `Kind` (yaml `kind,omitempty`) to `TicketRecord`.
-- `internal/cache/projectcache.go` (~hydrate, ~`:647`) — map record → domain.
+**Default-exclude filter points** (each is an `if t.Archived && !in.IncludeArchived` drop — add the `Ideation` twin)
+- `internal/svc/tickets.go:457` (list)
+- `internal/svc/search.go:215` (tickets), `:426` (comments via `hydrateCommentHit`), `:569` (learnings via `hydrateLearningHit`).
+- `ready_only` work-queue filtering should also drop ideation by default.
 
-**Service layer / inputs**
-- `internal/domain/inputs.go` — add `Kind` to `CreateTicketInput` / `UpdateTicketInput`, and a `Kind` filter on `ListTicketsInput`.
-- `internal/svc/tickets.go` — `CreateTicket`, `UpdateTicket`, `ListTickets` (apply filter), and crucially `CompleteTicket` (~`:852` the ≥10-char learnings gate — see decisions).
-- `internal/svc/validation.go` — optional strict-enum validation for kind. Column flow stays unchanged.
+**MCP tools** (each `include_archived` bool param gets an `include_ideation` sibling; handlers at `tools.go:1003,1585,1626,1672` read it)
+- `list_tickets` (`tools.go:228`), `search_tickets` (`:338`), `search_learnings` (`:346`), `search_comments` (`:355`) — add `include_ideation` param + update the tool descriptions (which currently spell out the archived-exclusion rule).
+- Setting the flag: simplest is an `ideation` bool on `create_ticket` (and `update_ticket`). For parity with archive we could also add `mark_ideation` / `unmark_ideation` flip tools backed by the same `archiveFlipHandler`-style helper (`tools.go:1314`), writing a `system_*` audit comment — decide whether that ceremony is worth it or whether create/update flag is enough.
+- `format.go` — surface `ideation` in `formatTicket` output.
 
-**MCP tools**
-- `internal/mcptools/tools.go` — `kind` param on `create_ticket`/`update_ticket`; `kind` filter on `list_tickets` (and maybe `search_tickets`). Likely a default in `list_tickets`/`ready_only` to EXCLUDE ideation.
-- `internal/mcptools/format.go:32` — surface `kind` in `formatTicket` output.
+**Web frontend** (mirror however the board/lists currently treat archived)
+- New/edit ticket form: an "ideation" checkbox.
+- Board / list / phase views: hide ideation by default, with a show-ideation toggle paralleling any existing show-archived control. Ticket card badge for ideation. Regenerate `*_templ.go`.
 
-**Search / embeddings**
-- `internal/vecindex/index.go:15` — existing `Kind` enum (ProjectSummary/TicketBody/Learnings/Comment); decide whether ideation bodies get their own index kind or just a post-filter.
-- `internal/svc/search.go` — `SearchTickets` post-filter by kind; `SearchLearnings` should probably skip ideation tickets entirely.
+**Vec index**: no change — index ideation tickets normally (like archived) and filter at hydration, so toggling the flag is free.
 
-**Web frontend (templ)**
-- `internal/web/components/pages/tickets/` — `new.templ` (kind selector), `edit.templ`, `ticket_card.templ` (badge), `metadata.templ`/`detail.templ` (kind row). Regenerate `*_templ.go`.
-- `internal/web/handlers_tickets.go:50` — `ticketFormSubmitted` + `handleTicketCreate` extract/pass kind.
-- Board / phase / wave list views — decide default visibility of ideation tickets.
+## Open questions (smaller now)
 
-## Open design decisions (resolve before building)
-
-1. **Kind values & default** — `work` (default) + `ideation`; room for more later, or keep binary?
-2. **Workflow** — do ideation tickets use the same columns, or a simpler lifecycle? If same, does "done" still require `complete_ticket`?
-3. **Learnings gate** — relax/skip the ≥10-char `learnings` requirement for ideation completion, or repurpose it as "outcome of the idea"?
-4. **Default visibility** — `list_tickets` / `ready_only` / board should default to hiding ideation; opt-in via a `kind` filter. Confirm.
-5. **search_learnings** — exclude ideation tickets (recommended) vs include.
-6. **Promotion path** — when an idea becomes real work, flip its kind to `work` (and reset column?) vs spawn a linked work ticket. This is probably the most important UX question.
+1. Do we want the `mark_ideation`/`unmark_ideation` flip tools + audit comments, or is a flag on create/update sufficient?
+2. Should there be a per-project default, or is "hidden everywhere by default" fine universally? (archived has no per-project visibility default, so probably fine.)
+3. Web: is there already a show-archived toggle to copy, or does archived just never surface in the UI? (drives how much UI work this is.)
 
 ## Acceptance
 
-- A ticket can be created with `kind=ideation` via MCP and the web form.
-- Ideation tickets are excluded from default work listings/board and from `search_learnings`, but findable via an explicit kind filter.
-- Existing tickets default to `work` with no migration needed (solo project, in-repo store).
+- A ticket can be flagged `ideation` on create (and toggled later), without changing its column.
+- Ideation tickets are excluded from `list_tickets`, `ready_only`, `search_tickets`, `search_learnings`, `search_comments`, and the default board — exactly as archived tickets are — and reappear when `include_ideation=true`.
+- Un-flagging an ideation ticket makes it a normal work ticket immediately (the promotion path).
+- `get_ticket` by id always returns it regardless of the flag (matches archived behaviour).
