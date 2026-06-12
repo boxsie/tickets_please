@@ -2,8 +2,8 @@ id: 36baed6f-32ec-4ba9-a21a-98ee30903228
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 129
 title: Phase list row shows no progress bar when all tickets are done (seen on ensemble "Security and Code Quality Review 2026-06-02")
-column: todo
+column: in_progress
 phase_id: 1f568db1-4560-467d-9182-cebc4dc3c7fa
 created_by: fca3249f-cae9-45ba-9e95-9b355c2f3e47
 created_at: 2026-06-10T12:23:44.4366732+01:00
-updated_at: 2026-06-10T12:23:44.4366732+01:00
+updated_at: 2026-06-12T13:56:31.446746323+01:00
