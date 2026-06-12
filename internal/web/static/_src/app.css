@@ -2461,11 +2461,14 @@
      Before this wrapper the chip auto-placed into an implicit 2nd-row column,
      blowing out column 1's width and shoving the title rightward. */
   .phase-wave-ticket-meta {
-    display: flex;
+    display: grid;
+    grid-template-columns: 5.5rem 4.75rem minmax(0, 11rem);
     align-items: center;
+    justify-content: start;
     gap: 0.5rem;
     flex-shrink: 0;
-    min-width: 0;
+    width: calc(5.5rem + 4.75rem + 11rem + 1rem);
+    min-width: calc(5.5rem + 4.75rem + 11rem + 1rem);
   }
   /* Give the trailing meta fixed-width columns so the status badge, author,
      and time line up vertically down the expanded ticket list instead of
@@ -2473,13 +2476,32 @@
      centred fixed pill; the attribution chip is a fixed block whose content
      is right-anchored so the relative-time sits flush at the row's right edge
      on every row. */
-  .phase-wave-ticket-meta > .badge {
+  .phase-wave-ticket-meta > .badge:not(.badge-archived) {
+    grid-column: 1;
     min-width: 5.5rem;
     justify-content: center;
   }
+  .phase-wave-ticket-meta > .badge-archived {
+    grid-column: 2;
+    justify-self: start;
+    min-width: 0;
+  }
   .phase-wave-ticket-meta > .ticket-attribution {
-    min-width: 10rem;
+    grid-column: 3;
+    min-width: 0;
     justify-content: flex-end;
+    overflow: hidden;
+  }
+  .phase-wave-ticket-meta > .ticket-attribution .attribution-author {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .phase-wave-ticket-meta > .ticket-attribution .attribution-sep {
+    flex-shrink: 0;
+  }
+  .phase-wave-ticket-meta > .ticket-attribution time {
+    flex-shrink: 0;
   }
 
   .phase-row-empty {
@@ -2517,6 +2539,23 @@
     }
     .phase-row-bar { flex: 1 1 auto; width: auto; }
     .phase-row-desc { white-space: normal; }
+    .phase-wave-ticket {
+      grid-template-columns: auto 1fr;
+      align-items: start;
+    }
+    .phase-wave-ticket-meta {
+      grid-column: 2;
+      grid-template-columns: 5.5rem minmax(0, 1fr);
+      width: 100%;
+      min-width: 0;
+      margin-top: 0.2rem;
+    }
+    .phase-wave-ticket-meta > .badge-archived {
+      grid-column: 1 / -1;
+    }
+    .phase-wave-ticket-meta > .ticket-attribution {
+      grid-column: 2;
+    }
   }
 
   /* ============================================================
