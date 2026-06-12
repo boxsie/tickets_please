@@ -2,8 +2,10 @@ id: 847ce4de-59c7-4cc3-a292-008a60fbbe22
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 130
 title: Phase detail renders only 1 of 19 tickets (ensemble "TUI UX overhaul")
-column: in_progress
+column: done
 phase_id: 1f568db1-4560-467d-9182-cebc4dc3c7fa
 created_by: fca3249f-cae9-45ba-9e95-9b355c2f3e47
+completed_by: 3f7fe8a1-34c8-4fb3-9648-b3d4345cf43b
+completed_at: 2026-06-12T16:43:50.520036193+01:00
 created_at: 2026-06-10T12:23:55.91232021+01:00
-updated_at: 2026-06-12T16:40:39.054497505+01:00
+updated_at: 2026-06-12T16:43:50.520036193+01:00
