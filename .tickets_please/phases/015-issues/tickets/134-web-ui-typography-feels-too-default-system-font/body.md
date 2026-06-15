@@ -1,0 +1,1 @@
+User feedback: current tickets_please web UI fonts feel "billy basic" and Bootstrap-like. Tune the typography so the UI is still legible and utilitarian, but less generic: better sans stack, better mono stack, heading/label treatment, and rebuild embedded CSS. Keep it local-first/single-binary friendly; no external font CDN at runtime.
