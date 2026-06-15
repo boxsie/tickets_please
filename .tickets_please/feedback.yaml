@@ -90,6 +90,13 @@ entries:
     learning:7e260496-5d06-4eef-85e9-712df0411d61:
         last_used_at: 2026-06-07T13:52:09.607717354Z
         retrievals: 5
+    learning:8b3fae7c-a6d9-4bfc-a64b-48e25aa42148:
+        likes: 1
+        last_feedback_at: 2026-06-15T22:47:28.111541739Z
+        last_used_at: 2026-06-15T22:47:12.709604649Z
+        retrievals: 1
+        reasons:
+            - Useful context for CSS source, visual verification, and sidebar/project picker behavior.
     learning:9b06036c-c1e7-4f0e-b944-e7ce551822ff:
         last_used_at: 2026-06-07T13:52:09.607717354Z
         retrievals: 6
@@ -100,13 +107,14 @@ entries:
         last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 5
     learning:10b302f6-805b-4398-910e-d4aaa60983d1:
-        likes: 2
-        last_feedback_at: 2026-06-15T22:27:14.752440409Z
-        last_used_at: 2026-06-15T22:26:36.016556558Z
-        retrievals: 3
+        likes: 3
+        last_feedback_at: 2026-06-15T22:47:28.081614513Z
+        last_used_at: 2026-06-15T22:47:12.709604649Z
+        retrievals: 4
         reasons:
             - 'Directly relevant: confirms typography/style work should be a targeted tune-up in internal/web/static/_src/app.css and generated CSS must be rebuilt.'
             - Relevant reminder to keep CSS changes scoped to existing dark dev-tool system and rebuild generated CSS.
+            - Useful context for CSS source, visual verification, and sidebar/project picker behavior.
     learning:18b03ea4-b627-43ab-927e-40393740a5f6:
         last_used_at: 2026-06-06T18:15:46.748838707Z
         retrievals: 4
@@ -121,8 +129,12 @@ entries:
         reasons:
             - All five are relevant to phase ticket bucketing, hidden tickets, and wave render behavior for ticket 130.
     learning:60fd4d8c-4384-4a5b-adef-792b400a1470:
-        last_used_at: 2026-06-07T10:11:55.724827191Z
-        retrievals: 14
+        dislikes: 1
+        last_feedback_at: 2026-06-15T22:47:31.236355532Z
+        last_used_at: 2026-06-15T22:47:12.709604649Z
+        retrievals: 15
+        reasons:
+            - Mostly implementation-context for pages/forms, not directly useful for this styling pass.
     learning:63c73101-1db6-4f0e-ace3-5a29840f092b:
         last_used_at: 2026-05-31T09:06:17.509755057Z
         retrievals: 1
@@ -258,13 +270,14 @@ entries:
         retrievals: 2
     learning:a83c9df3-b3cd-4fa6-8805-d3ccd75b8237:
         likes: 1
-        dislikes: 1
-        last_feedback_at: 2026-06-15T22:16:01.973580627Z
-        last_used_at: 2026-06-15T22:15:41.558684151Z
-        retrievals: 10
+        dislikes: 2
+        last_feedback_at: 2026-06-15T22:47:31.245904077Z
+        last_used_at: 2026-06-15T22:47:12.709604649Z
+        retrievals: 11
         reasons:
             - Confirmed Service.GetTicket walks to find the host project and there's no slug-direct entry; guided where to add ResolveTicketRef and that resolution must walk store records (domain.Ticket has no Number). Accurate for ticket 118-shortcodes work.
             - Not harmful, but not relevant to this typography pass beyond generic web history.
+            - Mostly implementation-context for pages/forms, not directly useful for this styling pass.
     learning:a28797b8-51c3-490b-bd6c-fda9f7cfd1bc:
         last_used_at: 2026-06-07T10:11:55.724827191Z
         retrievals: 4
@@ -377,8 +390,12 @@ entries:
         last_used_at: 2026-06-07T13:35:05.476489612Z
         retrievals: 6
     learning:e26978cd-54ef-4a12-85ba-42c1b65970dc:
-        last_used_at: 2026-06-07T10:11:55.724827191Z
-        retrievals: 8
+        likes: 1
+        last_feedback_at: 2026-06-15T22:47:28.116775109Z
+        last_used_at: 2026-06-15T22:47:12.709604649Z
+        retrievals: 9
+        reasons:
+            - Useful context for CSS source, visual verification, and sidebar/project picker behavior.
     learning:ea7117f6-ed16-4724-b733-cbc464057412:
         last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 2
