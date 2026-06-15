@@ -4,8 +4,12 @@
 version: 1
 entries:
     learning:0aabb5af-5680-4be2-86cb-3220f0605e7e:
-        last_used_at: 2026-06-06T18:15:46.748838707Z
-        retrievals: 5
+        dislikes: 1
+        last_feedback_at: 2026-06-15T22:16:01.91945769Z
+        last_used_at: 2026-06-15T22:15:41.558684151Z
+        retrievals: 6
+        reasons:
+            - Not harmful, but not relevant to this typography pass beyond generic web history.
     learning:0bd25eb6-0dab-40a3-8541-d83872a096d7:
         last_used_at: 2026-06-07T12:04:05.918915863Z
         retrievals: 6
@@ -92,8 +96,12 @@ entries:
         last_used_at: 2026-06-06T20:26:47.619129093Z
         retrievals: 5
     learning:10b302f6-805b-4398-910e-d4aaa60983d1:
-        last_used_at: 2026-06-07T12:04:05.918915863Z
-        retrievals: 1
+        likes: 1
+        last_feedback_at: 2026-06-15T22:15:58.245932069Z
+        last_used_at: 2026-06-15T22:15:41.558684151Z
+        retrievals: 2
+        reasons:
+            - 'Directly relevant: confirms typography/style work should be a targeted tune-up in internal/web/static/_src/app.css and generated CSS must be rebuilt.'
     learning:18b03ea4-b627-43ab-927e-40393740a5f6:
         last_used_at: 2026-06-06T18:15:46.748838707Z
         retrievals: 4
@@ -239,11 +247,13 @@ entries:
         retrievals: 2
     learning:a83c9df3-b3cd-4fa6-8805-d3ccd75b8237:
         likes: 1
-        last_feedback_at: 2026-06-07T13:43:51.390125208Z
-        last_used_at: 2026-06-08T15:34:23.452876519Z
-        retrievals: 9
+        dislikes: 1
+        last_feedback_at: 2026-06-15T22:16:01.973580627Z
+        last_used_at: 2026-06-15T22:15:41.558684151Z
+        retrievals: 10
         reasons:
             - Confirmed Service.GetTicket walks to find the host project and there's no slug-direct entry; guided where to add ResolveTicketRef and that resolution must walk store records (domain.Ticket has no Number). Accurate for ticket 118-shortcodes work.
+            - Not harmful, but not relevant to this typography pass beyond generic web history.
     learning:a28797b8-51c3-490b-bd6c-fda9f7cfd1bc:
         last_used_at: 2026-06-07T10:11:55.724827191Z
         retrievals: 4
@@ -299,14 +309,20 @@ entries:
         retrievals: 1
     learning:bda1ec08-865c-499f-bc75-76baabcabd42:
         likes: 1
-        last_feedback_at: 2026-06-12T19:51:47.881202528Z
-        last_used_at: 2026-06-12T19:51:31.258994268Z
-        retrievals: 6
+        dislikes: 1
+        last_feedback_at: 2026-06-15T22:16:01.948034111Z
+        last_used_at: 2026-06-15T22:15:41.558684151Z
+        retrievals: 7
         reasons:
             - Helpful dependency/update-ticket/tooling context for mutable dependency implementation.
+            - Not harmful, but not relevant to this typography pass beyond generic web history.
     learning:c9d8e384-39a8-4ec2-8a69-d1e83230ba95:
-        last_used_at: 2026-06-08T15:34:23.452876519Z
-        retrievals: 8
+        dislikes: 1
+        last_feedback_at: 2026-06-15T22:16:01.979334412Z
+        last_used_at: 2026-06-15T22:15:41.558684151Z
+        retrievals: 9
+        reasons:
+            - Not harmful, but not relevant to this typography pass beyond generic web history.
     learning:c938d432-2581-49bc-93e6-5a08e030866c:
         likes: 1
         last_feedback_at: 2026-06-12T15:30:33.048877717Z
