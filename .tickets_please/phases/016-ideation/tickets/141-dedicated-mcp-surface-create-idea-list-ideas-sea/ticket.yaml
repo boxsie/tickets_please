@@ -2,12 +2,14 @@ id: 2417275a-cef8-4cc6-a7a8-3bab1a69641c
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 141
 title: 'Dedicated MCP surface: `create_idea` / `list_ideas` / `search_ideas`'
-column: in_progress
+column: done
 phase_id: 077fcc15-1e3c-459d-a72e-75e9242c6d7a
 wave: 3
 depends_on:
     - 4b7497bb-c12f-4d69-8945-d83e5eb223ea
     - 76f83e10-7884-409f-9beb-49b7e410d3f1
 created_by: 8da66aae-a1d0-4881-bfe9-137e7553ad7e
+completed_by: 6bb8486b-a8de-436a-8027-0ff093ce79b3
+completed_at: 2026-06-18T21:49:07.208150255+01:00
 created_at: 2026-06-18T21:21:05.985072232+01:00
-updated_at: 2026-06-18T21:46:39.703928053+01:00
+updated_at: 2026-06-18T21:49:07.208150255+01:00
