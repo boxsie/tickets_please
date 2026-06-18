@@ -2,7 +2,7 @@ id: c2232837-d57e-4866-b52f-ce9ff4880bba
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 143
 title: 'Docs: document the ideation concept + promotion flow'
-column: in_progress
+column: done
 phase_id: 077fcc15-1e3c-459d-a72e-75e9242c6d7a
 wave: 4
 depends_on:
@@ -13,5 +13,7 @@ depends_on:
     - 2417275a-cef8-4cc6-a7a8-3bab1a69641c
     - 65cc4d50-86d6-40f3-a912-9a278091240e
 created_by: 8da66aae-a1d0-4881-bfe9-137e7553ad7e
+completed_by: 6bb8486b-a8de-436a-8027-0ff093ce79b3
+completed_at: 2026-06-18T22:03:38.705794969+01:00
 created_at: 2026-06-18T21:21:31.963056085+01:00
-updated_at: 2026-06-18T21:59:49.775030756+01:00
+updated_at: 2026-06-18T22:03:38.705794969+01:00
