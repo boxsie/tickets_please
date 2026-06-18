@@ -86,13 +86,21 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 	// ticket map. Anything not found is treated as cross-project (or just
 	// nonexistent).
 	for _, dep := range in.DependsOn {
-		if _, ok := lp.Tickets[dep]; !ok {
+		dt, ok := lp.Tickets[dep]
+		if !ok {
 			return nil, fmt.Errorf("%w: depends_on ticket %q not in project", domain.ErrInvalidArgument, dep)
+		}
+		if dt.Kind == domain.KindIdea {
+			return nil, fmt.Errorf("%w: depends_on ticket %q is an idea; ideas can't gate work — promote it first with promote_idea", domain.ErrInvalidArgument, dep)
 		}
 	}
 	for _, par := range in.ParallelizableWith {
-		if _, ok := lp.Tickets[par]; !ok {
+		pt, ok := lp.Tickets[par]
+		if !ok {
 			return nil, fmt.Errorf("%w: parallelizable_with ticket %q not in project", domain.ErrInvalidArgument, par)
+		}
+		if pt.Kind == domain.KindIdea {
+			return nil, fmt.Errorf("%w: parallelizable_with ticket %q is an idea; promote it first with promote_idea", domain.ErrInvalidArgument, par)
 		}
 	}
 
@@ -124,6 +132,7 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		Number:             number,
 		Title:              title,
 		Column:             domain.ColumnTodo,
+		Kind:               in.Kind.Stored(),
 		PhaseID:            phaseIDPtr,
 		Wave:               in.Wave,
 		DependsOn:          append([]string(nil), in.DependsOn...),
@@ -173,6 +182,7 @@ func (s *Service) CreateTicket(ctx context.Context, in domain.CreateTicketInput)
 		Title:              rec.Title,
 		Body:               in.Body,
 		Column:             rec.Column,
+		Kind:               rec.Kind.OrWork(),
 		PhaseID:            rec.PhaseID,
 		Wave:               rec.Wave,
 		DependsOn:          append([]string(nil), rec.DependsOn...),
@@ -457,6 +467,9 @@ func (s *Service) ListTickets(ctx context.Context, in domain.ListTicketsInput) (
 		if t.Archived && !in.IncludeArchived {
 			continue
 		}
+		if t.Kind == domain.KindIdea && !in.IncludeIdeas {
+			continue
+		}
 		if in.Column != nil && t.Column != *in.Column {
 			continue
 		}
@@ -470,6 +483,12 @@ func (s *Service) ListTickets(ctx context.Context, in domain.ListTicketsInput) (
 		// reflect ongoing column moves without requiring a reload.
 		t.BlockedBy = computeBlockedBy(t.DependsOn, lp.Tickets)
 		if in.ReadyOnly {
+			// Ideas are never "ready work" — they must be promoted first.
+			// Guard here too so ready_only stays correct even if a caller
+			// passes IncludeIdeas alongside it.
+			if t.Kind == domain.KindIdea {
+				continue
+			}
 			if len(t.BlockedBy) > 0 {
 				continue
 			}
@@ -717,6 +736,11 @@ func (s *Service) MoveTicket(ctx context.Context, ticketID string, target domain
 	if t.Column == domain.ColumnDone {
 		return nil, fmt.Errorf("%w: ticket %s is done; reopening is not allowed", domain.ErrFailedPrecondition, ticketID)
 	}
+	// Ideas stay parked in todo — the only forward path is promotion. You can
+	// still comment on them, but they can't walk into the work columns.
+	if t.Kind == domain.KindIdea && target != domain.ColumnTodo {
+		return nil, fmt.Errorf("%w: ticket %s is an idea and stays in todo; promote it to a work ticket first with promote_idea", domain.ErrFailedPrecondition, ticketID)
+	}
 
 	// Dependency enforcement only fires on transitions to in_progress. Other
 	// transitions (e.g. todo→testing, in_progress→testing) don't gate on deps.
@@ -893,6 +917,9 @@ func (s *Service) CompleteTicket(ctx context.Context, ticketID, testingEvidence,
 	t, ok := lp.Tickets[ticketID]
 	if !ok {
 		return nil, fmt.Errorf("%w: ticket %s", domain.ErrNotFound, ticketID)
+	}
+	if t.Kind == domain.KindIdea {
+		return nil, fmt.Errorf("%w: ticket %s is an idea; ideas can't be completed — promote it to a work ticket first with promote_idea", domain.ErrFailedPrecondition, ticketID)
 	}
 	if t.Column == domain.ColumnDone {
 		return nil, fmt.Errorf("%w: ticket %s is already done", domain.ErrFailedPrecondition, ticketID)
@@ -1346,8 +1373,12 @@ func validateTicketRefs(lp *cache.LoadedProject, ticketID, field string, refs []
 		if ref == ticketID {
 			return fmt.Errorf("%w: %s cannot reference the ticket itself", domain.ErrInvalidArgument, field)
 		}
-		if _, ok := lp.Tickets[ref]; !ok {
+		rt, ok := lp.Tickets[ref]
+		if !ok {
 			return fmt.Errorf("%w: %s ticket %q not in project", domain.ErrInvalidArgument, field, ref)
+		}
+		if rt.Kind == domain.KindIdea {
+			return fmt.Errorf("%w: %s ticket %q is an idea; ideas can't gate work — promote it first with promote_idea", domain.ErrInvalidArgument, field, ref)
 		}
 	}
 	return nil

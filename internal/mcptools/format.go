@@ -39,6 +39,7 @@ func formatTicket(t *domain.Ticket) map[string]any {
 		"title":               t.Title,
 		"body":                t.Body,
 		"column":              string(t.Column),
+		"kind":                string(t.Kind.OrWork()),
 		"phase_id":            ptrStringOrNil(t.PhaseID),
 		"wave":                t.Wave,
 		"depends_on":          stringSlice(t.DependsOn),

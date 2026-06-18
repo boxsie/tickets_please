@@ -661,6 +661,7 @@ func (c *ProjectCache) hydrateTicket(st *store.Store, ticketDir string, tr *stor
 		Title:              tr.Title,
 		Body:               body,
 		Column:             tr.Column,
+		Kind:               tr.Kind.OrWork(),
 		PhaseID:            tr.PhaseID,
 		Wave:               tr.Wave,
 		DependsOn:          append([]string(nil), tr.DependsOn...),

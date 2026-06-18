@@ -219,13 +219,14 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	// Tickets (7)
 	s.AddTool(mcp.NewTool("list_tickets",
-		mcp.WithDescription("List tickets in a project, optionally filtered by column or phase. Use `ready_only=true` to surface only unblocked tickets. Archived tickets are excluded by default; pass `include_archived=true` to include them."),
+		mcp.WithDescription("List tickets in a project, optionally filtered by column or phase. Use `ready_only=true` to surface only unblocked tickets. Archived tickets are excluded by default; pass `include_archived=true` to include them. Idea-kind tickets (spitballs) are likewise excluded by default; pass `include_ideas=true` to include them, or use `list_ideas` for ideas only."),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
 		mcp.WithString("column", mcp.Description("Filter by column: todo | in_progress | testing | done")),
 		mcp.WithString("phase_id_or_slug", mcp.Description("Filter by phase id/slug; pass \"-\" for phase-less only")),
 		mcp.WithNumber("wave", mcp.Description("Filter by wave (0 = unassigned)")),
 		mcp.WithBoolean("ready_only", mcp.Description("If true, only return unblocked tickets in todo/in_progress")),
 		mcp.WithBoolean("include_archived", mcp.Description("If true, include archived tickets (default false)")),
+		mcp.WithBoolean("include_ideas", mcp.Description("If true, include idea-kind tickets (default false)")),
 		mcp.WithNumber("limit", mcp.Description("Page size, default 50, max 200")),
 		mcp.WithString("cursor", mcp.Description("Opaque pagination cursor")),
 	), t.handleListTickets)
@@ -295,6 +296,13 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("comment", mcp.Required(), mcp.Description("Reason for unarchiving; becomes a system_unarchive comment")),
 	), t.handleUnarchiveTicket)
 
+	s.AddTool(mcp.NewTool("promote_idea",
+		mcp.WithDescription("Promote an idea-kind ticket into a real work ticket **in place** — the one forward path for an idea. Flips `kind: idea → work` while keeping the ticket's id, comments, and embedding history (no cross-store copy). The ticket keeps its `todo` column and immediately appears in default `list_tickets`/`search_tickets`. Refuses on a ticket that's already a work ticket. Comment is required and is written as a `system_promote` audit comment. Optionally pass `phase_id_or_slug` to drop the freshly-promoted ticket straight into a phase."),
+		mcp.WithString("ticket_id", mcp.Required(), mcp.Description("Idea ticket UUID **or** a `<project-slug>/<number>` shortcode (e.g. `tickets-please/76`); a bare `<number>` resolves against the session-bound project")),
+		mcp.WithString("comment", mcp.Required(), mcp.Description("Why this idea is graduating to work; becomes a system_promote comment")),
+		mcp.WithString("phase_id_or_slug", mcp.Description("Optional phase id or slug to assign the promoted ticket to")),
+	), t.handlePromoteIdea)
+
 	s.AddTool(mcp.NewTool("apply_archive_policy",
 		mcp.WithDescription("Walk a project's tickets, evaluate each against the per-project `archive` policy (set in `project.yaml`), and report what would be archived. **Dry-run by default**; pass `commit: true` to actually flip the flags. Refuses when the project's `archive.enabled` is false (opt-in gate). The report includes the resolved policy config so you can see exactly what thresholds were used."),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
@@ -333,11 +341,12 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 
 	// Search (3)
 	s.AddTool(mcp.NewTool("search_tickets",
-		mcp.WithDescription("Semantic search over ticket titles and bodies in a project. Use when looking for related work. Archived tickets are excluded by default."),
+		mcp.WithDescription("Semantic search over ticket titles and bodies in a project. Use when looking for related work. Archived tickets and idea-kind tickets are excluded by default; pass `include_archived` / `include_ideas` to bring them in (or use `search_ideas` for ideas only)."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug to search inside; optional if register_agent has bound a project to the session")),
 		mcp.WithArray("columns", mcp.Description("Optional column filter"), mcp.WithStringItems()),
 		mcp.WithBoolean("include_archived", mcp.Description("If true, include archived tickets (default false)")),
+		mcp.WithBoolean("include_ideas", mcp.Description("If true, include idea-kind tickets (default false)")),
 		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
 	), t.handleSearchTickets)
 
@@ -346,15 +355,17 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
 		mcp.WithString("project_id_or_slug", mcp.Description("Optional project id/slug to scope the search")),
 		mcp.WithBoolean("include_archived", mcp.Description("If true, include learnings from archived tickets (default false)")),
+		mcp.WithBoolean("include_ideas", mcp.Description("If true, include learnings from idea-kind tickets (default false; ideas can't be completed so this is normally a no-op)")),
 		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
 	), t.handleSearchLearnings)
 
 	s.AddTool(mcp.NewTool("search_comments",
-		mcp.WithDescription("Semantic search across comments. Comments on archived tickets are excluded by default."),
+		mcp.WithDescription("Semantic search across comments. Comments on archived tickets and on idea-kind tickets are excluded by default."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
 		mcp.WithString("project_id_or_slug", mcp.Description("Optional project id/slug to scope the search")),
 		mcp.WithString("ticket_id", mcp.Description("Optional ticket to scope to one ticket's comments — UUID or a `<project-slug>/<number>` (or bare `<number>`) shortcode")),
 		mcp.WithBoolean("include_archived", mcp.Description("If true, include comments on archived tickets (default false)")),
+		mcp.WithBoolean("include_ideas", mcp.Description("If true, include comments on idea-kind tickets (default false)")),
 		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
 	), t.handleSearchComments)
 
@@ -1005,6 +1016,9 @@ func (t *Tools) handleListTickets(ctx context.Context, req mcp.CallToolRequest) 
 	if v, ok := args["include_archived"].(bool); ok {
 		in.IncludeArchived = v
 	}
+	if v, ok := args["include_ideas"].(bool); ok {
+		in.IncludeIdeas = v
+	}
 	if v, ok := args["limit"]; ok {
 		if f, fok := v.(float64); fok {
 			in.Limit = int(f)
@@ -1351,6 +1365,36 @@ func (t *Tools) archiveFlipHandler(ctx context.Context, req mcp.CallToolRequest,
 	return jsonResult(formatTicket(tk))
 }
 
+func (t *Tools) handlePromoteIdea(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, err := requireStringArgs(req, "ticket_id", "comment")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	id, err := t.resolveTicketID(ctx, req, args["ticket_id"])
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	var phasePtr *string
+	if env, derr := decodeArgEnvelope(req); derr == nil {
+		if v, ok := env["phase_id_or_slug"].(string); ok && v != "" {
+			phasePtr = &v
+		}
+	}
+	var tk *domain.Ticket
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		out, err := t.svc.PromoteIdea(ctx, id, args["comment"], phasePtr)
+		if err != nil {
+			return err
+		}
+		tk = out
+		return nil
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	return jsonResult(formatTicket(tk))
+}
+
 func (t *Tools) handleDeleteTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := t.resolveTicketArg(ctx, req)
 	if err != nil {
@@ -1595,6 +1639,9 @@ func (t *Tools) handleSearchTickets(ctx context.Context, req mcp.CallToolRequest
 	if v, ok := args["include_archived"].(bool); ok {
 		in.IncludeArchived = v
 	}
+	if v, ok := args["include_ideas"].(bool); ok {
+		in.IncludeIdeas = v
+	}
 	for _, s := range stringSliceFromAny(args["columns"]) {
 		in.Columns = append(in.Columns, domain.Column(s))
 	}
@@ -1635,6 +1682,9 @@ func (t *Tools) handleSearchLearnings(ctx context.Context, req mcp.CallToolReque
 	}
 	if v, ok := args["include_archived"].(bool); ok {
 		in.IncludeArchived = v
+	}
+	if v, ok := args["include_ideas"].(bool); ok {
+		in.IncludeIdeas = v
 	}
 	if v, ok := args["limit"]; ok {
 		if f, fok := v.(float64); fok {
@@ -1681,6 +1731,9 @@ func (t *Tools) handleSearchComments(ctx context.Context, req mcp.CallToolReques
 	}
 	if v, ok := args["include_archived"].(bool); ok {
 		in.IncludeArchived = v
+	}
+	if v, ok := args["include_ideas"].(bool); ok {
+		in.IncludeIdeas = v
 	}
 	if v, ok := args["limit"]; ok {
 		if f, fok := v.(float64); fok {

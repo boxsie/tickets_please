@@ -69,17 +69,21 @@ type PhaseRecord struct {
 // TicketRecord is what's stored in a ticket dir's `ticket.yaml`. Body and
 // completion sections live as sibling markdown files.
 type TicketRecord struct {
-	ID                 string        `yaml:"id"`
-	ProjectID          string        `yaml:"project_id"`
-	Number             int           `yaml:"number"`
-	Title              string        `yaml:"title"`
-	Column             domain.Column `yaml:"column"`
-	PhaseID            *string       `yaml:"phase_id,omitempty"`
-	Wave               int           `yaml:"wave,omitempty"`
-	DependsOn          []string      `yaml:"depends_on,omitempty"`
-	ParallelizableWith []string      `yaml:"parallelizable_with,omitempty"`
-	CreatedByAgentID   *string       `yaml:"created_by,omitempty"`
-	CompletedByAgentID *string       `yaml:"completed_by,omitempty"`
+	ID        string        `yaml:"id"`
+	ProjectID string        `yaml:"project_id"`
+	Number    int           `yaml:"number"`
+	Title     string        `yaml:"title"`
+	Column    domain.Column `yaml:"column"`
+	// Kind is the work/idea axis (see domain.TicketKind). omitempty + the
+	// loader's empty→work normalisation means every pre-ideation ticket.yaml
+	// round-trips unchanged (no `kind:` key written for work tickets).
+	Kind               domain.TicketKind `yaml:"kind,omitempty"`
+	PhaseID            *string           `yaml:"phase_id,omitempty"`
+	Wave               int               `yaml:"wave,omitempty"`
+	DependsOn          []string          `yaml:"depends_on,omitempty"`
+	ParallelizableWith []string          `yaml:"parallelizable_with,omitempty"`
+	CreatedByAgentID   *string           `yaml:"created_by,omitempty"`
+	CompletedByAgentID *string           `yaml:"completed_by,omitempty"`
 	// CreatedForUserID / CompletedForUserID link the ticket to the human an
 	// acting-for agent was bound to. Omitted for plain key-only authorship
 	// (every pre-bridge ticket round-trips unchanged via omitempty).

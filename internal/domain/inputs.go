@@ -20,6 +20,10 @@ type CreateTicketInput struct {
 	PhaseIDOrSlug *string
 	// Wave is the soft integer grouping. 0 = unassigned.
 	Wave int
+	// Kind is the work/idea axis. Empty normalises to KindWork, so existing
+	// callers that never set it keep creating work tickets. create_idea sets
+	// this to KindIdea.
+	Kind TicketKind
 }
 
 // UpdateTicketInput is accepted by Service.UpdateTicket. Pointer fields are
@@ -55,6 +59,10 @@ type ListTicketsInput struct {
 	// IncludeArchived: false by default — archived tickets are dropped
 	// from list results. Set true to include them (debugging, audit).
 	IncludeArchived bool
+	// IncludeIdeas: false by default — idea-kind tickets are dropped from
+	// list results so the board shows only work. Set true to include them.
+	// Orthogonal to IncludeArchived: an archived idea needs both flags.
+	IncludeIdeas bool
 	// Limit: 0 = default 50; capped at 200.
 	Limit  int
 	Cursor string
@@ -70,6 +78,9 @@ type SearchTicketsInput struct {
 	// post-filter. Set true to include them (vec entries stay in place so
 	// this is a cheap toggle, not a re-embed).
 	IncludeArchived bool
+	// IncludeIdeas: false by default — idea-kind tickets are dropped via
+	// post-filter. Orthogonal to IncludeArchived. Cheap toggle, not a re-embed.
+	IncludeIdeas bool
 	// Limit: 0 = default 10; capped at 50.
 	Limit int
 }
@@ -84,6 +95,9 @@ type SearchCommentsInput struct {
 	// IncludeArchived: false by default — comments whose parent ticket is
 	// archived are dropped.
 	IncludeArchived bool
+	// IncludeIdeas: false by default — comments whose parent ticket is an
+	// idea are dropped. Orthogonal to IncludeArchived.
+	IncludeIdeas bool
 	// Limit: 0 = default 10; capped at 50.
 	Limit int
 }
@@ -133,6 +147,9 @@ type SearchLearningsInput struct {
 	// IncludeArchived: false by default — learnings on archived tickets
 	// are dropped.
 	IncludeArchived bool
+	// IncludeIdeas: false by default. Ideas can't be completed so they carry
+	// no learnings in practice; the flag exists for symmetry + robustness.
+	IncludeIdeas bool
 	// Limit: 0 = default 10; capped at 50.
 	Limit int
 }

@@ -36,6 +36,7 @@ const (
 	KindCommentAdded     Kind = "comment_added"
 	KindTicketArchived   Kind = "ticket_archived"
 	KindTicketUnarchived Kind = "ticket_unarchived"
+	KindTicketPromoted   Kind = "ticket_promoted"
 	KindAgentRegistered  Kind = "agent_registered"
 	KindAgentSeen        Kind = "agent_seen"
 )

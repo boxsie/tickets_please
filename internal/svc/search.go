@@ -215,6 +215,9 @@ func (s *Service) SearchTickets(ctx context.Context, in domain.SearchTicketsInpu
 			if t.Archived && !in.IncludeArchived {
 				continue
 			}
+			if t.Kind == domain.KindIdea && !in.IncludeIdeas {
+				continue
+			}
 			if len(colSet) > 0 {
 				if _, allow := colSet[t.Column]; !allow {
 					continue
@@ -293,7 +296,7 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 			if len(out) >= limit {
 				break
 			}
-			hit, ok := s.hydrateCommentHit(ctx, slug, h, in.TicketID, in.IncludeArchived)
+			hit, ok := s.hydrateCommentHit(ctx, slug, h, in.TicketID, in.IncludeArchived, in.IncludeIdeas)
 			if !ok {
 				continue
 			}
@@ -383,7 +386,7 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 		if slug == "" {
 			continue
 		}
-		hit, ok := s.hydrateCommentHit(ctx, slug, sh.hit, in.TicketID, in.IncludeArchived)
+		hit, ok := s.hydrateCommentHit(ctx, slug, sh.hit, in.TicketID, in.IncludeArchived, in.IncludeIdeas)
 		if !ok {
 			continue
 		}
@@ -399,8 +402,9 @@ func (s *Service) SearchComments(ctx context.Context, in domain.SearchCommentsIn
 // hydrateCommentHit loads the parent project (cached) and returns a CommentHit
 // for the given vec hit. Returns ok=false when the comment / project is gone,
 // when the optional ticketIDFilter excludes it, or when the parent ticket is
-// archived and includeArchived is false. Caller does not need to hold any lock.
-func (s *Service) hydrateCommentHit(ctx context.Context, slug string, h vecindex.Hit, ticketIDFilter string, includeArchived bool) (CommentHit, bool) {
+// archived (and includeArchived is false) or an idea (and includeIdeas is
+// false). Caller does not need to hold any lock.
+func (s *Service) hydrateCommentHit(ctx context.Context, slug string, h vecindex.Hit, ticketIDFilter string, includeArchived, includeIdeas bool) (CommentHit, bool) {
 	lp, _, err := s.Cache.Get(ctx, slug)
 	if err != nil {
 		return CommentHit{}, false
@@ -424,6 +428,9 @@ func (s *Service) hydrateCommentHit(ctx context.Context, slug string, h vecindex
 				return CommentHit{}, false
 			}
 			if t.Archived && !includeArchived {
+				return CommentHit{}, false
+			}
+			if t.Kind == domain.KindIdea && !includeIdeas {
 				return CommentHit{}, false
 			}
 			cp := *c
@@ -536,7 +543,7 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 		if slug == "" {
 			continue
 		}
-		hit, ok := s.hydrateLearningHit(ctx, slug, sh.hit, in.IncludeArchived)
+		hit, ok := s.hydrateLearningHit(ctx, slug, sh.hit, in.IncludeArchived, in.IncludeIdeas)
 		if !ok {
 			continue
 		}
@@ -554,7 +561,7 @@ func (s *Service) SearchLearnings(ctx context.Context, in domain.SearchLearnings
 // longer exists, or when the ticket isn't actually completed (defensive — the
 // learnings index should only carry completed-ticket entries, but a stale
 // in-memory entry from before a delete is possible).
-func (s *Service) hydrateLearningHit(ctx context.Context, slug string, h vecindex.Hit, includeArchived bool) (LearningHit, bool) {
+func (s *Service) hydrateLearningHit(ctx context.Context, slug string, h vecindex.Hit, includeArchived, includeIdeas bool) (LearningHit, bool) {
 	lp, _, err := s.Cache.Get(ctx, slug)
 	if err != nil {
 		return LearningHit{}, false
@@ -567,6 +574,9 @@ func (s *Service) hydrateLearningHit(ctx context.Context, slug string, h vecinde
 		return LearningHit{}, false
 	}
 	if t.Archived && !includeArchived {
+		return LearningHit{}, false
+	}
+	if t.Kind == domain.KindIdea && !includeIdeas {
 		return LearningHit{}, false
 	}
 	if t.Learnings == nil {

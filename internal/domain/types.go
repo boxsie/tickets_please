@@ -19,6 +19,42 @@ const (
 	ColumnDone       Column = "done"
 )
 
+// TicketKind is an axis orthogonal to Column and Archived: it separates real
+// work (`work`) from half-formed spitball ideas (`idea`). Ideas live in the
+// `todo` column like any fresh ticket but are hidden from the default work
+// surfaces (list/search) unless explicitly included — exactly mirroring the
+// `archived` mechanism. An empty kind normalises to `work`, so every
+// pre-existing ticket.yaml (which has no `kind:` key) round-trips as work with
+// no migration. The one forward path for an idea is promotion to work in place
+// (see svc.PromoteIdea), which keeps its comments and embedding history.
+type TicketKind string
+
+const (
+	KindWork TicketKind = "work"
+	KindIdea TicketKind = "idea"
+)
+
+// OrWork normalises the zero value (empty string) to KindWork. Use it whenever
+// reading a kind off disk or out of the cache so callers never have to special-
+// case the backfill-free empty default.
+func (k TicketKind) OrWork() TicketKind {
+	if k == "" {
+		return KindWork
+	}
+	return k
+}
+
+// Stored returns the on-disk form: KindWork (and the empty default) collapse to
+// the empty string so work tickets never write a `kind:` key (omitempty),
+// keeping the change backfill-free; any other kind is written verbatim. This is
+// the inverse of OrWork — persist via Stored, read via OrWork.
+func (k TicketKind) Stored() TicketKind {
+	if k.OrWork() == KindWork {
+		return ""
+	}
+	return k
+}
+
 // CommentKind distinguishes free-form user comments from system-generated
 // audit-trail entries (column moves and completions).
 type CommentKind string
@@ -29,6 +65,7 @@ const (
 	CommentKindSystemCompletion CommentKind = "system_completion"
 	CommentKindSystemArchive    CommentKind = "system_archive"
 	CommentKindSystemUnarchive  CommentKind = "system_unarchive"
+	CommentKindSystemPromote    CommentKind = "system_promote"
 )
 
 // AgentRef is the flat attribution summary attached to entities that were
@@ -110,11 +147,15 @@ type Phase struct {
 // Wave is a soft integer grouping inside a phase or project. 0 means
 // "unassigned" — the default when no wave was specified.
 type Ticket struct {
-	ID              string
-	ProjectID       string
-	Title           string
-	Body            string
-	Column          Column
+	ID        string
+	ProjectID string
+	Title     string
+	Body      string
+	Column    Column
+	// Kind separates work tickets from ideas (see TicketKind). Empty on disk
+	// normalises to KindWork via the cache loader, so this field is always
+	// populated (`work` or `idea`) on a hydrated ticket.
+	Kind            TicketKind
 	TestingEvidence *string
 	WorkSummary     *string
 	Learnings       *string
