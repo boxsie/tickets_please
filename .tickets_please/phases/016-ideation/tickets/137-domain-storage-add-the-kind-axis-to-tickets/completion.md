@@ -1,0 +1,5 @@
+## Testing evidence
+Added internal/svc/ideation_test.go: TestCreateTicket_DefaultKindIsWork (no kind key on disk, hydrates work), TestCreateTicket_KindIdea (kind: idea on disk, hydrates idea, stays todo), TestTicketKind_Normalisation (OrWork/Stored inverses), TestTicketRecord_KindRoundTrip. `go test ./...` all 16 pkgs green; go build + go vet clean.
+
+## Learnings
+The `kind` axis needs TWO normalisation directions, not one — this bit me first pass. OrWork() (empty→work) is for READS (cache hydration, returned domain.Ticket, formatTicket). For WRITES you need the inverse: TicketKind.Stored() collapses work/empty→"" so omitempty actually omits the key. If you persist `in.Kind.OrWork()` you write `kind: work` into every ticket.yaml and lose the backfill-free property. CreateTicket persists `in.Kind.Stored()`; the returned domain ticket uses `rec.Kind.OrWork()`. Hydration is in cache/projectcache.go hydrateTicket (NOT a store/tickets.go ToDomain — there's no such method; conversion lives in the cache layer). formatTicket (mcptools/format.go) emits `"kind"` next to `"column"`. gofmt re-aligns the TicketRecord struct tags after adding the field.
