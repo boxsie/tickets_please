@@ -25,6 +25,18 @@ templ ArchivedBadge(archived bool) {
 	</span>
 }
 
+// IdeaBadge shows an "idea" pill when the ticket is an idea. The outer span
+// carries the stable id and is always present (empty for work tickets) so the
+// selector exists to morph on promote (idea → work makes it disappear).
+templ IdeaBadge(kind domain.TicketKind) {
+	<span id="ticket-kind">
+		if kind == domain.KindIdea {
+			<span class="breadcrumb-sep"></span>
+			<span class="badge badge-idea" title="this is an idea, not work yet">idea</span>
+		}
+	</span>
+}
+
 // PageActions is the action-button cluster. Morphed on a column change so the
 // available actions track the new state (e.g. completing swaps to the frozen
 // set). Stable selector: #ticket-actions.
@@ -34,6 +46,13 @@ templ PageActions(props DetailProps) {
 	<div id="ticket-actions" class="page-actions">
 		if props.IsDone {
 			@FrozenActions()
+		} else if t.Kind == domain.KindIdea {
+			// Ideas have one forward path: promote to work. The work-flow
+			// actions (complete/move/reassign) are deliberately absent — the
+			// service rejects them on an idea anyway.
+			<button type="button" class="btn btn-primary" data-dialog="dlg-promote">Promote to work</button>
+			<a class="btn" href={ templ.SafeURL(editHref(t.ID, proj.Slug)) }>Edit idea</a>
+			<button type="button" class="btn btn-danger" data-dialog="dlg-delete">Delete</button>
 		} else {
 			<button type="button" class="btn btn-primary" data-dialog="dlg-complete">Complete</button>
 			<button type="button" class="btn" data-dialog="dlg-move">Move</button>

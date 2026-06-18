@@ -43,6 +43,12 @@ type DetailProps struct {
 	CSRF            string
 	ShowArchived    bool   // archived tickets included in the lists this render
 	ToggleHref      string // link that flips the include-archived state
+	// Ideas is the project's spitball lane — kind=idea tickets, kept separate
+	// from the work columns above. Always populated; ShowIdeas controls whether
+	// the lane is expanded (the toggle link flips it, persisted via cookie).
+	Ideas          []*domain.Ticket
+	ShowIdeas      bool
+	IdeasToggleHref string
 }
 
 // DashboardMetrics is the row of stat cards at the top of the dashboard.

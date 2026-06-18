@@ -37,6 +37,7 @@ templ WaveSection(p WaveSectionProps) {
 					<a class="phase-wave-ticket-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.ProjectSlug) }>{ t.Title }</a>
 					<span class="phase-wave-ticket-meta">
 						<span class={ "badge", "badge-" + string(t.Column) }>{ string(t.Column) }</span>
+						@attribution.IdeaPill(t.Kind)
 						@attribution.ArchivedPill(t.Archived)
 						@attribution.Chip(t)
 					</span>

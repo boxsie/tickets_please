@@ -235,6 +235,9 @@ func deleteHref(id, slug string) string {
 func archiveHref(id, slug string) string   { return ticketActionHref(id, "archive", slug) }
 func unarchiveHref(id, slug string) string { return ticketActionHref(id, "unarchive", slug) }
 
+// promoteHref is the /tickets/{id}/promote URL the promote-idea modal posts to.
+func promoteHref(id, slug string) string { return ticketActionHref(id, "promote", slug) }
+
 // editHref is the /tickets/{id}/edit URL the "Edit ticket" anchor points at.
 func editHref(id, slug string) string {
 	return ticketActionHref(id, "edit", slug)

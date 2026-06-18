@@ -479,6 +479,31 @@ func (a *app) flipArchive(w http.ResponseWriter, r *http.Request, archive bool) 
 	http.Redirect(w, r, loc, http.StatusSeeOther)
 }
 
+// handleTicketPromote turns an idea into a work ticket via svc.PromoteIdea.
+// Comment is required (the modal enforces it client-side, the service
+// server-side); an optional phase_id_or_slug drops the promoted ticket into a
+// phase. The live idea-badge removal + action-button flip happen via the SSE
+// TicketPromoted patch; the redirect reloads the originating tab.
+func (a *app) handleTicketPromote(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	comment := r.Form.Get("comment")
+	var phasePtr *string
+	if p := strings.TrimSpace(r.Form.Get("phase_id_or_slug")); p != "" {
+		phasePtr = &p
+	}
+	if _, err := a.deps.Service.PromoteIdea(r.Context(), id, comment, phasePtr); err != nil {
+		a.renderer.RenderTemplError(w, r, classifyServiceError(err), err)
+		return
+	}
+	slug := r.URL.Query().Get("slug")
+	loc := "/tickets/" + id
+	if slug != "" {
+		loc += "?slug=" + slug
+	}
+	SetFlash(w, r, "success", "Idea promoted to work.")
+	http.Redirect(w, r, loc, http.StatusSeeOther)
+}
+
 // handleTicketDelete hard-deletes a non-`done` ticket via svc.DeleteTicket.
 // On success redirects to the project phases page (the ticket detail page is
 // gone) with a flash; on a service-level refusal (done ticket, dependents) the

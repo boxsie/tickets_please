@@ -38,6 +38,8 @@ func (a *app) renderTicketPatch(ctx context.Context, ev eventbus.Event) []sse.Ev
 		return a.commentAppendPatch(ctx, ev)
 	case eventbus.KindTicketArchived, eventbus.KindTicketUnarchived:
 		return a.archivedBadgePatch(ctx, ev)
+	case eventbus.KindTicketPromoted:
+		return a.promotedPatch(ctx, ev)
 	default:
 		return nil
 	}
@@ -109,6 +111,21 @@ func (a *app) archivedBadgePatch(ctx context.Context, ev eventbus.Event) []sse.E
 	props := a.detailPropsForPatch(ctx, tkt)
 	return []sse.Event{
 		sse.PatchElements("", "", a.renderComp(ctx, pgtickets.ArchivedBadge(tkt.Archived))),
+		sse.PatchElements("", "", a.renderComp(ctx, pgtickets.PageActions(props))),
+	}
+}
+
+// promotedPatch removes the idea badge (idea → work) and re-renders the action
+// cluster so the "Promote" button flips to the work-flow actions live for every
+// viewer. Mirrors archivedBadgePatch.
+func (a *app) promotedPatch(ctx context.Context, ev eventbus.Event) []sse.Event {
+	tkt, err := a.deps.Service.GetTicket(ctx, ev.TicketID)
+	if err != nil {
+		return nil
+	}
+	props := a.detailPropsForPatch(ctx, tkt)
+	return []sse.Event{
+		sse.PatchElements("", "", a.renderComp(ctx, pgtickets.IdeaBadge(tkt.Kind))),
 		sse.PatchElements("", "", a.renderComp(ctx, pgtickets.PageActions(props))),
 	}
 }

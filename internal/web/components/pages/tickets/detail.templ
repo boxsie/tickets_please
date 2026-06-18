@@ -1,6 +1,7 @@
 package tickets
 
 import (
+	"tickets_please/internal/domain"
 	"tickets_please/internal/web/components/attribution"
 	"tickets_please/internal/web/components/md"
 	"tickets_please/internal/web/components/ui"
@@ -30,6 +31,7 @@ templ Detail(props DetailProps) {
 				}
 				<span class="breadcrumb-sep"></span>
 				@StatusBadge(t.Column)
+				@IdeaBadge(t.Kind)
 				@ArchivedBadge(t.Archived)
 				if t.Wave != 0 {
 					<span class="breadcrumb-sep"></span>
@@ -62,6 +64,7 @@ templ Detail(props DetailProps) {
 								<li>
 									<a href={ templ.SafeURL(ticketDetailHref(d.ID, proj.Slug)) }>{ d.Title }</a>
 									<span class={ "badge", "badge-" + columnString(d.Column) }>{ columnString(d.Column) }</span>
+									@attribution.IdeaPill(d.Kind)
 									@attribution.ArchivedPill(d.Archived)
 									@attribution.Chip(d)
 								</li>
@@ -75,6 +78,7 @@ templ Detail(props DetailProps) {
 								<li>
 									<a href={ templ.SafeURL(ticketDetailHref(b.ID, proj.Slug)) }>{ b.Title }</a>
 									<span class={ "badge", "badge-" + columnString(b.Column) }>{ columnString(b.Column) }</span>
+									@attribution.IdeaPill(b.Kind)
 									@attribution.ArchivedPill(b.Archived)
 									@attribution.Chip(b)
 								</li>
@@ -130,6 +134,29 @@ templ Detail(props DetailProps) {
 						Phases:           props.Phases,
 						CSRF:             props.CSRF,
 					})
+				}
+			}
+			if t.Kind == domain.KindIdea {
+				@ui.Modal(ui.ModalProps{ID: "dlg-promote", Title: "Promote idea to work"}) {
+					<p>Promoting turns this idea into a real work ticket in place — it keeps its id, comments, and history, and joins the work board. Choose a phase to drop it into, or leave it where it is.</p>
+					<form method="post" action={ templ.SafeURL(promoteHref(t.ID, proj.Slug)) } class="stack">
+						<label for="promote-comment">Comment <span class="muted">(required)</span></label>
+						<textarea id="promote-comment" name="comment" rows="2" required minlength="1" placeholder="Why is this idea ready to become work?"></textarea>
+						if len(props.Phases) > 0 {
+							<label for="promote-phase">Phase <span class="muted">(optional)</span></label>
+							<select id="promote-phase" name="phase_id_or_slug">
+								<option value="">— leave unphased —</option>
+								for _, ph := range props.Phases {
+									<option value={ ph.ID }>{ ph.Name }</option>
+								}
+							</select>
+						}
+						<input type="hidden" name="_csrf" value={ props.CSRF }/>
+						<div class="form-actions">
+							<button type="submit">Promote</button>
+							<button type="button" class="btn" data-dialog-close="dlg-promote">Cancel</button>
+						</div>
+					</form>
 				}
 			}
 			@ui.Modal(ui.ModalProps{ID: "dlg-delete", Title: "Delete ticket"}) {

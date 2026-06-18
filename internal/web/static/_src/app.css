@@ -1618,6 +1618,11 @@
   .badge-testing     { background: var(--warn-bg); color: var(--warn); border-color: rgba(245,165,36,0.4); }
   .badge-done        { background: var(--success-bg); color: var(--success); border-color: rgba(62,207,142,0.4); }
   .badge-archived    { background: var(--bg-elev-2); color: var(--fg-faint); border-color: var(--line-strong); }
+  .badge-idea        { background: rgba(159,122,234,0.12); color: #b794f4; border-color: rgba(159,122,234,0.42); }
+
+  /* Ideas lane: the spitball backlog on the dashboard, visually set apart from
+     the work board with a soft violet left-rail (matches .badge-idea). */
+  .ideas-lane > li.idea { border-left: 2px solid rgba(159,122,234,0.42); padding-left: 0.6rem; }
 
   /* Realtime toast region (#82): transient notifications streamed via SSE.
      CSS-only auto-fade — no JS needed; the element lingers invisibly. */

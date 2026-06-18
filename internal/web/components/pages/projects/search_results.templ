@@ -48,6 +48,7 @@ templ SearchResults(props SearchProps) {
 						<a class="search-hit-title" href={ templ.SafeURL("/tickets/" + h.Ticket.ID + "?slug=" + slug) }>{ h.Ticket.Title }</a>
 						<span class={ "badge badge-" + string(h.Ticket.Column) }>{ string(h.Ticket.Column) }</span>
 						<span class="muted score">{ fmt.Sprintf("%.2f", h.Score) }</span>
+						@attribution.IdeaPill(h.Ticket.Kind)
 						@attribution.ArchivedPill(h.Ticket.Archived)
 						@attribution.Chip(h.Ticket)
 						@RatingWidget(RatingProps{Slug: slug, EntryKey: h.EntryKey, Likes: h.Likes, Dislikes: h.Dislikes, CSRF: props.CSRF, Query: props.Query})

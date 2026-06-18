@@ -259,6 +259,9 @@ type projectDetailData struct {
 	RecentLearnings []learningExcerpt
 	ShowArchived    bool
 	ToggleHref      string
+	Ideas           []*domain.Ticket
+	ShowIdeas       bool
+	IdeasToggleHref string
 }
 
 // dashboardMetrics is the row of stat cards at the top of the dashboard.
@@ -327,6 +330,19 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 	enriched := bucketTicketsByPhaseAndWave(phases, tickets)
 	unphased := bucketTicketsByWave(phaseLessTickets(tickets))
 
+	// The ideas lane is a separate, ideas-only query (the work board above
+	// excludes ideas by default). Cheap; best-effort like the main list.
+	showIdeas := a.resolveShowIdeas(w, r)
+	ideas, _, ierr := a.deps.Service.ListTickets(r.Context(), domain.ListTicketsInput{
+		ProjectIDOrSlug: slug,
+		Limit:           200,
+		OnlyIdeas:       true,
+	})
+	if ierr != nil {
+		a.deps.Logger.Warn("dashboard: list ideas", "err", ierr)
+		ideas = nil
+	}
+
 	data := projectDetailData{
 		Project:         proj,
 		PhaseLead:       toPhaseListProps(proj, enriched, unphased, true),
@@ -338,6 +354,9 @@ func (a *app) handleProjectDetail(w http.ResponseWriter, r *http.Request) {
 		RecentLearnings: pickRecentLearnings(tickets, 3),
 		ShowArchived:    showArchived,
 		ToggleHref:      archivedToggleHref(r, showArchived),
+		Ideas:           ideas,
+		ShowIdeas:       showIdeas,
+		IdeasToggleHref: ideasToggleHref(r, showIdeas),
 	}
 
 	a.renderer.RenderTempl(w, r, PageOpts{
@@ -364,6 +383,9 @@ func detailToProps(d projectDetailData, csrf string) projectspg.DetailProps {
 		CSRF:            csrf,
 		ShowArchived:    d.ShowArchived,
 		ToggleHref:      d.ToggleHref,
+		Ideas:           d.Ideas,
+		ShowIdeas:       d.ShowIdeas,
+		IdeasToggleHref: d.IdeasToggleHref,
 	}
 	out.StatusSegments = make([]projectspg.StatusSegment, len(d.StatusSegments))
 	for i, s := range d.StatusSegments {

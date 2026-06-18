@@ -8,7 +8,10 @@ package tickets
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "tickets_please/internal/web/components/attribution"
+import (
+	"tickets_please/internal/domain"
+	"tickets_please/internal/web/components/attribution"
+)
 
 // TicketCard renders one ticket as a list item for the board column's
 // ticket-cards list. 1:1 port of templates/partials/ticket_card.tmpl —
@@ -37,7 +40,7 @@ func TicketCard(props TicketCardProps) templ.Component {
 		ctx = templ.ClearChildren(ctx)
 		t := props.Ticket
 		slug := props.ProjectSlug
-		var templ_7745c5c3_Var2 = []any{"ticket-card", templ.KV("blocked", len(t.BlockedBy) > 0), templ.KV("archived", t.Archived)}
+		var templ_7745c5c3_Var2 = []any{"ticket-card", templ.KV("blocked", len(t.BlockedBy) > 0), templ.KV("archived", t.Archived), templ.KV("idea", t.Kind == domain.KindIdea)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -62,7 +65,7 @@ func TicketCard(props TicketCardProps) templ.Component {
 		var templ_7745c5c3_Var4 templ.SafeURL
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(ticketCardHref(t.ID, slug)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 13, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 16, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -75,7 +78,7 @@ func TicketCard(props TicketCardProps) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(t.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 13, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 16, Col: 91}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -110,7 +113,7 @@ func TicketCard(props TicketCardProps) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(columnString(t.Column))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 15, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 18, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -128,7 +131,7 @@ func TicketCard(props TicketCardProps) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(formatWave(t.Wave))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 17, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 20, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -147,7 +150,7 @@ func TicketCard(props TicketCardProps) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue("blocked by: " + blockedByList(t.BlockedBy))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 20, Col: 83}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/components/pages/tickets/ticket_card.templ`, Line: 23, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 			if templ_7745c5c3_Err != nil {
@@ -157,6 +160,10 @@ func TicketCard(props TicketCardProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+		}
+		templ_7745c5c3_Err = attribution.IdeaPill(t.Kind).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = attribution.ArchivedPill(t.Archived).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {

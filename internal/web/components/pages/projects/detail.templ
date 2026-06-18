@@ -35,6 +35,7 @@ templ Detail(props DetailProps) {
 				<a class="btn" href={ templ.SafeURL("/p/" + p.Slug + "/settings") }>Settings</a>
 				<a class="btn" href={ templ.SafeURL("/p/" + p.Slug + "/summary") }>Summary</a>
 				@ui.ArchivedToggle(props.ToggleHref, props.ShowArchived)
+				@ui.IdeasToggle(props.IdeasToggleHref, props.ShowIdeas)
 			</div>
 		</header>
 		<section class="metric-grid" aria-label="Headline metrics">
@@ -106,6 +107,30 @@ templ Detail(props DetailProps) {
 				</ul>
 			} else {
 				<p class="hint">Nothing is currently in progress or testing.</p>
+			}
+		}
+		if len(props.Ideas) > 0 || props.ShowIdeas {
+			@ui.Card(ui.CardProps{Title: ideasLaneTitle(len(props.Ideas))}) {
+				if !props.ShowIdeas {
+					<p class="hint">
+						{ ideasHiddenHint(len(props.Ideas)) }
+						<a href={ templ.SafeURL(props.IdeasToggleHref) }>Show ideas →</a>
+					</p>
+				} else if len(props.Ideas) > 0 {
+					<ul class="ticket-list ideas-lane">
+						for _, t := range props.Ideas {
+							<li class="idea">
+								<a class="ticket-list-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.Slug) }>{ t.Title }</a>
+								<div class="ticket-list-meta">
+									@attribution.IdeaPill(t.Kind)
+									@attribution.Chip(t)
+								</div>
+							</li>
+						}
+					</ul>
+				} else {
+					<p class="hint">No ideas yet. Throw a spitball with <code>create_idea</code> (MCP) and it'll land here.</p>
+				}
 			}
 		}
 		@ui.Card(ui.CardProps{Title: "Phases", Href: "/p/" + p.Slug + "/phases", LinkLabel: "Browse all phases →"}) {

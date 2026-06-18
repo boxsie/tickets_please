@@ -31,7 +31,9 @@ import (
 func (a *app) renderPhasePatch(ctx context.Context, ev eventbus.Event) []sse.Event {
 	switch ev.Kind {
 	case eventbus.KindTicketCreated, eventbus.KindTicketMoved, eventbus.KindTicketCompleted,
-		eventbus.KindTicketArchived, eventbus.KindTicketUnarchived:
+		eventbus.KindTicketArchived, eventbus.KindTicketUnarchived, eventbus.KindTicketPromoted:
+		// A promoted idea newly enters the default (work-only) wave scan, so its
+		// phase's wave list needs a re-render to surface it.
 	default:
 		return nil
 	}

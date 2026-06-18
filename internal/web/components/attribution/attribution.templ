@@ -63,6 +63,16 @@ templ ArchivedPill(archived bool) {
 	}
 }
 
+// IdeaPill renders a small "idea" badge for any ticket reference whose kind is
+// idea. Like ArchivedPill it's a no-op for the common case (work tickets), so
+// call sites drop it in unconditionally next to the archived pill. Marks a
+// spitball wherever a ticket is referenced.
+templ IdeaPill(kind domain.TicketKind) {
+	if kind == domain.KindIdea {
+		<span class="badge badge-idea" title="this is an idea, not work yet">idea</span>
+	}
+}
+
 // CommentChip is Chip's sibling for comment references (search hits): the
 // comment author and when they wrote it.
 templ CommentChip(c *domain.Comment) {

@@ -1,6 +1,9 @@
 package tickets
 
-import "tickets_please/internal/web/components/attribution"
+import (
+	"tickets_please/internal/domain"
+	"tickets_please/internal/web/components/attribution"
+)
 
 // TicketCard renders one ticket as a list item for the board column's
 // ticket-cards list. 1:1 port of templates/partials/ticket_card.tmpl —
@@ -9,7 +12,7 @@ import "tickets_please/internal/web/components/attribution"
 templ TicketCard(props TicketCardProps) {
 	{{ t := props.Ticket }}
 	{{ slug := props.ProjectSlug }}
-	<li class={ "ticket-card", templ.KV("blocked", len(t.BlockedBy) > 0), templ.KV("archived", t.Archived) }>
+	<li class={ "ticket-card", templ.KV("blocked", len(t.BlockedBy) > 0), templ.KV("archived", t.Archived), templ.KV("idea", t.Kind == domain.KindIdea) }>
 		<a class="ticket-card-title" href={ templ.SafeURL(ticketCardHref(t.ID, slug)) }>{ t.Title }</a>
 		<div class="ticket-card-meta">
 			<span class={ "badge", "badge-" + columnString(t.Column) }>{ columnString(t.Column) }</span>
@@ -19,6 +22,7 @@ templ TicketCard(props TicketCardProps) {
 			if len(t.BlockedBy) > 0 {
 				<span class="badge-blocked" title={ "blocked by: " + blockedByList(t.BlockedBy) }>blocked</span>
 			}
+			@attribution.IdeaPill(t.Kind)
 			@attribution.ArchivedPill(t.Archived)
 			@attribution.Chip(t)
 		</div>

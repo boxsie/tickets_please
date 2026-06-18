@@ -43,6 +43,23 @@ func unphasedHint(unphased int) string {
 	return strconv.Itoa(unphased) + " unphased"
 }
 
+// ideasLaneTitle renders the Ideas lane card title with a count, e.g.
+// "Ideas (3)" — the spitball backlog, separate from the work board.
+func ideasLaneTitle(n int) string {
+	if n == 0 {
+		return "Ideas"
+	}
+	return "Ideas (" + strconv.Itoa(n) + ")"
+}
+
+// ideasHiddenHint is the muted line shown when the ideas lane is collapsed.
+func ideasHiddenHint(n int) string {
+	if n == 1 {
+		return "1 idea hidden. "
+	}
+	return strconv.Itoa(n) + " ideas hidden. "
+}
+
 // confirmDelete builds the inline JS the danger-zone form uses to ask "are
 // you sure?" before POSTing the delete. Slugs are already URL-safe
 // (`[a-z0-9-]+`) so the JS-string escape is belt-and-braces — kept anyway so

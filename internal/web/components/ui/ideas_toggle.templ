@@ -1,0 +1,23 @@
+package ui
+
+// IdeasToggle renders the "Show ideas" switch — the idea-lane sibling of
+// ArchivedToggle. A plain link (no JS), shareable, preserving the rest of the
+// query string; the handler builds Href by flipping include_ideas on the
+// current URL. `on` reflects the current state: when true the link turns the
+// ideas lane OFF, and vice-versa.
+templ IdeasToggle(href string, on bool) {
+	<a
+		class={ "archived-toggle", templ.KV("on", on) }
+		href={ templ.SafeURL(href) }
+		role="switch"
+		aria-checked={ ariaBool(on) }
+		title="Show or hide the ideas lane"
+	>
+		<span class="archived-toggle-box" aria-hidden="true">
+			if on {
+				&#10003;
+			}
+		</span>
+		<span class="archived-toggle-label">Show ideas</span>
+	</a>
+}
