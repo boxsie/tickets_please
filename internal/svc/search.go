@@ -215,7 +215,11 @@ func (s *Service) SearchTickets(ctx context.Context, in domain.SearchTicketsInpu
 			if t.Archived && !in.IncludeArchived {
 				continue
 			}
-			if t.Kind == domain.KindIdea && !in.IncludeIdeas {
+			if in.OnlyIdeas {
+				if t.Kind != domain.KindIdea {
+					continue
+				}
+			} else if t.Kind == domain.KindIdea && !in.IncludeIdeas {
 				continue
 			}
 			if len(colSet) > 0 {

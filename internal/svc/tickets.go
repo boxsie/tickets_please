@@ -467,7 +467,11 @@ func (s *Service) ListTickets(ctx context.Context, in domain.ListTicketsInput) (
 		if t.Archived && !in.IncludeArchived {
 			continue
 		}
-		if t.Kind == domain.KindIdea && !in.IncludeIdeas {
+		if in.OnlyIdeas {
+			if t.Kind != domain.KindIdea {
+				continue
+			}
+		} else if t.Kind == domain.KindIdea && !in.IncludeIdeas {
 			continue
 		}
 		if in.Column != nil && t.Column != *in.Column {

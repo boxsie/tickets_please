@@ -169,6 +169,30 @@ func TestSearchTickets_IdeaFilter(t *testing.T) {
 	}
 }
 
+// TestListTickets_OnlyIdeas: the ideas-only filter (backing list_ideas/the web
+// lane) returns ideas and excludes work, the inverse of the default board.
+func TestListTickets_OnlyIdeas(t *testing.T) {
+	s, ctx, _, slug := freshServiceWithProject(t)
+	work, err := s.CreateTicket(ctx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "work"})
+	if err != nil {
+		t.Fatalf("create work: %v", err)
+	}
+	idea, err := s.CreateTicket(ctx, domain.CreateTicketInput{ProjectIDOrSlug: slug, Title: "idea", Kind: domain.KindIdea})
+	if err != nil {
+		t.Fatalf("create idea: %v", err)
+	}
+	listed, _, err := s.ListTickets(ctx, domain.ListTicketsInput{ProjectIDOrSlug: slug, OnlyIdeas: true})
+	if err != nil {
+		t.Fatalf("ListTickets OnlyIdeas: %v", err)
+	}
+	if !containsTicket(listed, idea.ID) {
+		t.Errorf("OnlyIdeas should return the idea")
+	}
+	if containsTicket(listed, work.ID) {
+		t.Errorf("OnlyIdeas must exclude work tickets")
+	}
+}
+
 // TestCompleteTicket_RejectsIdea: an idea can't be completed; the error points
 // at promote_idea.
 func TestCompleteTicket_RejectsIdea(t *testing.T) {

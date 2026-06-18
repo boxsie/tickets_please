@@ -63,6 +63,10 @@ type ListTicketsInput struct {
 	// list results so the board shows only work. Set true to include them.
 	// Orthogonal to IncludeArchived: an archived idea needs both flags.
 	IncludeIdeas bool
+	// OnlyIdeas inverts the kind filter to ideas-only (work tickets dropped).
+	// This is what backs the dedicated list_ideas tool + the web ideas lane.
+	// When true it implies inclusion, so IncludeIdeas is irrelevant.
+	OnlyIdeas bool
 	// Limit: 0 = default 50; capped at 200.
 	Limit  int
 	Cursor string
@@ -81,6 +85,9 @@ type SearchTicketsInput struct {
 	// IncludeIdeas: false by default — idea-kind tickets are dropped via
 	// post-filter. Orthogonal to IncludeArchived. Cheap toggle, not a re-embed.
 	IncludeIdeas bool
+	// OnlyIdeas inverts the kind filter to ideas-only (backs search_ideas).
+	// When true it implies inclusion, so IncludeIdeas is irrelevant.
+	OnlyIdeas bool
 	// Limit: 0 = default 10; capped at 50.
 	Limit int
 }

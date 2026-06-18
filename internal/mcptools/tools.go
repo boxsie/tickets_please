@@ -303,6 +303,30 @@ func (t *Tools) RegisterAll(s *mcpserver.MCPServer) {
 		mcp.WithString("phase_id_or_slug", mcp.Description("Optional phase id or slug to assign the promoted ticket to")),
 	), t.handlePromoteIdea)
 
+	// Ideas (3) — the dedicated front door for spitballs. Ideas are tickets
+	// with kind=idea: hidden from the normal work surfaces, searchable, and
+	// promotable in place via promote_idea once they mature.
+	s.AddTool(mcp.NewTool("create_idea",
+		mcp.WithDescription("Throw a spitball idea into a project — a lightweight, half-formed thought you don't want to lose but aren't ready to action. Ideas are tickets with `kind=idea`: they land in `todo`, are hidden from the default `list_tickets`/`search_tickets`/`ready_only` work surfaces, and can't be completed or used as dependencies. When an idea matures, turn it into real work with `promote_idea`. Just a title (and optional body) — no deps, waves, or phases to fuss over."),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
+		mcp.WithString("title", mcp.Required(), mcp.Description("Short idea title")),
+		mcp.WithString("body", mcp.Description("Optional brain-dump body markdown")),
+	), t.handleCreateIdea)
+
+	s.AddTool(mcp.NewTool("list_ideas",
+		mcp.WithDescription("List the ideas (kind=idea tickets) in a project — the spitball backlog, separate from the work board. This is `list_tickets` pinned to ideas only. Promote one with `promote_idea` when it's ready to become real work."),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
+		mcp.WithNumber("limit", mcp.Description("Page size, default 50, max 200")),
+		mcp.WithString("cursor", mcp.Description("Opaque pagination cursor")),
+	), t.handleListIdeas)
+
+	s.AddTool(mcp.NewTool("search_ideas",
+		mcp.WithDescription("Semantic search over ideas (kind=idea tickets) in a project — find a spitball you jotted earlier. This is `search_tickets` pinned to ideas only."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language query")),
+		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug to search inside; optional if register_agent has bound a project to the session")),
+		mcp.WithNumber("limit", mcp.Description("Max results, default 10, max 50")),
+	), t.handleSearchIdeas)
+
 	s.AddTool(mcp.NewTool("apply_archive_policy",
 		mcp.WithDescription("Walk a project's tickets, evaluate each against the per-project `archive` policy (set in `project.yaml`), and report what would be archived. **Dry-run by default**; pass `commit: true` to actually flip the flags. Refuses when the project's `archive.enabled` is false (opt-in gate). The report includes the resolved policy config so you can see exactly what thresholds were used."),
 		mcp.WithString("project_id_or_slug", mcp.Description("Project id or slug; optional if register_agent has bound a project to the session")),
@@ -1393,6 +1417,127 @@ func (t *Tools) handlePromoteIdea(ctx context.Context, req mcp.CallToolRequest) 
 		return errorResult(cerr), nil
 	}
 	return jsonResult(formatTicket(tk))
+}
+
+// handleCreateIdea is a thin wrapper over CreateTicket with kind=idea baked in
+// and the heavier ticket fields (deps/wave/phase) deliberately omitted — a
+// spitball should be one quick call.
+func (t *Tools) handleCreateIdea(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	pid, err := t.resolveProjectSlug(ctx, req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	required, err := requireStringArgs(req, "title")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	args, err := decodeArgEnvelope(req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	in := domain.CreateTicketInput{
+		ProjectIDOrSlug: pid,
+		Title:           required["title"],
+		Kind:            domain.KindIdea,
+	}
+	if v, ok := args["body"].(string); ok {
+		in.Body = v
+	}
+	var tk *domain.Ticket
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		out, err := t.svc.CreateTicket(ctx, in)
+		if err != nil {
+			return err
+		}
+		tk = out
+		return nil
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	return jsonResult(formatTicket(tk))
+}
+
+// handleListIdeas is list_tickets pinned to ideas only (OnlyIdeas).
+func (t *Tools) handleListIdeas(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	pid, err := t.resolveProjectSlug(ctx, req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	args := req.GetArguments()
+	in := domain.ListTicketsInput{ProjectIDOrSlug: pid, OnlyIdeas: true}
+	if v, ok := args["limit"]; ok {
+		if f, fok := v.(float64); fok {
+			in.Limit = int(f)
+		}
+	}
+	if v, ok := args["cursor"].(string); ok {
+		in.Cursor = v
+	}
+	var tickets []*domain.Ticket
+	var nextCursor string
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		ts, nc, err := t.svc.ListTickets(ctx, in)
+		if err != nil {
+			return err
+		}
+		tickets = ts
+		nextCursor = nc
+		return nil
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	resp := make([]map[string]any, 0, len(tickets))
+	for _, tk := range tickets {
+		resp = append(resp, formatTicket(tk))
+	}
+	return jsonResult(map[string]any{
+		"tickets":     resp,
+		"next_cursor": nextCursor,
+	})
+}
+
+// handleSearchIdeas is search_tickets pinned to ideas only (OnlyIdeas).
+func (t *Tools) handleSearchIdeas(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	q, err := req.RequireString("query")
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	pid, err := t.resolveProjectSlug(ctx, req)
+	if err != nil {
+		return mcp.NewToolResultError("invalid argument: " + err.Error()), nil
+	}
+	args := req.GetArguments()
+	in := domain.SearchTicketsInput{Query: q, ProjectIDOrSlug: pid, OnlyIdeas: true}
+	if v, ok := args["limit"]; ok {
+		if f, fok := v.(float64); fok {
+			in.Limit = int(f)
+		}
+	}
+	var hits []svc.TicketHit
+	cerr := t.callWithRetry(ctx, func(ctx context.Context) error {
+		out, err := t.svc.SearchTickets(ctx, in)
+		if err != nil {
+			return err
+		}
+		hits = out
+		return nil
+	})
+	if cerr != nil {
+		return errorResult(cerr), nil
+	}
+	resp := make([]map[string]any, 0, len(hits))
+	keys := make([]string, 0, len(hits))
+	for _, h := range hits {
+		resp = append(resp, formatTicketHit(h))
+		keys = append(keys, string(h.EntryKey))
+	}
+	body := map[string]any{"hits": resp}
+	if hint := feedbackHint(keys); hint != nil {
+		body["feedback_hint"] = hint
+	}
+	return jsonResult(body)
 }
 
 func (t *Tools) handleDeleteTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
