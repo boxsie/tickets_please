@@ -2,11 +2,13 @@ id: 76f83e10-7884-409f-9beb-49b7e410d3f1
 project_id: 920db607-6449-4019-826c-28ba39b6a8d0
 number: 140
 title: '`promote_idea`: flip idea → work in place'
-column: in_progress
+column: done
 phase_id: 077fcc15-1e3c-459d-a72e-75e9242c6d7a
 wave: 2
 depends_on:
     - 08316064-54c6-4e0f-a7ce-9f388d8e846c
 created_by: 8da66aae-a1d0-4881-bfe9-137e7553ad7e
+completed_by: 6bb8486b-a8de-436a-8027-0ff093ce79b3
+completed_at: 2026-06-18T21:44:17.089639396+01:00
 created_at: 2026-06-18T21:20:46.359782644+01:00
-updated_at: 2026-06-18T21:40:00.280877171+01:00
+updated_at: 2026-06-18T21:44:17.089639396+01:00
