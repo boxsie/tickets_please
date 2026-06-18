@@ -731,7 +731,7 @@ Why both fields:
 - `BlockedBy []string` — computed at read: subset of `DependsOn` not yet `done`.
 
 Server adds:
-- `ListTickets(..., ready_only)` — when true, filters to tickets with empty `BlockedBy` and column ∈ {todo, in_progress}.
+- `ListTickets(..., ready_only)` — when true, filters to tickets with empty `BlockedBy` and column ∈ {todo, in_progress}. Idea-kind tickets are never "ready work" — they're excluded even if `include_ideas` is also set.
 - `enforce_dependencies` config key (default `false` for v1 — soft warnings; `true` blocks `MoveTicket` when `BlockedBy` is non-empty).
 
 The same concept is used in this very repo's `planning/` directory (the planning tickets ARE a dependency-graphed work queue). See **Planning directory subagent schema** below for the frontmatter format.
@@ -813,9 +813,10 @@ Note the architecture shift: the embedding `Worker` and the vec indexes are **no
 - `ListWaves(ctx, projectIDOrSlug string, phaseIDOrSlug *string) ([]WaveSummary, error)` — `nil` phase = phase-less area
 
 ### Tickets
-- `CreateTicket(ctx, in CreateTicketInput) (*domain.Ticket, error)` — always lands in `todo`. Carries optional `phase_id_or_slug`, `wave`, `depends_on`, `parallelizable_with`.
+- `CreateTicket(ctx, in CreateTicketInput) (*domain.Ticket, error)` — always lands in `todo`. Carries optional `phase_id_or_slug`, `wave`, `depends_on`, `parallelizable_with`, and `kind` (`work` default, `idea` for spitballs — see *Ticket kinds*).
 - `GetTicket(ctx, id string) (*domain.Ticket, error)`
-- `ListTickets(ctx, in ListTicketsInput) (tickets []*domain.Ticket, nextCursor string, err error)` — supports `phase_id_or_slug`, `column`, `ready_only`, `wave` filter, pagination.
+- `ListTickets(ctx, in ListTicketsInput) (tickets []*domain.Ticket, nextCursor string, err error)` — supports `phase_id_or_slug`, `column`, `ready_only`, `wave` filter, pagination. `IncludeArchived` / `IncludeIdeas` opt those hidden kinds back in; `OnlyIdeas` inverts to ideas-only (backs `list_ideas`).
+- `PromoteIdea(ctx, id, comment string, phaseIDOrSlug *string) (*domain.Ticket, error)` — flips a `kind=idea` ticket to `work` in place (keeps id/comments/embeddings), writes a `system_promote` comment, optionally assigns a phase. Refuses on a non-idea.
 - `UpdateTicket(ctx, id string, in UpdateTicketInput) (*domain.Ticket, error)` — title/body/wave plus replace-set `depends_on` / `parallelizable_with`; no column.
 - `MoveTicket(ctx, id string, target domain.Column, comment string) (*domain.Ticket, error)` — both required; rejects `done`.
 - `CompleteTicket(ctx, id string, testingEvidence, workSummary, learnings string) (*domain.Ticket, error)` — `learnings` required (≥10 chars after trim); `testingEvidence` and `workSummary` are optional audit-trail fields (empty string accepted, no min length).
@@ -840,13 +841,14 @@ Hand-written Go structs in `internal/domain/`. No code generation. Field semanti
 
 - `Project { ID, Slug, Name, Description, Summary string; CreatedBy *AgentRef; CreatedAt, UpdatedAt time.Time }`
 - `Phase { ID, ProjectID, Slug string; Number int; Name, Description, Summary string; CreatedBy *AgentRef; CreatedAt, UpdatedAt time.Time; TicketCount, ActiveTicketCount int }`
-- `Ticket { ID, ProjectID, Title, Body string; Column Column; TestingEvidence, WorkSummary, Learnings *string; CompletedAt *time.Time; CreatedBy, CompletedBy *AgentRef; CreatedAt, UpdatedAt time.Time; DependsOn, ParallelizableWith, BlockedBy []string; PhaseID *string; Wave int }`
+- `Ticket { ID, ProjectID, Title, Body string; Column Column; Kind TicketKind; TestingEvidence, WorkSummary, Learnings *string; CompletedAt *time.Time; CreatedBy, CompletedBy *AgentRef; CreatedAt, UpdatedAt time.Time; DependsOn, ParallelizableWith, BlockedBy []string; PhaseID *string; Wave int; Archived bool; ArchivedAt *time.Time }`
 - `WaveSummary { Wave int; TicketCount int; ActiveTicketCount int }`
 - `Comment { ID, TicketID string; Kind CommentKind; Body string; FromColumn, ToColumn *Column; Author *AgentRef; CreatedAt time.Time }`
 - `Agent { ID, Key, Name string; Metadata map[string]string; CreatedAt, ExpiresAt, LastSeenAt time.Time }`
 - `AgentRef { ID, Name string }`
 - `Column` — string typedef with constants `ColumnTodo / ColumnInProgress / ColumnTesting / ColumnDone`.
-- `CommentKind` — string typedef with constants `CommentKindUser / CommentKindSystemMove / CommentKindSystemCompletion`.
+- `TicketKind` — string typedef with constants `KindWork / KindIdea`. Empty normalises to `KindWork` (`.OrWork()` on read; `.Stored()` collapses work→"" on write so work tickets omit the key).
+- `CommentKind` — string typedef with constants `CommentKindUser / CommentKindSystemMove / CommentKindSystemCompletion / CommentKindSystemArchive / CommentKindSystemUnarchive / CommentKindSystemPromote`.
 
 Errors are typed: `var ErrNotFound, ErrAlreadyExists, ErrFailedPrecondition, ErrInvalidArgument, ErrUnauthenticated`. Tools at the MCP layer translate these into MCP-friendly error codes.
 
@@ -963,7 +965,7 @@ When the LLM client spawns `tickets_please mcp` (the default subcommand of the s
 
 HTTP clients (centralised mode) connect via `/mcp` and **must** call `register_agent` once per connection to declare their identity and bind a `project_path`. After that, every `project_id_or_slug` parameter on subsequent tools becomes optional and falls back to the bound project. The one exception is `create_project`, which is auth-soft: an HTTP client with no project yet calls `create_project` first (passing `project_path`), then `register_agent` against the freshly-created project. Stdio clients pre-register at startup; they can still call `register_agent` to override the defaults.
 
-Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **36 tools** across projects, phases, tickets, comments, search, feedback, archive policy, and introspection.
+Tools (descriptions written **for the model**, since they show up in tool listings). Canonical list — **40 tools** across projects, phases, tickets, ideas, comments, search, feedback, archive policy, and introspection. (The single source of truth is `expectedTools` in `internal/mcptools/tools_test.go`; keep this list, that list, and `RegisterAll` in lockstep.)
 
 ### Projects (8)
 
@@ -991,11 +993,11 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `archive_phase` | Bulk-archive every active ticket in a phase in one call — the phase counterpart to `archive_ticket`. Each ticket gets its own `system_archive` audit comment (done tickets included), drops out of default search/list, and can be individually unarchived. The phase record is left in place (use `delete_phase` to remove an empty phase). Comment required; returns an archived-vs-skipped report. |
 | `list_waves` | List the waves in a phase (or in the phase-less area of a project) with per-wave ticket counts. A wave is a soft integer grouping on tickets — no enforcement, just organization. Use this to see how a body of work decomposes. |
 
-### Tickets (8)
+### Tickets (11)
 
 | Tool | Description |
 |---|---|
-| `list_tickets` | List tickets in a project, optionally filtered by column or phase. Use `ready_only=true` to surface only unblocked tickets. |
+| `list_tickets` | List tickets in a project, optionally filtered by column or phase. Use `ready_only=true` to surface only unblocked tickets. Archived tickets and idea-kind tickets are excluded by default; pass `include_archived` / `include_ideas` to include them. |
 | `create_ticket` | Create a new ticket in a project. Tickets always start in the `todo` column. Provide a clear title and a body that describes the work; both will be searchable. Optional `phase_id_or_slug`, `depends_on`, `parallelizable_with`. |
 | `get_ticket` | Fetch a ticket by id, including its current column, completion fields if done, blockers, and who created/completed it. |
 | `update_ticket` | Edit a ticket's title, body, wave, or dependency lists. `depends_on` / `parallelizable_with` use replace-set semantics when supplied. **Cannot** change the column — use `move_ticket` or `complete_ticket`. |
@@ -1003,6 +1005,30 @@ Tools (descriptions written **for the model**, since they show up in tool listin
 | `complete_ticket` | Mark a ticket done. Only `learnings` is required (≥10 chars) — that's the field future agents search, so write it for them. `testing_evidence` and `work_summary` are optional audit-trail fields; supply them when there's substantive content, omit on small/obvious work. |
 | `assign_ticket_to_phase` | Move a ticket between phases (or to no phase). Requires a comment explaining why — same audit-trail rule as `move_ticket`. |
 | `delete_ticket` | **Irreversibly delete** a non-`done` ticket and all of its body, comments, and embeddings. Refuses on `done` (completion is sacred — once finished, a ticket stays finished). Any other tickets that reference this one in `depends_on` or `parallelizable_with` are auto-updated to drop the reference, atomically with the delete — no dangling refs. For finished work that you regret, file a new ticket instead. |
+| `archive_ticket` | Flip a ticket's separate `archived` flag without changing its column. Done tickets archive fine (completion fields stay frozen). Archived tickets drop out of default `search_*`/`list_tickets`; `include_archived: true` or `get_ticket` brings them back. Comment required (a `system_archive` audit comment). |
+| `unarchive_ticket` | Reverse `archive_ticket` — the ticket re-enters default lists/search. Comment required (a `system_unarchive` audit comment). |
+| `promote_idea` | Promote an idea-kind ticket into a real work ticket **in place** — the one forward path for an idea. Flips `kind: idea → work` while keeping the ticket's id, comments, and embedding history. Keeps the `todo` column; the ticket then appears on the default board. Refuses on a non-idea. Comment required (a `system_promote` audit comment); optional `phase_id_or_slug` drops it into a phase. |
+
+### Ideas (3)
+
+Ideas are tickets with `kind=idea` — a dedicated front door for spitballs (see *Ticket kinds* below). These are thin wrappers over the ticket store, no new storage.
+
+| Tool | Description |
+|---|---|
+| `create_idea` | Throw a spitball: a lightweight idea you don't want to lose but aren't ready to action. Just `title` (+ optional `body`) — no deps/waves/phases. Lands in `todo` as `kind=idea`, hidden from the default work surfaces; promote it with `promote_idea` when it matures. |
+| `list_ideas` | List the project's ideas — the spitball backlog, separate from the work board. `list_tickets` pinned to ideas only. |
+| `search_ideas` | Semantic search over the project's ideas. `search_tickets` pinned to ideas only. |
+
+#### Ticket kinds (ideation)
+
+A ticket carries a `kind` — `work` (the default) or `idea` — an axis **orthogonal to `column` and `archived`**, mirroring how `archived` works:
+
+- **Ideas are spitballs**, not work. They capture a half-formed thought without the lifecycle baggage a real ticket demands. They live in the `todo` column like any fresh ticket but are **hidden from the default work surfaces** (`list_tickets`, `search_tickets`, `ready_only`, the web board's columns) unless you opt in with `include_ideas: true`, or list them directly via `list_ideas` / `search_ideas`. This is the same default-hidden + opt-in shape as `archived` — and the two compose: an archived idea needs **both** `include_archived` and `include_ideas` to surface.
+- **Backfill-free.** Empty `kind` normalises to `work`, so every pre-ideation `ticket.yaml` (which has no `kind:` key) loads as work with no migration. Work tickets never write a `kind:` key.
+- **Lifecycle-gated.** An idea can't be `complete`d, can't walk out of `todo` via `move_ticket`, and can't be a `depends_on` / `parallelizable_with` target — each is rejected with a message pointing at `promote_idea`. The only forward path is promotion.
+- **`promote_idea` flips `kind: idea → work` in place**, keeping the ticket's id, comments, and embedding history (no cross-store copy). The promoted ticket immediately joins the work board; an optional phase assignment can drop it into a phase in the same call. Promotion writes a `system_promote` audit comment.
+
+This replaces the old anti-pattern of hijacking a real ticket (or a whole phase) to hold ideas — ideas now have their own first-class home that stays out of the work flow until you decide they're worth doing.
 
 ### Comments (3)
 

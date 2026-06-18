@@ -10,6 +10,7 @@ Most ticket systems pretend humans will read them. This one assumes an LLM will.
 
 - **Every column move requires a comment.** No silent moves. The reason becomes part of the audit trail.
 - **Completion is sacred and structured.** Tickets reach `done` only via a dedicated call that requires three fields: testing evidence, work summary, and learnings. The learnings are embedded and become semantically searchable, so future tickets can surface "have I hit this gotcha before?"
+- **Ideas have their own home.** Half-formed spitballs go in via `create_idea` (just a title) — they're `kind=idea` tickets, hidden from the work board and `ready_only` until they matter, searchable behind `include_ideas` / `list_ideas`, and turned into real work in place with `promote_idea` (keeping their comments + history). No more hijacking tickets or phases to hold ideas.
 
 The system feeds itself: each completed ticket leaves machine-readable wisdom for the next agent. That's the actual point.
 
@@ -137,13 +138,14 @@ That single conversation exercises `create_project` (≥200-char summary enforce
 
 ## Tools
 
-The MCP server exposes **35 tools** across eight categories. The full table with per-tool descriptions lives in [`SPEC.md` § MCP server](SPEC.md#mcp-server). At a glance:
+The MCP server exposes **40 tools** across nine categories. The full table with per-tool descriptions lives in [`SPEC.md` § MCP server](SPEC.md#mcp-server). At a glance:
 
 | Category | Count | Highlights |
 |---|---|---|
 | Projects | 8 | `list_projects`, `create_project`, `get_project`, **`get_project_summary`**, `load_project`, `update_project`, `delete_project`, `reembed_project` |
-| Phases | 7 | `list_phases`, `create_phase`, `get_phase`, `get_phase_summary`, `update_phase`, `delete_phase`, `list_waves` |
-| Tickets | 10 | `list_tickets`, `create_ticket`, `get_ticket`, `update_ticket`, `move_ticket`, `complete_ticket`, `assign_ticket_to_phase`, `delete_ticket`, `archive_ticket`, `unarchive_ticket` |
+| Phases | 8 | `list_phases`, `create_phase`, `get_phase`, `get_phase_summary`, `update_phase`, `delete_phase`, `archive_phase`, `list_waves` |
+| Tickets | 11 | `list_tickets`, `create_ticket`, `get_ticket`, `update_ticket`, `move_ticket`, `complete_ticket`, `assign_ticket_to_phase`, `delete_ticket`, `archive_ticket`, `unarchive_ticket`, `promote_idea` |
+| Ideas | 3 | `create_idea`, `list_ideas`, `search_ideas` |
 | Comments | 3 | `add_comment`, `list_comments`, `list_comments_scoped` |
 | Search | 3 | `search_tickets`, **`search_learnings`**, `search_comments` |
 | Feedback | 1 | **`rate_search_result`** |
