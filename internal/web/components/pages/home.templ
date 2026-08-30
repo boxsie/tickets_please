@@ -1,0 +1,28 @@
+// Package pages hosts the page-level templ components — each one slots into
+// the layout.Layout chrome via Renderer.RenderTempl. Pages take their own
+// typed props directly (no opaque `Body any` bag); the home page has no
+// per-request data, so Home() takes no arguments.
+package pages
+
+// Home is the empty-state landing page rendered when no projects are mounted.
+// Populated-state requests are 303-redirected to the first project's overview
+// before this ever runs — see web.handleHome.
+//
+// 1:1 port of templates/pages/home.tmpl: same copy, same class names, same
+// hrefs. Layout / styling stay identical until Phase 2 explicitly relaxes
+// "behaviour-identical, layout-identical."
+templ Home() {
+	<section class="empty-state">
+		<h1>Welcome to tickets_please</h1>
+		<p class="subtitle">No projects are mounted on this server yet. Mount one to get started — humans and LLM agents will share the same audit trail.</p>
+		<div class="page-actions">
+			<a class="btn btn-primary" href="/p/new">Create a new project</a>
+			<a class="btn" href="/p/load">Load an existing project</a>
+		</div>
+		<p class="footnote">
+			Or run <code>tickets_please mcp</code> from a repo containing a
+			<code>.tickets_please/project.yaml</code> to bind a session and have
+			the project appear in the sidebar.
+		</p>
+	</section>
+}

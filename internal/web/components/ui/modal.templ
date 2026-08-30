@@ -1,0 +1,21 @@
+package ui
+
+// Modal renders a native <dialog> element with the standard header (title +
+// × close button) and a children-filled body. Open/close is driven by the
+// same data-dialog / data-dialog-close JS the existing ticket detail page
+// uses (see internal/web/templates/pages/tickets/detail.tmpl). Migrated
+// pages share that single inline script — this component just emits the
+// markup the script already knows how to drive.
+templ Modal(props ModalProps) {
+	<dialog id={ props.ID } class={ modalClass(props) }>
+		<div class="modal-header">
+			<h2>{ props.Title }</h2>
+			<form method="dialog">
+				<button type="submit" class="btn modal-close" aria-label="Close">×</button>
+			</form>
+		</div>
+		<div class="modal-body">
+			{ children... }
+		</div>
+	</dialog>
+}

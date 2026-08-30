@@ -1,0 +1,34 @@
+package ui
+
+// ArchivedToggle renders the "Show archived" switch shown atop the list/search
+// surfaces. It's a plain link (not a form) so it needs no JS, stays shareable,
+// and preserves the rest of the query string — the handler builds Href by
+// flipping include_archived on the current URL. `On` reflects the current
+// state: when true the link turns archived OFF, and vice-versa.
+//
+// Rendered as role="switch" with aria-checked so it reads as a toggle to
+// assistive tech even though it's an anchor.
+templ ArchivedToggle(href string, on bool) {
+	<a
+		class={ "archived-toggle", templ.KV("on", on) }
+		href={ templ.SafeURL(href) }
+		role="switch"
+		aria-checked={ ariaBool(on) }
+		title="Show or hide archived tickets across lists and search"
+	>
+		<span class="archived-toggle-box" aria-hidden="true">
+			if on {
+				&#10003;
+			}
+		</span>
+		<span class="archived-toggle-label">Show archived</span>
+	</a>
+}
+
+// ariaBool maps a bool to the "true"/"false" strings aria-checked expects.
+func ariaBool(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}

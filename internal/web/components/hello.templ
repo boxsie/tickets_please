@@ -1,0 +1,18 @@
+package components
+
+// Hello is a throwaway component used by the /_dev/templ-hello smoke route to
+// prove the templ generate → compile → render pipeline works end-to-end.
+// Delete it once Wave 1 has a real page rendered through templ.
+templ Hello(name string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<title>templ hello</title>
+		</head>
+		<body>
+			<h1>hello { name }</h1>
+			<p>templ pipeline is alive.</p>
+		</body>
+	</html>
+}

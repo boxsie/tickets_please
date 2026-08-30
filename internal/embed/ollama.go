@@ -1,0 +1,234 @@
+package embed
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// ollamaTimeout caps a single Embed call. The first request after a model load
+// can take 10+ seconds while Ollama warms up, so we leave generous headroom.
+const ollamaTimeout = 60 * time.Second
+
+// ollamaPullTimeout caps an /api/pull call. Embedding models like bge-m3 are
+// ~1.2GB; on a slow link the pull can take several minutes.
+const ollamaPullTimeout = 15 * time.Minute
+
+// ModelPullTimeout is the exported budget the service layer applies when it
+// acquires a missing model in the background (see svc.ensureMountModelAsync).
+// Mirrors ollamaPullTimeout — a multi-GB embedding model can take minutes.
+const ModelPullTimeout = ollamaPullTimeout
+
+// Ollama is the embed.Provider backed by a local Ollama server. It uses the
+// /api/embeddings HTTP endpoint directly (no SDK).
+type Ollama struct {
+	url    string
+	model  string
+	client *http.Client
+	dim    int
+}
+
+// NewOllama constructs an Ollama provider from view. It does not contact the
+// server.
+func NewOllama(view EmbedConfig) *Ollama {
+	return &Ollama{
+		url:    strings.TrimRight(view.OllamaURL, "/"),
+		model:  view.Model,
+		client: &http.Client{Timeout: ollamaTimeout},
+	}
+}
+
+// Probe runs a single Embed call against the configured Ollama server and
+// records the resulting vector length. The Service guarantees Probe runs once
+// before any caller asks for Dim().
+//
+// Probe deliberately does NOT pull a missing model. Pulling a multi-GB model
+// can take minutes, and Probe runs on the boot/mount-attach path — a
+// synchronous pull there blocked the MCP handshake past its 30s client timeout
+// (ticket 3a138760). Model acquisition is now an explicit, backgroundable step
+// via EnsureModel; a missing model surfaces here as a fast error that
+// IsModelMissing recognizes, letting the service fall back and pull off the
+// hot path.
+func (o *Ollama) Probe(ctx context.Context) error {
+	vec, err := o.Embed(ctx, "ping")
+	if err != nil {
+		return fmt.Errorf("ollama: probe: %w", err)
+	}
+	o.dim = len(vec)
+	return nil
+}
+
+// EnsureModel makes o.model available on the Ollama server, pulling it if it
+// isn't already present. It is the explicit, opt-in counterpart to Probe:
+// callers that genuinely want to acquire a model (the service does this from a
+// background goroutine so boot never blocks) call EnsureModel; a healthy model
+// returns immediately without a pull. Safe to call unconditionally.
+func (o *Ollama) EnsureModel(ctx context.Context) error {
+	if _, err := o.Embed(ctx, "ping"); err == nil {
+		return nil // already present and serving
+	} else if !isOllamaModelMissing(err) {
+		return fmt.Errorf("ollama: ensure model %q: %w", o.model, err)
+	}
+	slog.Default().Info("ollama: model not present; pulling", "model", o.model, "url", o.url)
+	if err := o.pull(ctx); err != nil {
+		return fmt.Errorf("ollama: ensure model %q: pull failed: %w", o.model, err)
+	}
+	slog.Default().Info("ollama: pull complete", "model", o.model)
+	return nil
+}
+
+// IsModelMissing reports whether err is the specific "model not pulled" 404
+// from Ollama, as opposed to a network error, a malformed response, or a real
+// 5xx. Exported so the service layer can decide whether a probe failure is the
+// recoverable "just needs a pull" case (→ fall back + background pull) or a
+// hard error to surface.
+func IsModelMissing(err error) bool { return isOllamaModelMissing(err) }
+
+// isOllamaModelMissing detects the specific 404 Ollama returns when an
+// embedding call references a model that hasn't been pulled. Anything else
+// (network errors, malformed responses, real 5xx) is left for the caller to
+// surface — we only auto-recover from the obviously-recoverable case.
+func isOllamaModelMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "status 404") &&
+		strings.Contains(msg, "not found") &&
+		strings.Contains(msg, "try pulling it")
+}
+
+// pull POSTs to /api/pull with stream:false so the call blocks until the
+// download completes (or fails). Uses a fresh client because the per-Embed
+// 60s timeout would kill a multi-GB model pull.
+func (o *Ollama) pull(ctx context.Context) error {
+	body, err := json.Marshal(map[string]any{
+		"name":   o.model,
+		"stream": false,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal pull request: %w", err)
+	}
+
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, ollamaPullTimeout)
+		defer cancel()
+	}
+
+	endpoint := o.url + "/api/pull"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build pull request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: ollamaPullTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("post %s: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("%s: status %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(snippet)))
+	}
+
+	// With stream:false Ollama returns a single JSON object; with stream:true
+	// it returns NDJSON. Drain whatever it gave us so the connection can be
+	// reused, and check the final payload looks like success.
+	var out struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	dec := json.NewDecoder(resp.Body)
+	for {
+		if err := dec.Decode(&out); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("decode pull response: %w", err)
+		}
+		if out.Error != "" {
+			return fmt.Errorf("ollama reported pull error: %s", out.Error)
+		}
+	}
+	return nil
+}
+
+// Dim returns the probed embedding dimensionality. Panics if Probe hasn't run
+// yet — the Service contract guarantees probe-before-use.
+func (o *Ollama) Dim() int {
+	if o.dim == 0 {
+		panic("embed.Ollama: Dim() called before Probe(); Service.New is supposed to probe first")
+	}
+	return o.dim
+}
+
+// Name returns "ollama".
+func (o *Ollama) Name() string { return "ollama" }
+
+type ollamaRequest struct {
+	Model   string         `json:"model"`
+	Prompt  string         `json:"prompt"`
+	Options map[string]any `json:"options,omitempty"`
+}
+
+type ollamaResponse struct {
+	Embedding []float32 `json:"embedding"`
+}
+
+// Embed POSTs text to ${url}/api/embeddings and returns the resulting vector.
+func (o *Ollama) Embed(ctx context.Context, text string) ([]float32, error) {
+	body, err := json.Marshal(ollamaRequest{
+		Model:   o.model,
+		Prompt:  text,
+		Options: map[string]any{"num_ctx": 8192},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ollama: marshal request: %w", err)
+	}
+
+	// Ensure ctx carries a deadline so http.Client.Timeout doesn't silently win.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, ollamaTimeout)
+		defer cancel()
+	}
+
+	endpoint := o.url + "/api/embeddings"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("ollama: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ollama: post %s: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		// Read up to a few KB of error body for the message; cap to avoid log floods.
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("ollama: %s: status %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(snippet)))
+	}
+
+	var out ollamaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("ollama: decode response: %w", err)
+	}
+	if err := ValidateVector("ollama", out.Embedding); err != nil {
+		return nil, err
+	}
+	return out.Embedding, nil
+}

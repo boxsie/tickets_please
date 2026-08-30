@@ -1,0 +1,29 @@
+package tickets
+
+// AssignPhaseForm renders the reassign-phase form that lives inside the
+// assign-phase modal. The currently-selected phase is highlighted via
+// <option selected> — handled inline because templ's `selected?=` short
+// form needs a boolean and we want to compute it per-option.
+//
+// 1:1 port of templates/partials/assign_phase_form.tmpl.
+templ AssignPhaseForm(props AssignPhaseProps) {
+	<form
+		method="post"
+		action={ templ.SafeURL(assignPhaseHref(props.TicketID, props.ProjectSlug)) }
+		class="stack assign-phase-form"
+	>
+		<label for="phase">Phase</label>
+		<select id="phase" name="phase">
+			<option value="">— no phase —</option>
+			for _, p := range props.Phases {
+				<option value={ p.Slug } selected?={ p.Slug == props.CurrentPhaseSlug }>{ p.Name }</option>
+			}
+		</select>
+		<label for="assign-comment">Comment <span class="muted">(required)</span></label>
+		<textarea id="assign-comment" name="comment" rows="2" required placeholder="Why are you reassigning?"></textarea>
+		<input type="hidden" name="_csrf" value={ props.CSRF }/>
+		<div class="form-actions">
+			<button type="submit">Reassign</button>
+		</div>
+	</form>
+}

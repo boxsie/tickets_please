@@ -1,0 +1,570 @@
+package svc
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"tickets_please/internal/config"
+	"tickets_please/internal/domain"
+	"tickets_please/internal/embed"
+	"tickets_please/internal/store"
+)
+
+// TestReembedProject_RefreshesSidecars seeds a project with a project summary
+// and a ticket body, calls ReembedProject, then verifies both sidecars are
+// refreshed after the worker drains.
+func TestReembedProject_RefreshesSidecars(t *testing.T) {
+	s := freshServiceWithCfg(t, config.Config{
+		EmbedProvider: "ollama",
+		OllamaModel:   "nomic-embed-text",
+	})
+	ctx, _ := authedCtx(t, s)
+
+	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	tk, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+		ProjectIDOrSlug: "alpha", Title: "do thing", Body: "the body",
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+
+	summarySide := filepath.Join(s.Store.Root, "summary.embedding.json")
+	if !waitForFile(summarySide, 5*time.Second) {
+		t.Fatal("summary sidecar never written initially")
+	}
+
+	// Find ticket body sidecar.
+	dirEntries, _ := os.ReadDir(filepath.Join(s.Store.Root, "tickets"))
+	if len(dirEntries) == 0 {
+		t.Fatal("ticket dir missing")
+	}
+	ticketDir := filepath.Join(s.Store.Root, "tickets", dirEntries[0].Name())
+	bodySide := filepath.Join(ticketDir, "body.embedding.json")
+	if !waitForFile(bodySide, 5*time.Second) {
+		t.Fatal("body sidecar never written initially")
+	}
+
+	// Reembed.
+	if err := s.ReembedProject(ctx, "alpha"); err != nil {
+		t.Fatalf("ReembedProject: %v", err)
+	}
+
+	// ReembedProject leaves the existing sidecars in place while the worker
+	// prepares their replacements. Drain the queue, then confirm both still
+	// exist after the refresh.
+	s.flushAllMountWorkers(ctx)
+
+	if !waitForFile(summarySide, 5*time.Second) {
+		t.Fatal("summary sidecar never re-written after reembed")
+	}
+	if !waitForFile(bodySide, 5*time.Second) {
+		t.Fatal("body sidecar never re-written after reembed")
+	}
+	_ = tk
+}
+
+// partialFailProvider changes the successful-ticket vector after refresh but
+// deliberately fails one exact source. Queries remain available so the test
+// can prove the failed ticket's old resident vector is still searchable.
+type partialFailProvider struct {
+	mu       sync.RWMutex
+	refresh  bool
+	failText string
+}
+
+func (p *partialFailProvider) Name() string                  { return "ollama" }
+func (p *partialFailProvider) Dim() int                      { return 2 }
+func (p *partialFailProvider) Probe(_ context.Context) error { return nil }
+
+func (p *partialFailProvider) Embed(_ context.Context, text string) ([]float32, error) {
+	p.mu.RLock()
+	refresh := p.refresh
+	failText := p.failText
+	p.mu.RUnlock()
+	if refresh && text == failText {
+		return nil, errors.New("deliberate partial re-embed failure")
+	}
+	switch {
+	case strings.Contains(text, "keep searchable"):
+		return []float32{1, 0}, nil
+	case strings.Contains(text, "refresh successfully"):
+		if refresh {
+			return []float32{0.6, 0.8}, nil
+		}
+		return []float32{0, 1}, nil
+	default:
+		return []float32{0.70710677, 0.70710677}, nil
+	}
+}
+
+func (p *partialFailProvider) startRefresh(failText string) {
+	p.mu.Lock()
+	p.refresh = true
+	p.failText = failText
+	p.mu.Unlock()
+}
+
+// TestReembedProject_PartialFailurePreservesOldEmbedding is the regression
+// for #152: one failed replacement must leave its previous sidecar and index
+// entry intact while successful entries genuinely refresh.
+func TestReembedProject_PartialFailurePreservesOldEmbedding(t *testing.T) {
+	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 4})
+	provider := &partialFailProvider{}
+	s.EmbedNew = func(embed.EmbedConfig) (embed.Provider, error) { return provider, nil }
+
+	repo := seedRepoWithProvider(t, t.TempDir(), "repoAlpha", "alpha", "ollama", "bge-m3")
+	if err := os.WriteFile(filepath.Join(repo, ".tickets_please", "summary.md"), []byte("project summary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RegisterProjectMount(context.Background(), repo); err != nil {
+		t.Fatalf("mount alpha: %v", err)
+	}
+	ctx, _ := authedCtx(t, s)
+
+	failedTicket, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+		ProjectIDOrSlug: "alpha",
+		Title:           "failed ticket",
+		Body:            "keep searchable",
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket(failed): %v", err)
+	}
+	refreshedTicket, err := s.CreateTicket(ctx, domain.CreateTicketInput{
+		ProjectIDOrSlug: "alpha",
+		Title:           "healthy ticket",
+		Body:            "refresh successfully",
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket(healthy): %v", err)
+	}
+	s.flushAllMountWorkers(ctx)
+
+	mount := s.mountForSlug("alpha")
+	_, failedDir, err := s.findTicketDir(mount.Store, "alpha", failedTicket.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, refreshedDir, err := s.findTicketDir(mount.Store, "alpha", refreshedTicket.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedSide := filepath.Join(failedDir, "body.embedding.json")
+	refreshedSide := filepath.Join(refreshedDir, "body.embedding.json")
+	oldFailed, err := os.ReadFile(failedSide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRefreshed, err := os.ReadFile(refreshedSide)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider.startRefresh("failed ticket\n\nkeep searchable")
+	if err := s.ReembedProject(ctx, "alpha"); err != nil {
+		t.Fatalf("ReembedProject: %v", err)
+	}
+	s.flushAllMountWorkers(ctx)
+
+	gotFailed, err := os.ReadFile(failedSide)
+	if err != nil {
+		t.Fatalf("failed entry lost its old sidecar: %v", err)
+	}
+	if string(gotFailed) != string(oldFailed) {
+		t.Error("failed entry's old sidecar was replaced")
+	}
+	gotRefreshed, err := os.ReadFile(refreshedSide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotRefreshed) == string(oldRefreshed) {
+		t.Error("healthy entry's sidecar was not refreshed")
+	}
+
+	hits, err := s.SearchTickets(ctx, domain.SearchTicketsInput{
+		ProjectIDOrSlug: "alpha",
+		Query:           "keep searchable",
+		Limit:           2,
+	})
+	if err != nil {
+		t.Fatalf("SearchTickets: %v", err)
+	}
+	if len(hits) == 0 || hits[0].Ticket.ID != failedTicket.ID {
+		t.Fatalf("failed entry no longer searchable; hits = %+v", hits)
+	}
+}
+
+// TestUpdateProject_EmbedModelChange_AutoReembeds confirms that when
+// UpdateProject changes EmbedModel, sidecars are refreshed with new metadata.
+func TestUpdateProject_EmbedModelChange_AutoReembeds(t *testing.T) {
+	s := freshServiceWithCfg(t, config.Config{
+		EmbedProvider: "ollama",
+		OllamaModel:   "nomic-embed-text",
+	})
+	ctx, _ := authedCtx(t, s)
+
+	if _, err := s.CreateProject(ctx, "alpha", "Alpha", "", validSummary()); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	summarySide := filepath.Join(s.Store.Root, "summary.embedding.json")
+	if !waitForFile(summarySide, 5*time.Second) {
+		t.Fatal("initial summary sidecar never written")
+	}
+	// Stat the initial mtime so we can confirm a rewrite happened.
+	initial, err := os.Stat(summarySide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fakeEmbed doesn't care about model; freshServiceWithCfg's
+	// EmbedNew always returns the same fake. So we change to a different
+	// model name and verify the sidecar gets re-written under the new
+	// stamp.
+	newModel := "bge-m3"
+	if _, err := s.UpdateProject(ctx, "alpha", domain.UpdateProjectInput{
+		EmbedModel: &newModel,
+	}); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+
+	s.flushAllMountWorkers(ctx)
+
+	// Sidecar reappears — its mtime should differ, but more importantly its
+	// Model field should be the new value.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		st, err := os.Stat(summarySide)
+		if err == nil && !st.ModTime().Equal(initial.ModTime()) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !waitForFile(summarySide, 5*time.Second) {
+		t.Fatal("summary sidecar missing after UpdateProject auto-reembed")
+	}
+
+	// Check that the mount's EmbedModel has been updated.
+	mount := s.mountForSlug("alpha")
+	if mount == nil {
+		t.Fatal("mount missing")
+	}
+	if mount.EmbedModel != newModel {
+		t.Errorf("mount.EmbedModel = %q; want %q", mount.EmbedModel, newModel)
+	}
+}
+
+// TestReembedAllProjects_TwoMountsDifferentDims mounts two projects whose
+// fake providers return different dims, calls ReembedAllProjects, and
+// verifies each rebuilt independently with its own dim.
+func TestReembedAllProjects_TwoMountsDifferentDims(t *testing.T) {
+	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 4})
+	tmp := t.TempDir()
+
+	provFor := func(view embed.EmbedConfig) (embed.Provider, error) {
+		switch view.Model {
+		case "nomic-embed-text":
+			return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+		case "bge-m3":
+			return &fakeProvider{name: "ollama-fake-1024", dim: 1024}, nil
+		}
+		return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+	}
+	s.EmbedNew = provFor
+
+	repoA := seedRepoWithProvider(t, tmp, "repoAlpha", "alpha", "ollama", "nomic-embed-text")
+	repoB := seedRepoWithProvider(t, tmp, "repoBeta", "beta", "ollama", "bge-m3")
+
+	// Each repo needs a summary.md so hydrate has something to enqueue.
+	if err := os.WriteFile(filepath.Join(repoA, ".tickets_please", "summary.md"), []byte("alpha summary text"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoB, ".tickets_please", "summary.md"), []byte("beta summary text"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.RegisterProjectMount(context.Background(), repoA); err != nil {
+		t.Fatalf("mount alpha: %v", err)
+	}
+	if _, err := s.RegisterProjectMount(context.Background(), repoB); err != nil {
+		t.Fatalf("mount beta: %v", err)
+	}
+
+	ctx, _ := authedCtx(t, s)
+
+	// Wait for initial worker writes to land summary sidecars.
+	s.flushAllMountWorkers(ctx)
+	summaryA := filepath.Join(repoA, ".tickets_please", "summary.embedding.json")
+	summaryB := filepath.Join(repoB, ".tickets_please", "summary.embedding.json")
+	if !waitForFile(summaryA, 5*time.Second) {
+		t.Fatal("alpha summary sidecar never written initially")
+	}
+	if !waitForFile(summaryB, 5*time.Second) {
+		t.Fatal("beta summary sidecar never written initially")
+	}
+
+	queued, err := s.ReembedAllProjects(ctx)
+	if err != nil {
+		t.Fatalf("ReembedAllProjects: %v", err)
+	}
+	if queued != 2 {
+		t.Errorf("queued = %d; want 2", queued)
+	}
+
+	s.flushAllMountWorkers(ctx)
+
+	if !waitForFile(summaryA, 5*time.Second) {
+		t.Fatal("alpha summary sidecar never rewritten")
+	}
+	if !waitForFile(summaryB, 5*time.Second) {
+		t.Fatal("beta summary sidecar never rewritten")
+	}
+
+	// Confirm dims survived independently.
+	mountA := s.mountForSlug("alpha")
+	mountB := s.mountForSlug("beta")
+	if mountA.EmbedDim != 768 {
+		t.Errorf("alpha EmbedDim after reembed = %d; want 768", mountA.EmbedDim)
+	}
+	if mountB.EmbedDim != 1024 {
+		t.Errorf("beta EmbedDim after reembed = %d; want 1024", mountB.EmbedDim)
+	}
+}
+
+// probeFailingProvider mimics ollama's "model not found" path: factory hands
+// it out fine, but Probe() returns an error wrapped exactly like
+// internal/embed/ollama does so the verbatim-passthrough test asserts the
+// outer rebuild error still contains the underlying server message.
+type probeFailingProvider struct {
+	name     string
+	probeErr error
+}
+
+func (p *probeFailingProvider) Name() string                  { return p.name }
+func (p *probeFailingProvider) Dim() int                      { return 0 }
+func (p *probeFailingProvider) Probe(_ context.Context) error { return p.probeErr }
+func (p *probeFailingProvider) Embed(_ context.Context, _ string) ([]float32, error) {
+	return nil, p.probeErr
+}
+
+// TestUpdateProject_ProbeFailure_SurfacesError exercises the load-bearing
+// dogfood UX: user POSTs a settings change to a model their Ollama hasn't
+// pulled yet. The probe fails during rebuild; UpdateProject must surface the
+// verbatim error, leave the mount's existing embedder/worker intact, AND
+// still durably write the new project.yaml so a follow-up `ollama pull` +
+// re-embed picks up where the user left off.
+func TestUpdateProject_ProbeFailure_SurfacesError(t *testing.T) {
+	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 4})
+	tmp := t.TempDir()
+
+	probeErr := errors.New(`ollama: probe: ollama: http://localhost:11434/api/embeddings: status 404: {"error":"model \"bge-m3\" not found, try pulling it first"}`)
+	provFor := func(view embed.EmbedConfig) (embed.Provider, error) {
+		switch view.Model {
+		case "nomic-embed-text":
+			return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+		case "bge-m3":
+			return &probeFailingProvider{name: "ollama", probeErr: probeErr}, nil
+		}
+		return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+	}
+	s.EmbedNew = provFor
+
+	repo := seedRepoWithProvider(t, tmp, "repoAlpha", "alpha", "ollama", "nomic-embed-text")
+	if _, err := s.RegisterProjectMount(context.Background(), repo); err != nil {
+		t.Fatalf("mount alpha: %v", err)
+	}
+	ctx, _ := authedCtx(t, s)
+
+	// Snapshot the pre-rebuild mount state so we can confirm it's preserved
+	// after the failed swap.
+	mount := s.mountForSlug("alpha")
+	prevEmbed := mount.Embed
+	prevWorker := mount.Worker
+	prevDim := mount.EmbedDim
+	prevModel := mount.EmbedModel
+	prevSummaryIdx := mount.SummaryIdx
+	prevTicketsIdx := mount.TicketsIdx
+	prevLearningsIdx := mount.LearningsIdx
+	prevCommentsIdx := mount.CommentsIdx
+
+	// Drive the change via the public API: POST shape passes both fields.
+	newProvider := "ollama"
+	newModel := "bge-m3"
+	cp, err := s.UpdateProject(ctx, "alpha", domain.UpdateProjectInput{
+		EmbedProvider: &newProvider,
+		EmbedModel:    &newModel,
+	})
+	if err == nil {
+		t.Fatal("UpdateProject should have returned probe error")
+	}
+	// The verbatim probe message must be in the surfaced error so the user
+	// can read what went wrong (e.g. "model not found, try pulling it first").
+	if !strings.Contains(err.Error(), `model \"bge-m3\" not found`) {
+		t.Errorf("error missing verbatim probe message: %v", err)
+	}
+	// UpdateProject still returns the updated *Project payload alongside the
+	// error — the yaml write committed cleanly, the rebuild is what failed.
+	if cp == nil {
+		t.Fatal("UpdateProject returned nil project alongside probe error")
+	}
+
+	// Mount kept ALL of its pre-rebuild assets — the failed swap must not
+	// have half-stated the mount.
+	mount = s.mountForSlug("alpha")
+	if mount.Embed != prevEmbed {
+		t.Error("mount.Embed swapped despite probe failure")
+	}
+	if mount.Worker != prevWorker {
+		t.Error("mount.Worker swapped despite probe failure")
+	}
+	if mount.EmbedDim != prevDim {
+		t.Errorf("mount.EmbedDim drifted: %d → %d", prevDim, mount.EmbedDim)
+	}
+	if mount.EmbedModel != prevModel {
+		t.Errorf("mount.EmbedModel drifted: %q → %q", prevModel, mount.EmbedModel)
+	}
+	if mount.SummaryIdx != prevSummaryIdx ||
+		mount.TicketsIdx != prevTicketsIdx ||
+		mount.LearningsIdx != prevLearningsIdx ||
+		mount.CommentsIdx != prevCommentsIdx {
+		t.Error("mount indexes were re-allocated despite probe failure")
+	}
+
+	// project.yaml DID get written — the user's intent is recorded for next
+	// time (via W2-T3 staleness or a manual Re-embed after `ollama pull`).
+	rec, err := mount.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatalf("re-read project.yaml: %v", err)
+	}
+	if rec.EmbedModel != "bge-m3" {
+		t.Errorf("project.yaml EmbedModel = %q; want bge-m3 (write should have committed)", rec.EmbedModel)
+	}
+	if rec.EmbedProvider != "ollama" {
+		t.Errorf("project.yaml EmbedProvider = %q; want ollama", rec.EmbedProvider)
+	}
+}
+
+// TestReembedAllProjects_PartialFailure: one mount probes fine, the other
+// fails. Caller gets queued=1 plus a single ReembedFailure entry — the
+// healthy mount didn't get blocked by the broken one.
+func TestReembedAllProjects_PartialFailure(t *testing.T) {
+	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 4})
+	tmp := t.TempDir()
+
+	probeErr := errors.New("model \"bge-m3\" not found")
+	provFor := func(view embed.EmbedConfig) (embed.Provider, error) {
+		switch view.Model {
+		case "nomic-embed-text":
+			return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+		case "bge-m3":
+			return &probeFailingProvider{name: "ollama", probeErr: probeErr}, nil
+		}
+		return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+	}
+	s.EmbedNew = provFor
+
+	repoA := seedRepoWithProvider(t, tmp, "repoAlpha", "alpha", "ollama", "nomic-embed-text")
+	repoB := seedRepoWithProvider(t, tmp, "repoBeta", "beta", "ollama", "nomic-embed-text")
+	if err := os.WriteFile(filepath.Join(repoA, ".tickets_please", "summary.md"), []byte("alpha"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoB, ".tickets_please", "summary.md"), []byte("beta"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RegisterProjectMount(context.Background(), repoA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RegisterProjectMount(context.Background(), repoB); err != nil {
+		t.Fatal(err)
+	}
+	// Hand-edit beta's yaml to point at the broken model so Reembed has to
+	// rebuild against the failing provider.
+	mountB := s.mountForSlug("beta")
+	rec, err := mountB.Store.ReadProject("beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.EmbedModel = "bge-m3"
+	if err := store.WriteYAMLAtomic(filepath.Join(repoB, ".tickets_please", "project.yaml"), rec); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, _ := authedCtx(t, s)
+	queued, failures := s.ReembedAllProjects(ctx)
+	if queued != 1 {
+		t.Errorf("queued = %d; want 1 (alpha succeeds, beta fails)", queued)
+	}
+	if len(failures) != 1 {
+		t.Fatalf("failures = %+v; want 1 entry", failures)
+	}
+	if failures[0].Slug != "beta" {
+		t.Errorf("failure slug = %q; want beta", failures[0].Slug)
+	}
+	if !strings.Contains(failures[0].Err.Error(), "bge-m3") {
+		t.Errorf("failure err missing model name: %v", failures[0].Err)
+	}
+}
+
+// TestReembedProject_RebuildsAtNewDim verifies that when project.yaml's
+// embed_model changes (between calls), ReembedProject rebuilds the mount's
+// indexes/Worker at the new dim.
+func TestReembedProject_RebuildsAtNewDim(t *testing.T) {
+	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 4})
+	tmp := t.TempDir()
+
+	provFor := func(view embed.EmbedConfig) (embed.Provider, error) {
+		switch view.Model {
+		case "nomic-embed-text":
+			return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+		case "bge-m3":
+			return &fakeProvider{name: "ollama-fake-1024", dim: 1024}, nil
+		}
+		return &fakeProvider{name: "ollama-fake-768", dim: 768}, nil
+	}
+	s.EmbedNew = provFor
+
+	repo := seedRepoWithProvider(t, tmp, "repoAlpha", "alpha", "ollama", "nomic-embed-text")
+	dataDir := filepath.Join(repo, ".tickets_please")
+	if err := os.WriteFile(filepath.Join(dataDir, "summary.md"), []byte("alpha summary text"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RegisterProjectMount(context.Background(), repo); err != nil {
+		t.Fatalf("mount alpha: %v", err)
+	}
+
+	ctx, _ := authedCtx(t, s)
+
+	mount := s.mountForSlug("alpha")
+	if mount.EmbedDim != 768 {
+		t.Fatalf("initial alpha EmbedDim = %d; want 768", mount.EmbedDim)
+	}
+
+	// Hand-edit project.yaml to change embed_model to bge-m3.
+	rec, err := mount.Store.ReadProject("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.EmbedModel = "bge-m3"
+	rec.UpdatedAt = time.Now()
+	if err := store.WriteYAMLAtomic(filepath.Join(dataDir, "project.yaml"), rec); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.ReembedProject(ctx, "alpha"); err != nil {
+		t.Fatalf("ReembedProject: %v", err)
+	}
+
+	// Mount's embed assets now reflect the new dim.
+	mount = s.mountForSlug("alpha")
+	if mount.EmbedDim != 1024 {
+		t.Errorf("post-reembed alpha EmbedDim = %d; want 1024", mount.EmbedDim)
+	}
+	if mount.EmbedModel != "bge-m3" {
+		t.Errorf("post-reembed alpha EmbedModel = %q; want bge-m3", mount.EmbedModel)
+	}
+}

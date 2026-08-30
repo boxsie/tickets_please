@@ -1,0 +1,75 @@
+package ui
+
+// Label renders a plain <label for="…">text</label>. Pairs with the form
+// inputs below — the existing .stack form layout in app.css already styles
+// labels into a single-column flow.
+templ Label(props LabelProps) {
+	<label for={ props.For }>{ props.Text }</label>
+}
+
+// Input renders an <input>. Type defaults to "text" via inputType(); the
+// styling comes from .stack input[type="…"] rules already in app.css, so
+// no class needs to be threaded through for the common case.
+templ Input(props InputProps) {
+	<input
+		type={ inputType(props.Type) }
+		name={ props.Name }
+		if props.ID != "" {
+			id={ props.ID }
+		}
+		if props.Value != "" {
+			value={ props.Value }
+		}
+		if props.Placeholder != "" {
+			placeholder={ props.Placeholder }
+		}
+		if props.Class != "" {
+			class={ props.Class }
+		}
+		required?={ props.Required }
+		disabled?={ props.Disabled }
+	/>
+}
+
+// Textarea renders a <textarea>. Rows is omitted entirely when zero so the
+// browser default applies (the templ `if rowsAttr` keeps the attribute off
+// the markup rather than emitting rows="0").
+templ Textarea(props TextareaProps) {
+	<textarea
+		name={ props.Name }
+		if props.ID != "" {
+			id={ props.ID }
+		}
+		if props.Placeholder != "" {
+			placeholder={ props.Placeholder }
+		}
+		if r := rowsAttr(props.Rows); r != "" {
+			rows={ r }
+		}
+		if props.Class != "" {
+			class={ props.Class }
+		}
+		required?={ props.Required }
+		disabled?={ props.Disabled }
+	>{ props.Value }</textarea>
+}
+
+// Select renders a <select> with a typed list of options. Selected==true
+// puts the `selected` attribute on the matching <option>.
+templ Select(props SelectProps) {
+	<select
+		name={ props.Name }
+		if props.ID != "" {
+			id={ props.ID }
+		}
+		if props.Class != "" {
+			class={ props.Class }
+		}
+		required?={ props.Required }
+		disabled?={ props.Disabled }
+	>
+		for _, opt := range props.Options {
+			<option value={ opt.Value } selected?={ opt.Selected }>{ opt.Label }</option>
+		}
+	</select>
+}

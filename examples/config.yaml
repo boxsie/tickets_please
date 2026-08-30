@@ -1,0 +1,90 @@
+# Sample tickets_please config.
+#
+# Copy this file to ~/.tickets_please/config.yaml and edit as needed.
+# Any value here can be overridden by setting the matching env var
+# (uppercase the key, replace dots with underscores — e.g. data_dir -> DATA_DIR).
+# All keys are optional; missing keys fall back to the built-in defaults.
+
+# Root of the per-repo project data tree (one project's project.yaml, phases/,
+# tickets/, etc.). Defaults to a directory in the current working dir so the
+# repo's own data lives inside the repo.
+data_dir: ./.tickets_please
+
+# Central data root shared across every repo this server instance hosts.
+# Holds the agent registry (<data_root>/agents/<uuid>.yaml) and the persistent
+# mount registry (<data_root>/registry.yaml). Tilde-expanded at load time.
+data_root: ~/.tickets_please
+
+# Root under which `create_project` may materialise a project directory when
+# the caller's `project_path` does not exist on the server (e.g. an HTTP MCP
+# client running on a different host). Existing paths are honoured as-is.
+# Missing paths outside this root are rejected. Set to "" to disable the
+# auto-create behaviour and restore the strict pre-HTTP semantics.
+remote_project_root: ~/.tickets_please/projects
+
+# When true and `data_dir` is inside a git repo, every mutating call produces a commit
+# authored as the calling agent. Set to false to skip the audit-trail commits.
+auto_commit: true
+
+# Embedding settings below are *defaults for newly created projects*. Per-project
+# overrides live in each project's `.tickets_please/project.yaml` under
+# `embed_provider` / `embed_model`. Change those + click Re-embed in Settings to
+# migrate an existing project to a new model. Existing projects keep whatever
+# their `project.yaml` says until they're re-embedded.
+
+# Embedding provider: "ollama" (default, local) or "openai".
+embed_provider: ollama
+
+# Ollama settings (used when embed_provider == "ollama").
+# bge-m3: 8192-token context, 1024-dim vectors — the current sweet spot for ticket-shaped text.
+ollama_url: http://localhost:11434
+ollama_model: bge-m3
+
+# OpenAI settings (used when embed_provider == "openai"). API key is required in that case.
+# Note: switching providers with a different vector dim requires deleting all *.embedding.json
+# files so the worker re-embeds with the new provider.
+openai_api_key: ""
+
+# MCP self-identity. The binary registers itself as an agent on startup.
+# `mcp_agent_key` is a self-asserted identifier. Empty = generate one (tickets_please_mcp:<random>).
+mcp_agent_key: ""
+mcp_agent_name: tickets_please_mcp
+
+# Agent session TTL in minutes. Default is fine; cap is enforced server-side.
+agent_session_ttl_minutes: 60
+agent_session_max_minutes: 240
+
+# Project loading & cache.
+project_idle_minutes: 15
+max_loaded_projects: 16
+
+# Concurrent-access mitigations.
+# lock_timeout_seconds — how long to wait for a per-project flock before erroring.
+# fsnotify_enabled     — cross-process cache invalidation. Set false for mtime polling fallback.
+lock_timeout_seconds: 10
+fsnotify_enabled: true
+
+# Subagent orchestration.
+# enforce_dependencies — when true, MoveTicket → in_progress blocks if BlockedBy is non-empty.
+#                         Default false: warn-log + annotate the move comment.
+enforce_dependencies: false
+
+# Web UI auth (the `serve` browser frontend). Optional — omit the whole block
+# for a localhost-only instance with no OAuth login.
+auth:
+  # base_url — public origin used to build OAuth redirect URLs and to decide
+  # whether cookies get the Secure flag. Leave empty to infer from the request.
+  base_url: ""
+  # session_max_age_hours — how long a web sign-in stays valid (the tp_user
+  # login cookie). 0 (default) = indefinite: you stay signed in until you
+  # explicitly log out. Set e.g. 24 for a one-day window. This is the
+  # human login window only; it's independent of agent_session_ttl_minutes.
+  session_max_age_hours: 0
+  # providers — OAuth apps. A provider is shown only when both id+secret are set.
+  # providers:
+  #   github:
+  #     client_id: ""
+  #     client_secret: ""
+  #   google:
+  #     client_id: ""
+  #     client_secret: ""

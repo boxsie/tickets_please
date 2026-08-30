@@ -1,0 +1,70 @@
+package phases
+
+import "tickets_please/internal/web/components/attribution"
+
+// WaveSection renders one wave's bucket of tickets — the chip + title +
+// count header, followed by the per-ticket list with status dot and badge.
+//
+// Both the phases-index expanded view (inside each <details>) and the
+// phase-detail page reach for this component, deduping what used to be two
+// identical render blocks in the legacy templates.
+//
+// Bucketing/sorting stays in the handler (see bucketTicketsByWave). This
+// component is presentation-only: it trusts the props it gets.
+templ WaveSection(p WaveSectionProps) {
+	<section
+		class={ WaveClass(p) }
+		if p.Focusable {
+			id={ WaveAnchorID(p) }
+		}
+	>
+		<header class="phase-wave-head">
+			<span class={ WaveChipClass(p) }>
+				{ WaveChipText(p) }
+			</span>
+			<span class="phase-wave-title">
+				{ WaveTitle(p) }
+			</span>
+			<span class="phase-wave-count muted">{ TicketCountLabel(len(p.Tickets)) }</span>
+			if p.Focusable {
+				<a class="phase-wave-focus" href={ templ.SafeURL(WaveFocusHref(p)) }>Focus on this wave &rarr;</a>
+			}
+		</header>
+		<ul class="phase-wave-tickets">
+			for _, t := range p.Tickets {
+				<li class={ "phase-wave-ticket", templ.KV("archived", t.Archived) } id={ "ticket-row-" + t.ID }>
+					<span class={ "dot", "dot-" + string(t.Column) } title={ string(t.Column) }></span>
+					<a class="phase-wave-ticket-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.ProjectSlug) }>{ t.Title }</a>
+					<span class="phase-wave-ticket-meta">
+						<span class={ "badge", "badge-" + string(t.Column) }>{ string(t.Column) }</span>
+						@attribution.IdeaPill(t.Kind)
+						@attribution.ArchivedPill(t.Archived)
+						@attribution.Chip(t)
+					</span>
+				</li>
+			}
+		</ul>
+	</section>
+}
+
+// PhaseWaves renders the inner content of a phase's wave container — either
+// the per-wave sections or the empty-state when the phase has no tickets. It's
+// the morph target for live updates (#83): the SSE handler re-renders this for
+// `#phase-waves-{phaseID}` on any ticket event so rows, dot colours, badges,
+// and row insert/removal all reconcile in one inner-morph. Rendering the
+// empty-state here too (rather than branching in the page) keeps the container
+// — and its id — present even for an empty phase, so the first ticket created
+// in it streams in without a reload.
+templ PhaseWaves(projectSlug string, waves []WaveSectionProps) {
+	if len(waves) > 0 {
+		for _, w := range waves {
+			@WaveSection(w)
+		}
+	} else {
+		<div class="phase-row-empty">
+			<p class="hint">No tickets in this phase yet.</p>
+			<a class="btn btn-sm" href={ templ.SafeURL("/p/" + projectSlug + "/tickets/new") }>+ New ticket</a>
+		</div>
+	}
+}
+

@@ -1,0 +1,35 @@
+package projects
+
+// SummaryEdit is the editor form for the project summary — 1:1 port of
+// partials/project_summary_edit.tmpl. Both POSTs and the Cancel button drive
+// htmx outerHTML swaps against `#summary-region`, so the partial stays
+// reusable across full-page and HX-Request flows.
+templ SummaryEdit(props SummaryProps) {
+	<div id="summary-region" class="card">
+		if props.FormError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { props.FormError }</div>
+		}
+		<form
+			method="post"
+			action={ templ.SafeURL("/p/" + props.Project.Slug + "/summary") }
+			class="stack"
+			hx-post={ "/p/" + props.Project.Slug + "/summary" }
+			hx-target="#summary-region"
+			hx-swap="outerHTML"
+		>
+			<label for="summary">Summary <span class="muted">(markdown, &ge;200 chars)</span></label>
+			<textarea id="summary" name="summary" rows="16" required minlength="200">{ props.Summary }</textarea>
+			<input type="hidden" name="_csrf" value={ props.CSRF }/>
+			<div class="form-actions">
+				<button type="submit">Save</button>
+				<button
+					type="button"
+					class="btn-link"
+					hx-get={ "/p/" + props.Project.Slug + "/summary" }
+					hx-target="#summary-region"
+					hx-swap="outerHTML"
+				>Cancel</button>
+			</div>
+		</form>
+	</div>
+}

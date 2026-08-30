@@ -1,0 +1,13 @@
+[Unit]
+Description=tickets_please MCP server (HTTP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/tickets_please serve --addr 127.0.0.1:8765
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,95 @@
+package phases
+
+import "tickets_please/internal/web/components/ui"
+
+// Detail is the /p/{slug}/phases/{phase} page — a single phase with its
+// summary card, wave-bucketed tickets, and danger-zone delete form. 1:1
+// port of templates/pages/phases/detail.tmpl.
+//
+// The wave breakdown reaches for the shared WaveSection component so
+// the markup stays in sync with the phases-index expanded view.
+templ Detail(p DetailProps) {
+	<section class="phase-detail" data-on-load={ "@get('/sse?topics=phase:" + p.Phase.ID + ",project:" + p.Project.ID + "')" }>
+		<header class="page-header">
+			<a class="back-link" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases") }>All phases</a>
+			<h1>{ p.Phase.Name }</h1>
+			<p class="subtitle">
+				<code>{ p.Phase.Slug }</code>
+				if p.Phase.Description != "" {
+					<span class="breadcrumb-sep"></span>
+					{ p.Phase.Description }
+				}
+				<span class="breadcrumb-sep"></span>
+				{ TicketCountLabelActiveTotal(p.Phase.ActiveTicketCount, p.Phase.TicketCount) }
+			</p>
+			<div class="page-actions">
+				<a class="btn btn-primary" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/summary") }>Summary</a>
+				<a class="btn" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/edit") }>Edit</a>
+				@ui.ArchivedToggle(p.ToggleHref, p.ShowArchived)
+			</div>
+		</header>
+		<section class="card">
+			<h2>Summary</h2>
+			if p.Phase.Summary != "" {
+				<div class="markdown">
+					@templ.Raw(string(p.SummaryHTML))
+				</div>
+				<p class="mt-4">
+					<a href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/summary") }>Open the full summary editor &rarr;</a>
+				</p>
+			} else {
+				<p class="hint">
+					No summary set.
+					<a href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/summary?edit=1") }>Add one &rarr;</a>
+				</p>
+			}
+		</section>
+		if p.Focused {
+			<div class="wave-focus-banner" role="status">
+				<span>Showing <strong>{ p.FocusWaveLabel }</strong> only.</span>
+				<a class="btn btn-sm" href={ templ.SafeURL(p.AllWavesHref) }>View all waves</a>
+			</div>
+		}
+		<div class="phase-row-waves phase-detail-waves" id={ "phase-waves-" + p.Phase.ID }>
+			@PhaseWaves(p.Project.Slug, p.Waves)
+		</div>
+		if p.Phase.ActiveTicketCount > 0 {
+			<details class="archive-zone">
+				<summary>Archive phase</summary>
+				<p class="hint">
+					Archives all <strong>{ itoa(p.Phase.ActiveTicketCount) }</strong> active
+					{ TicketCountWord(p.Phase.ActiveTicketCount) } in <code>{ p.Phase.Slug }</code> in
+					one go — each gets an audit comment and drops out of the default lists and
+					search. Reversible: unarchive any ticket individually to bring it back.
+				</p>
+				<form
+					method="post"
+					action={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/archive") }
+					onsubmit={ templ.JSUnsafeFuncCall(ArchiveConfirmJS(p.Phase.Slug)) }
+				>
+					<input type="hidden" name="_csrf" value={ p.CSRF }/>
+					<input type="hidden" name="confirm" value="yes"/>
+					<button type="submit" class="btn btn-warn">Archive { itoa(p.Phase.ActiveTicketCount) } active { TicketCountWord(p.Phase.ActiveTicketCount) }</button>
+				</form>
+			</details>
+		}
+		<details class="danger-zone">
+			<summary>Delete phase</summary>
+			<p class="hint">
+				Removes phase <code>{ p.Phase.Slug }</code>. Refuses if any ticket is
+				still attached. Cannot be undone.
+			</p>
+			<form
+				method="post"
+				action={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/" + p.Phase.Slug + "/delete") }
+				onsubmit={ templ.JSUnsafeFuncCall(DeleteConfirmJS(p.Phase.Slug)) }
+			>
+				<input type="hidden" name="_csrf" value={ p.CSRF }/>
+				<input type="hidden" name="confirm" value="yes"/>
+				<button type="submit" class="btn btn-danger">Delete this phase</button>
+			</form>
+		</details>
+	</section>
+}
+
+

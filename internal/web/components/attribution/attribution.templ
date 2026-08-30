@@ -1,0 +1,92 @@
+package attribution
+
+import (
+	"tickets_please/internal/domain"
+	"tickets_please/internal/web/reltime"
+)
+
+// Chip renders "author · <relative-time>" for a ticket reference. The time is
+// the ticket's creation stamp (the authoring event); hover reveals the
+// absolute ISO via the <time> title. Each piece is its own element so templ
+// doesn't glue the author to the time.
+templ Chip(t *domain.Ticket) {
+	<span class="ticket-attribution">
+		<span class="attribution-author">@authorLink(t)</span>
+		<span class="attribution-sep" aria-hidden="true">·</span>
+		@reltime.Time(t.CreatedAt)
+	</span>
+}
+
+// authorLink renders the credited author as a link where we have an id to link
+// to: the creating agent's /agents/{id} page, else the acting-for human's
+// /u/{id} page, else plain "unknown" text. Mirrors Label's fallback order so
+// the displayed name is identical — only now it's clickable.
+templ authorLink(t *domain.Ticket) {
+	if t.CreatedBy != nil && t.CreatedBy.ID != "" && t.CreatedBy.Name != "" {
+		@AgentLink(t.CreatedBy.ID, t.CreatedBy.Name)
+	} else if t.CreatedFor != nil && t.CreatedFor.UserID != "" && t.CreatedFor.DisplayName != "" {
+		@UserLink(t.CreatedFor.UserID, t.CreatedFor.DisplayName)
+	} else {
+		{ Label(t) }
+	}
+}
+
+// AgentLink renders an agent's name as a link to its /agents/{id} detail page.
+// Falls back to plain text when the id is empty (an unresolved / system author),
+// so call sites can use it unconditionally.
+templ AgentLink(id, name string) {
+	if id != "" {
+		<a class="attr-link attr-agent" href={ templ.SafeURL("/agents/" + id) }>{ name }</a>
+	} else {
+		{ name }
+	}
+}
+
+// UserLink renders a registered user's display name as a link to its /u/{id}
+// page — the human an agent was acting for. Plain text when the id is empty.
+templ UserLink(id, name string) {
+	if id != "" {
+		<a class="attr-link attr-user" href={ templ.SafeURL("/u/" + id) }>{ name }</a>
+	} else {
+		{ name }
+	}
+}
+
+// ArchivedPill renders a small "archived" badge for any ticket reference
+// (card, wave row, search hit, dependency link). It's a no-op when the ticket
+// isn't archived, so call sites can drop it in unconditionally. Lives here
+// alongside Chip because every ticket-reference surface already imports this
+// package for the attribution chip — one import covers both.
+templ ArchivedPill(archived bool) {
+	if archived {
+		<span class="badge badge-archived" title="this ticket is archived">archived</span>
+	}
+}
+
+// IdeaPill renders a small "idea" badge for any ticket reference whose kind is
+// idea. Like ArchivedPill it's a no-op for the common case (work tickets), so
+// call sites drop it in unconditionally next to the archived pill. Marks a
+// spitball wherever a ticket is referenced.
+templ IdeaPill(kind domain.TicketKind) {
+	if kind == domain.KindIdea {
+		<span class="badge badge-idea" title="this is an idea, not work yet">idea</span>
+	}
+}
+
+// CommentChip is Chip's sibling for comment references (search hits): the
+// comment author and when they wrote it.
+templ CommentChip(c *domain.Comment) {
+	<span class="ticket-attribution">
+		<span class="attribution-author">
+			if c.Author != nil && c.Author.ID != "" && c.Author.Name != "" {
+				@AgentLink(c.Author.ID, c.Author.Name)
+			} else if c.AuthorFor != nil && c.AuthorFor.UserID != "" && c.AuthorFor.DisplayName != "" {
+				@UserLink(c.AuthorFor.UserID, c.AuthorFor.DisplayName)
+			} else {
+				{ commentLabel(c) }
+			}
+		</span>
+		<span class="attribution-sep" aria-hidden="true">·</span>
+		@reltime.Time(c.CreatedAt)
+	</span>
+}

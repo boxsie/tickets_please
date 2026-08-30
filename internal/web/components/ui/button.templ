@@ -1,0 +1,23 @@
+package ui
+
+// Button renders a primary/secondary/danger/ghost/link button — or its
+// anchor-shaped equivalent if Href is set. The body is whatever the caller
+// passes as children; ButtonProps.Label is used as a fallback when no
+// children block is supplied (the playground exercises both shapes).
+templ Button(props ButtonProps) {
+	if props.Href != "" {
+		<a href={ templ.SafeURL(props.Href) } class={ buttonClass(props) } { props.Attrs... }>
+			if props.Label != "" {
+				{ props.Label }
+			}
+			{ children... }
+		</a>
+	} else {
+		<button type={ buttonType(props.Type) } class={ buttonClass(props) } disabled?={ props.Disabled } { props.Attrs... }>
+			if props.Label != "" {
+				{ props.Label }
+			}
+			{ children... }
+		</button>
+	}
+}

@@ -1,0 +1,90 @@
+package tickets
+
+import "tickets_please/internal/domain"
+
+// detail_live.templ holds the slices of the ticket-detail page that realtime
+// (#82) re-renders as Datastar element patches. Each is wrapped in a stable
+// id so the SSE handler can morph it in place: the page renders them inline
+// via these same components, and the /sse stream renders them standalone.
+
+// StatusBadge is the ticket's column pill in the breadcrumb. Morphed on
+// TicketMoved / TicketCompleted. Stable selector: #ticket-status.
+templ StatusBadge(col domain.Column) {
+	<span id="ticket-status" class={ "badge", "badge-" + columnString(col) }>{ columnString(col) }</span>
+}
+
+// ArchivedBadge shows an "archived" pill when the ticket is archived. The
+// outer span carries the stable id and is always present (empty when not
+// archived) so the selector exists to morph on archive/unarchive.
+templ ArchivedBadge(archived bool) {
+	<span id="ticket-archived">
+		if archived {
+			<span class="breadcrumb-sep"></span>
+			<span class="badge badge-archived" title="this ticket is archived">archived</span>
+		}
+	</span>
+}
+
+// IdeaBadge shows an "idea" pill when the ticket is an idea. The outer span
+// carries the stable id and is always present (empty for work tickets) so the
+// selector exists to morph on promote (idea → work makes it disappear).
+templ IdeaBadge(kind domain.TicketKind) {
+	<span id="ticket-kind">
+		if kind == domain.KindIdea {
+			<span class="breadcrumb-sep"></span>
+			<span class="badge badge-idea" title="this is an idea, not work yet">idea</span>
+		}
+	</span>
+}
+
+// PageActions is the action-button cluster. Morphed on a column change so the
+// available actions track the new state (e.g. completing swaps to the frozen
+// set). Stable selector: #ticket-actions.
+templ PageActions(props DetailProps) {
+	{{ t := props.Ticket }}
+	{{ proj := props.Project }}
+	<div id="ticket-actions" class="page-actions">
+		if props.IsDone {
+			@FrozenActions()
+		} else if t.Kind == domain.KindIdea {
+			// Ideas have one forward path: promote to work. The work-flow
+			// actions (complete/move/reassign) are deliberately absent — the
+			// service rejects them on an idea anyway.
+			<button type="button" class="btn btn-primary" data-dialog="dlg-promote">Promote to work</button>
+			<a class="btn" href={ templ.SafeURL(editHref(t.ID, proj.Slug)) }>Edit idea</a>
+			<button type="button" class="btn btn-danger" data-dialog="dlg-delete">Delete</button>
+		} else {
+			<button type="button" class="btn btn-primary" data-dialog="dlg-complete">Complete</button>
+			<button type="button" class="btn" data-dialog="dlg-move">Move</button>
+			if len(props.Phases) > 0 {
+				<button type="button" class="btn" data-dialog="dlg-assign-phase">Reassign phase</button>
+			}
+			<a class="btn" href={ templ.SafeURL(editHref(t.ID, proj.Slug)) }>Edit ticket</a>
+			<button type="button" class="btn btn-danger" data-dialog="dlg-delete">Delete</button>
+		}
+		// Archive/unarchive is independent of the freeze rule — it stays
+		// available on done tickets (only completion fields are frozen).
+		@ArchiveAction(t.Archived)
+	</div>
+}
+
+// ArchiveAction is the archive-vs-unarchive button shown on every ticket
+// regardless of column. Split out so the SSE archived-badge patch can also
+// re-render #ticket-actions and flip the button live (Archive ↔ Unarchive)
+// for other viewers. The button opens the always-present archive/unarchive
+// modal — its data-dialog wiring is delegated (see dialogs.js), so it works
+// even after an SSE morph re-injects this markup.
+templ ArchiveAction(archived bool) {
+	if archived {
+		<button type="button" class="btn" data-dialog="dlg-unarchive">Unarchive</button>
+	} else {
+		<button type="button" class="btn" data-dialog="dlg-archive">Archive</button>
+	}
+}
+
+// Toast is one transient notification appended to #ticket-toasts when a
+// realtime event lands (e.g. "Moved to done by Claude"). CSS fades it out;
+// the markup needs no JS.
+templ Toast(message string) {
+	<div class="toast" role="status">{ message }</div>
+}

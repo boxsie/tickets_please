@@ -1,0 +1,186 @@
+package phases
+
+// Index is the /p/{slug}/phases page — a list of <details> rows, one per
+// phase, each holding a wave breakdown of its tickets. 1:1 port of
+// templates/pages/phases/index.tmpl — same class names, same hrefs, same
+// chevron + mini progress-bar markup.
+//
+// The collapsible <details>/<summary> is load-bearing: the user expands
+// rows to drill into waves without leaving the index. Don't replace with
+// an HTMX swap — Phase 2 may revisit.
+templ Index(p IndexProps) {
+	<section class="phases-index" data-on-load={ "@get('/sse?topics=project:" + p.Project.ID + "')" }>
+		<header class="page-header">
+			<a class="back-link" href={ templ.SafeURL("/p/" + p.Project.Slug) }>{ p.Project.Name }</a>
+			<h1>Phases</h1>
+			<p class="subtitle">Sub-projects for larger bodies of work. Click a row to drill into its waves.</p>
+			<div class="page-actions">
+				<a class="btn btn-primary" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/new") }>New phase</a>
+			</div>
+			if p.Focused {
+				<div class="wave-focus-banner" role="status">
+					if p.OnlyUnphased {
+						<span>Showing <strong>{ p.FocusWaveLabel }</strong> in the Unphased section only.</span>
+					} else {
+						<span>Showing <strong>{ p.FocusWaveLabel }</strong> across every phase.</span>
+					}
+					<a class="btn btn-sm" href={ templ.SafeURL(p.AllWavesHref) }>View all waves</a>
+				</div>
+			}
+		</header>
+		if len(p.Phases) > 0 || p.UnphasedTotal > 0 {
+			@PhaseList(PhaseListProps{
+				ProjectID:     p.Project.ID,
+				ProjectSlug:   p.Project.Slug,
+				Phases:        indexLeadPhases(p),
+				Unphased:      p.Unphased,
+				UnphasedTotal: p.UnphasedTotal,
+				OpenAll:       p.Focused,
+			})
+		} else {
+			<div class="empty-state">
+				<h1>No phases yet</h1>
+				<p class="subtitle">Phases are sub-projects for larger bodies of work — each one carries its own &ge;200-char summary that LLM agents context-load.</p>
+				<div class="page-actions">
+					<a class="btn btn-primary" href={ templ.SafeURL("/p/" + p.Project.Slug + "/phases/new") }>Create the first phase</a>
+				</div>
+			</div>
+		}
+	</section>
+}
+
+// PhaseList renders the shared collapsible phase rows + trailing Unphased
+// section. Both the phases index and the project-overview lead block call it so
+// the two surfaces stay byte-identical. Per-row open state = OpenAll (focus
+// mode) OR the row's DefaultOpen (overview: phases with open tickets).
+templ PhaseList(p PhaseListProps) {
+	<div class="phase-list" data-project-id={ p.ProjectID }>
+		for _, row := range p.Phases {
+			@phaseRow(p.ProjectSlug, row, p.OpenAll || row.DefaultOpen)
+		}
+		if p.UnphasedTotal > 0 {
+			@UnphasedRow(p.ProjectSlug, p.UnphasedTotal, p.Unphased, p.OpenAll)
+		}
+	</div>
+}
+
+// UnphasedRow renders the "Unphased" pseudo-phase — phase-less tickets get the
+// same collapsible <details> + wave-section structure as a real phase row, but
+// visually muted: no progress bar, an italic "No phase" label, a muted chevron.
+// The board page used to be the only home for phase-less tickets; with it gone
+// (kill-the-board), this is where they live. Shared with the project-overview
+// lead block. The `id="unphased"` anchor makes ?phase=unphased deep links land
+// here.
+templ UnphasedRow(projectSlug string, total int, waves []WaveSectionProps, forceOpen bool) {
+	<details class="phase-row phase-row-unphased" id="unphased" data-phase-id="unphased" open?={ forceOpen }>
+		<summary class="phase-row-summary">
+			<span class="phase-row-chevron phase-row-chevron-muted" aria-hidden="true">&#9656;</span>
+			<div class="phase-row-headline">
+				<span class="phase-row-name phase-row-name-unphased"><em>No phase</em></span>
+				<span class="phase-row-desc">Tickets not assigned to any phase</span>
+			</div>
+			<div class="phase-row-meta">
+				<span class="phase-row-counts">
+					<strong>{ itoa(total) }</strong>
+					<span class="muted">{ UnphasedCountLabel(total) }</span>
+				</span>
+			</div>
+		</summary>
+		<div class="phase-row-body">
+			<div class="phase-row-waves">
+				@PhaseWaves(projectSlug, waves)
+			</div>
+		</div>
+	</details>
+}
+
+// PhaseSummary is the compact, non-collapsible phases readout for the project
+// overview. It shows each phase as a single row — name + the shared PhaseMeta
+// mini-bar/counts — and an Unphased tally, then links out to the full phases
+// page. Deliberately NOT the collapsible wave dump (PhaseList): the overview is
+// a dashboard, so it summarises phases and sends you to /phases to drill in.
+templ PhaseSummary(p PhaseListProps) {
+	<ul class="phase-summary" data-project-id={ p.ProjectID }>
+		for _, row := range p.Phases {
+			<li class="phase-summary-row" id={ "phase-summary-" + row.Phase.ID }>
+				<a class="phase-summary-name" href={ templ.SafeURL("/p/" + p.ProjectSlug + "/phases/" + row.Phase.Slug) }>{ row.Phase.Name }</a>
+				<div class="phase-summary-meta">
+					@PhaseMeta(row)
+				</div>
+			</li>
+		}
+		if p.UnphasedTotal > 0 {
+			<li class="phase-summary-row phase-summary-row-unphased">
+				<a class="phase-summary-name" href={ templ.SafeURL("/p/" + p.ProjectSlug + "/phases#unphased") }>
+					<em>No phase</em>
+				</a>
+				<div class="phase-summary-meta">
+					<span class="phase-row-counts">
+						<strong>{ itoa(p.UnphasedTotal) }</strong>
+						<span class="muted">{ UnphasedCountLabel(p.UnphasedTotal) }</span>
+					</span>
+				</div>
+			</li>
+		}
+	</ul>
+}
+
+// phaseRow is one collapsible row on the index — the summary line + the
+// expanded body holding wave sections. Split out from Index so the
+// per-phase block doesn't bloat the index template.
+templ phaseRow(projectSlug string, row PhaseRowProps, forceOpen bool) {
+	<details class="phase-row" data-phase-id={ row.Phase.ID } open?={ forceOpen }>
+		<summary class="phase-row-summary">
+			<span class="phase-row-chevron" aria-hidden="true">&#9656;</span>
+			<div class="phase-row-headline">
+				<span class="phase-row-name">
+					<a href={ templ.SafeURL("/p/" + projectSlug + "/phases/" + row.Phase.Slug) }>{ row.Phase.Name }</a>
+				</span>
+				if row.Phase.Description != "" {
+					<span class="phase-row-desc">{ row.Phase.Description }</span>
+				}
+			</div>
+			<div class="phase-row-meta" id={ "phase-meta-" + row.Phase.ID }>
+				@PhaseMeta(row)
+			</div>
+		</summary>
+		<div class="phase-row-body">
+			<div class="phase-row-waves" id={ "phase-waves-" + row.Phase.ID }>
+				@PhaseWaves(projectSlug, row.Waves)
+			</div>
+		</div>
+	</details>
+}
+
+// PhaseMeta renders the inner content of a phase row's meta cell — the mini
+// status progress-bar plus the active/total count. It's the morph target for
+// live count/segment rebalancing (#83): the SSE handler inner-morphs
+// `#phase-meta-{phaseID}` with a freshly-computed PhaseRowProps on every
+// ticket event so the bar segments and counts stay in sync with the board.
+templ PhaseMeta(row PhaseRowProps) {
+	if row.Total > 0 {
+		<div class="phase-row-bar" title={ PhaseRowBarTitle(row.Dist) }>
+			if row.Dist.Todo > 0 {
+				<span class="phase-row-bar-seg phase-row-bar-todo" style={ BarWidthStyle(row.Dist.Todo, row.Total) }></span>
+			}
+			if row.Dist.InProgress > 0 {
+				<span class="phase-row-bar-seg phase-row-bar-in_progress" style={ BarWidthStyle(row.Dist.InProgress, row.Total) }></span>
+			}
+			if row.Dist.Testing > 0 {
+				<span class="phase-row-bar-seg phase-row-bar-testing" style={ BarWidthStyle(row.Dist.Testing, row.Total) }></span>
+			}
+			if row.Dist.Done > 0 {
+				<span class="phase-row-bar-seg phase-row-bar-done" style={ BarWidthStyle(row.Dist.Done, row.Total) }></span>
+			}
+		</div>
+	} else {
+		<div class="phase-row-bar phase-row-bar-empty" title="no tickets in this phase"></div>
+	}
+	<span class="phase-row-counts">
+		<strong>{ itoa(row.Phase.ActiveTicketCount) }</strong>
+		<span class="muted">active /</span>
+		<strong>{ itoa(row.Phase.TicketCount) }</strong>
+		<span class="muted">total</span>
+	</span>
+}
+

@@ -1,0 +1,232 @@
+package projects
+
+import (
+	"strconv"
+
+	"tickets_please/internal/web/components/attribution"
+	"tickets_please/internal/web/components/pages/phases"
+	"tickets_please/internal/web/components/ui"
+	"tickets_please/internal/web/reltime"
+)
+
+// Detail is the project dashboard (1:1 port of
+// templates/pages/projects/detail.tmpl). Metric cards, status bar, ready
+// list, recent activity, recent learnings, phases table, danger zone.
+//
+// Card regions go through @ui.Card so the migration consolidates "the panel
+// that wraps a labelled chunk of content" into one place — but every other
+// semantic class name (.metric-grid, .status-bar, .ticket-list, …) is kept
+// verbatim because Phase 2 owns the layout-token rewrite.
+templ Detail(props DetailProps) {
+	{{ p := props.Project }}
+	{{ m := props.Metrics }}
+	<section class="project-detail dashboard">
+		<header class="page-header">
+			<h1>{ p.Name }</h1>
+			<p class="subtitle">
+				<code>{ p.Slug }</code>
+				if p.Description != "" {
+					<span class="breadcrumb-sep"></span>{ p.Description }
+				}
+			</p>
+			<div class="page-actions">
+				<a class="btn btn-primary" href={ templ.SafeURL("/p/" + p.Slug + "/phases") }>Browse phases</a>
+				<a class="btn" href={ templ.SafeURL("/p/" + p.Slug + "/tickets/new") }>New ticket</a>
+				<a class="btn" href={ templ.SafeURL("/p/" + p.Slug + "/settings") }>Settings</a>
+				<a class="btn" href={ templ.SafeURL("/p/" + p.Slug + "/summary") }>Summary</a>
+				@ui.ArchivedToggle(props.ToggleHref, props.ShowArchived)
+				@ui.IdeasToggle(props.IdeasToggleHref, props.ShowIdeas)
+			</div>
+		</header>
+		<section class="metric-grid" aria-label="Headline metrics">
+			<div class="metric-card">
+				<div class="metric-label">Total</div>
+				<div class="metric-value">{ strconv.Itoa(m.Total) }</div>
+				<div class="metric-hint">tickets in this project</div>
+			</div>
+			<div class="metric-card">
+				<div class="metric-label">Active</div>
+				<div class="metric-value">{ strconv.Itoa(m.Active) }</div>
+				<div class="metric-hint">not yet done</div>
+			</div>
+			<div class="metric-card metric-card-accent">
+				<div class="metric-label">In progress</div>
+				<div class="metric-value">{ strconv.Itoa(m.InProgress) }</div>
+				<div class="metric-hint">currently being worked</div>
+			</div>
+			<div class="metric-card metric-card-success">
+				<div class="metric-label">Done</div>
+				<div class="metric-value">{ strconv.Itoa(m.Done) }</div>
+				<div class="metric-hint">{ donePercentHint(m) }</div>
+			</div>
+			<div class="metric-card">
+				<div class="metric-label">Phases</div>
+				<div class="metric-value">{ strconv.Itoa(len(props.PhaseLead.Phases)) }</div>
+				<div class="metric-hint">{ unphasedHint(props.PhaseLead.UnphasedTotal) }</div>
+			</div>
+		</section>
+		if m.Total > 0 {
+			@ui.Card(ui.CardProps{Title: "Status distribution"}) {
+				<div class="status-bar">
+					for _, seg := range props.StatusSegments {
+						if seg.Count > 0 {
+							<div
+								class={ "status-bar-segment status-bar-" + string(seg.Column) }
+								style={ segmentWidth(seg.Percent) }
+								title={ segmentTitle(seg) }
+							></div>
+						}
+					}
+				</div>
+				<ul class="status-bar-legend">
+					for _, seg := range props.StatusSegments {
+						<li>
+							<span class={ "dot dot-" + string(seg.Column) }></span>
+							{ seg.Label } <strong>{ strconv.Itoa(seg.Count) }</strong>
+							<span class="muted">({ strconv.Itoa(seg.Percent) }%)</span>
+						</li>
+					}
+				</ul>
+			}
+		}
+		@ui.Card(ui.CardProps{Title: "In flight"}) {
+			if len(props.InFlightTickets) > 0 {
+				<ul class="ticket-list">
+					for _, t := range props.InFlightTickets {
+						<li>
+							<a class="ticket-list-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.Slug) }>{ t.Title }</a>
+							<div class="ticket-list-meta">
+								<span class={ "badge badge-" + string(t.Column) }>{ string(t.Column) }</span>
+								if t.Wave != 0 {
+									<span class="muted">w{ strconv.Itoa(t.Wave) }</span>
+								}
+								@attribution.Chip(t)
+							</div>
+						</li>
+					}
+				</ul>
+			} else {
+				<p class="hint">Nothing is currently in progress or testing.</p>
+			}
+		}
+		if len(props.Ideas) > 0 || props.ShowIdeas {
+			@ui.Card(ui.CardProps{Title: ideasLaneTitle(len(props.Ideas))}) {
+				if !props.ShowIdeas {
+					<p class="hint">
+						{ ideasHiddenHint(len(props.Ideas)) }
+						<a href={ templ.SafeURL(props.IdeasToggleHref) }>Show ideas →</a>
+					</p>
+				} else if len(props.Ideas) > 0 {
+					<ul class="ticket-list ideas-lane">
+						for _, t := range props.Ideas {
+							<li class="idea">
+								<a class="ticket-list-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.Slug) }>{ t.Title }</a>
+								<div class="ticket-list-meta">
+									@attribution.IdeaPill(t.Kind)
+									@attribution.Chip(t)
+								</div>
+							</li>
+						}
+					</ul>
+				} else {
+					<p class="hint">No ideas yet. Throw a spitball with <code>create_idea</code> (MCP) and it'll land here.</p>
+				}
+			}
+		}
+		@ui.Card(ui.CardProps{Title: "Phases", Href: "/p/" + p.Slug + "/phases", LinkLabel: "Browse all phases →"}) {
+			if len(props.PhaseLead.Phases) > 0 || props.PhaseLead.UnphasedTotal > 0 {
+				@phases.PhaseSummary(props.PhaseLead)
+			} else {
+				<p class="hint">
+					No phases yet.
+					<a href={ templ.SafeURL("/p/" + p.Slug + "/phases/new") }>Create the first phase &rarr;</a>
+				</p>
+			}
+		}
+		<div class="dashboard-grid">
+			@ui.Card(ui.CardProps{Title: "Ready to pick up"}) {
+				if len(props.ReadyTickets) > 0 {
+					<ul class="ticket-list">
+						for _, t := range props.ReadyTickets {
+							<li>
+								<a class="ticket-list-title" href={ templ.SafeURL("/tickets/" + t.ID + "?slug=" + p.Slug) }>{ t.Title }</a>
+								<div class="ticket-list-meta">
+									<span class={ "badge badge-" + string(t.Column) }>{ string(t.Column) }</span>
+									if t.Wave != 0 {
+										<span class="muted">w{ strconv.Itoa(t.Wave) }</span>
+									}
+									@attribution.Chip(t)
+								</div>
+							</li>
+						}
+					</ul>
+				} else {
+					<p class="hint">All ready work is claimed. Nice.</p>
+				}
+			}
+			@ui.Card(ui.CardProps{Title: "Recent activity"}) {
+				if len(props.RecentActivity) > 0 {
+					<ul class="ticket-list">
+						for _, it := range props.RecentActivity {
+							<li>
+								<a class="ticket-list-title" href={ templ.SafeURL("/tickets/" + it.Ticket.ID + "?slug=" + p.Slug) }>{ it.Ticket.Title }</a>
+								<div class="ticket-list-meta">
+									<span class={ "badge badge-" + string(it.Ticket.Column) }>{ string(it.Ticket.Column) }</span>
+									<span class="muted">
+									{ attribution.Label(it.Ticket) }{ " · updated " }
+									@reltime.Time(it.Ticket.UpdatedAt)
+								</span>
+								</div>
+							</li>
+						}
+					</ul>
+				} else {
+					<p class="hint">No tickets yet.</p>
+				}
+			}
+		</div>
+		if len(props.RecentLearnings) > 0 {
+			@ui.Card(ui.CardProps{Title: "Recent learnings"}) {
+				<ul class="learning-list">
+					for _, l := range props.RecentLearnings {
+						<li>
+							<div class="learning-meta">
+								<a class="learning-title" href={ templ.SafeURL("/tickets/" + l.Ticket.ID + "?slug=" + p.Slug) }>{ l.Ticket.Title }</a>
+								if l.Ticket.CompletedAt != nil {
+								<span class="muted">
+									{ attribution.Label(l.Ticket) }{ " · completed " }
+									@reltime.Time(*l.Ticket.CompletedAt)
+								</span>
+							}
+							</div>
+							<p class="learning-excerpt">{ l.Excerpt }</p>
+						</li>
+					}
+				</ul>
+			}
+		}
+		if m.Total == 0 {
+			@ui.Card(ui.CardProps{Title: "One-time setup"}) {
+				<p class="hint">Keep future commits tied to their ticket automatically:</p>
+				<code class="commit-hook-command">tickets_please commit-hook install --repo .</code>
+			}
+		}
+		<details class="danger-zone">
+			<summary>Delete project</summary>
+			<p class="hint">
+				Removes <code>{ p.Slug }</code> and all its phases, tickets, comments,
+				and embeddings — including any active tickets. Cannot be undone — the
+				on-disk data is gone.
+			</p>
+			<form
+				method="post"
+				action={ templ.SafeURL("/p/" + p.Slug + "/delete") }
+				onsubmit={ confirmDelete(p.Slug) }
+			>
+				<input type="hidden" name="_csrf" value={ props.CSRF }/>
+				<input type="hidden" name="confirm" value="yes"/>
+				<button type="submit" class="btn btn-danger">Delete this project</button>
+			</form>
+		</details>
+	</section>
+}

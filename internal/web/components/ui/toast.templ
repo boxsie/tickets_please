@@ -1,0 +1,14 @@
+package ui
+
+// Toast renders a small flash-style status panel — info / success / warn /
+// error. The flash chrome at the top of every page (Renderer.Chrome.Flash)
+// will migrate onto this primitive once Wave 1's chrome rebuild lands; for
+// now it's exercised end-to-end on the /_dev/components playground.
+templ Toast(props ToastProps) {
+	<div class={ toastClass(props.Variant) } role="status">
+		if props.Title != "" {
+			<strong>{ props.Title }</strong>
+		}
+		<span>{ props.Body }</span>
+	</div>
+}

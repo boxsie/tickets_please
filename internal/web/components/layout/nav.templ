@@ -1,0 +1,28 @@
+package layout
+
+// TopBar renders the global top navigation: brand link, optional in-project
+// search box, app-level links (Logs, Settings), and the agent label that
+// identifies the current Web UI session in the audit trail.
+//
+// The search form is rendered only when CurrentSlug is set — the search is
+// project-scoped, so a no-project view (home) shouldn't show an empty box.
+templ TopBar(data PageData) {
+	<header class="topbar">
+		<a class="brand" href="/">tickets_please</a>
+		if data.CurrentSlug != "" {
+			<form class="search topbar-search" method="get" action={ templ.SafeURL("/p/" + data.CurrentSlug + "/search") } role="search">
+				<span class="search-icon" aria-hidden="true">
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="16" height="16">
+						<path stroke-linecap="round" stroke-linejoin="round" d="m21 21-4.34-4.34m0 0A7.5 7.5 0 1 0 6.06 6.06a7.5 7.5 0 0 0 10.6 10.6Z"></path>
+					</svg>
+				</span>
+				<input type="search" name="q" placeholder="Search this project…" aria-label="Search project" autocomplete="off" spellcheck="false"/>
+			</form>
+		}
+		<a class="topbar-link" href="/logs">Logs</a>
+		<a class="topbar-link" href="/settings">Settings</a>
+		if data.Chrome.AgentLabel != "" {
+			<span class="agent" title="Web UI session — visible in the audit trail">{ data.Chrome.AgentLabel }</span>
+		}
+	</header>
+}

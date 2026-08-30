@@ -1,0 +1,203 @@
+package tickets
+
+import (
+	"tickets_please/internal/domain"
+	"tickets_please/internal/web/components/attribution"
+	"tickets_please/internal/web/components/md"
+	"tickets_please/internal/web/components/ui"
+)
+
+// Detail renders the ticket detail page: header with breadcrumb + action
+// buttons, body card, optional dependencies card, optional completion card
+// (when done), comments thread, and four modals (move/complete/assign-phase
+// /delete) that only appear when the ticket is non-done.
+//
+// 1:1 port of templates/pages/tickets/detail.tmpl. Phase 2 will rework the
+// metadata block — Wave 1 keeps it identical.
+templ Detail(props DetailProps) {
+	{{ t := props.Ticket }}
+	{{ proj := props.Project }}
+	<section class="ticket-detail" data-on-load={ "@get('/sse?topics=ticket:" + t.ID + "')" }>
+		<div id="ticket-toasts" class="toast-region" aria-live="polite"></div>
+		<header class="page-header">
+			<h1>{ t.Title }</h1>
+			<p class="ticket-meta">
+				<a href={ templ.SafeURL(phasesHref(proj.Slug)) }>{ proj.Name }</a>
+				<span class="breadcrumb-sep"></span>
+				if props.Phase != nil {
+					<a href={ templ.SafeURL(phaseHref(proj.Slug, props.Phase.Slug)) }>{ props.Phase.Name }</a>
+				} else {
+					<span class="muted">no phase</span>
+				}
+				<span class="breadcrumb-sep"></span>
+				@StatusBadge(t.Column)
+				@IdeaBadge(t.Kind)
+				@ArchivedBadge(t.Archived)
+				if t.Wave != 0 {
+					<span class="breadcrumb-sep"></span>
+					wave { formatWave(t.Wave) }
+				}
+				<span class="breadcrumb-sep"></span>
+				<span class="id-pill" title={ t.ID }>{ shortID(t.ID) }</span>
+			</p>
+			@PageActions(props)
+		</header>
+		@TicketMetadata(props)
+		<div class="ticket-main">
+			<section class="card">
+				<h2>Body</h2>
+				if t.Body != "" {
+					<div class="markdown">
+						@md.MD(t.Body)
+					</div>
+				} else {
+					<p class="hint">No body.</p>
+				}
+			</section>
+			if len(t.DependsOn) > 0 || len(props.Blocks) > 0 {
+				<section class="card">
+					<h2>Dependencies</h2>
+					if len(props.Depends) > 0 {
+						<p><strong>Depends on</strong></p>
+						<ul class="bare-list">
+							for _, d := range props.Depends {
+								<li>
+									<a href={ templ.SafeURL(ticketDetailHref(d.ID, proj.Slug)) }>{ d.Title }</a>
+									<span class={ "badge", "badge-" + columnString(d.Column) }>{ columnString(d.Column) }</span>
+									@attribution.IdeaPill(d.Kind)
+									@attribution.ArchivedPill(d.Archived)
+									@attribution.Chip(d)
+								</li>
+							}
+						</ul>
+					}
+					if len(props.Blocks) > 0 {
+						<p><strong>Blocks</strong></p>
+						<ul class="bare-list">
+							for _, b := range props.Blocks {
+								<li>
+									<a href={ templ.SafeURL(ticketDetailHref(b.ID, proj.Slug)) }>{ b.Title }</a>
+									<span class={ "badge", "badge-" + columnString(b.Column) }>{ columnString(b.Column) }</span>
+									@attribution.IdeaPill(b.Kind)
+									@attribution.ArchivedPill(b.Archived)
+									@attribution.Chip(b)
+								</li>
+							}
+						</ul>
+					}
+				</section>
+			}
+			if props.IsDone {
+				<section class="card frozen-card">
+					<h2>Completion</h2>
+					if t.TestingEvidence != nil && *t.TestingEvidence != "" {
+						<details open>
+							<summary>Testing evidence</summary>
+							<div class="markdown">
+								@md.MD(*t.TestingEvidence)
+							</div>
+						</details>
+					}
+					if t.WorkSummary != nil && *t.WorkSummary != "" {
+						<details>
+							<summary>Work summary</summary>
+							<div class="markdown">
+								@md.MD(*t.WorkSummary)
+							</div>
+						</details>
+					}
+					if t.Learnings != nil && *t.Learnings != "" {
+						<details>
+							<summary>Learnings</summary>
+							<div class="markdown">
+								@md.MD(*t.Learnings)
+							</div>
+						</details>
+					}
+				</section>
+			}
+			@CommentsThread(props.Comments)
+		</div>
+		if !props.IsDone {
+			@ui.Modal(ui.ModalProps{ID: "dlg-move", Title: "Move ticket"}) {
+				@MoveForm(props)
+			}
+			@ui.Modal(ui.ModalProps{ID: "dlg-complete", Title: "Complete ticket", Wide: true}) {
+				@CompleteForm(props)
+			}
+			if len(props.Phases) > 0 {
+				@ui.Modal(ui.ModalProps{ID: "dlg-assign-phase", Title: "Reassign phase"}) {
+					@AssignPhaseForm(AssignPhaseProps{
+						TicketID:         t.ID,
+						ProjectSlug:      proj.Slug,
+						CurrentPhaseSlug: phaseSlugFor(t, props.Phases),
+						Phases:           props.Phases,
+						CSRF:             props.CSRF,
+					})
+				}
+			}
+			if t.Kind == domain.KindIdea {
+				@ui.Modal(ui.ModalProps{ID: "dlg-promote", Title: "Promote idea to work"}) {
+					<p>Promoting turns this idea into a real work ticket in place — it keeps its id, comments, and history, and joins the work board. Choose a phase to drop it into, or leave it where it is.</p>
+					<form method="post" action={ templ.SafeURL(promoteHref(t.ID, proj.Slug)) } class="stack">
+						<label for="promote-comment">Comment <span class="muted">(required)</span></label>
+						<textarea id="promote-comment" name="comment" rows="2" required minlength="1" placeholder="Why is this idea ready to become work?"></textarea>
+						if len(props.Phases) > 0 {
+							<label for="promote-phase">Phase <span class="muted">(optional)</span></label>
+							<select id="promote-phase" name="phase_id_or_slug">
+								<option value="">— leave unphased —</option>
+								for _, ph := range props.Phases {
+									<option value={ ph.ID }>{ ph.Name }</option>
+								}
+							</select>
+						}
+						<input type="hidden" name="_csrf" value={ props.CSRF }/>
+						<div class="form-actions">
+							<button type="submit">Promote</button>
+							<button type="button" class="btn" data-dialog-close="dlg-promote">Cancel</button>
+						</div>
+					</form>
+				}
+			}
+			@ui.Modal(ui.ModalProps{ID: "dlg-delete", Title: "Delete ticket"}) {
+				<p>This will <strong>permanently remove</strong> &ldquo;{ t.Title }&rdquo;, including its body, comments, and embeddings. This cannot be undone.</p>
+				<p class="hint">Any other tickets that reference this one in <code>depends_on</code> or <code>parallelizable_with</code> will be auto-updated to drop the reference. Tickets in <code>done</code> can never be deleted (completion is sacred).</p>
+				<form method="post" action={ templ.SafeURL(deleteHref(t.ID, proj.Slug)) } class="stack">
+					<input type="hidden" name="_csrf" value={ props.CSRF }/>
+					<div class="form-actions">
+						<button type="submit" class="btn-danger">Delete forever</button>
+						<button type="button" class="btn" data-dialog-close="dlg-delete">Cancel</button>
+					</div>
+				</form>
+			}
+		}
+		// Archive/unarchive modals are rendered unconditionally (even on done
+		// tickets — archiving is allowed after completion). Both are always
+		// present so a live Archive↔Unarchive button flip (via SSE) always has
+		// its modal in the DOM. Each requires a comment, mirroring move.
+		@ui.Modal(ui.ModalProps{ID: "dlg-archive", Title: "Archive ticket"}) {
+			<p>Archiving hides this ticket from the default lists and search. It stays fully intact and can be unarchived at any time. Done tickets can be archived too.</p>
+			<form method="post" action={ templ.SafeURL(archiveHref(t.ID, proj.Slug)) } class="stack">
+				<label for="archive-comment">Comment <span class="muted">(required)</span></label>
+				<textarea id="archive-comment" name="comment" rows="2" required minlength="1" placeholder="Why are you archiving this?"></textarea>
+				<input type="hidden" name="_csrf" value={ props.CSRF }/>
+				<div class="form-actions">
+					<button type="submit">Archive</button>
+					<button type="button" class="btn" data-dialog-close="dlg-archive">Cancel</button>
+				</div>
+			</form>
+		}
+		@ui.Modal(ui.ModalProps{ID: "dlg-unarchive", Title: "Unarchive ticket"}) {
+			<p>Unarchiving brings this ticket back into the default lists and search.</p>
+			<form method="post" action={ templ.SafeURL(unarchiveHref(t.ID, proj.Slug)) } class="stack">
+				<label for="unarchive-comment">Comment <span class="muted">(required)</span></label>
+				<textarea id="unarchive-comment" name="comment" rows="2" required minlength="1" placeholder="Why are you unarchiving this?"></textarea>
+				<input type="hidden" name="_csrf" value={ props.CSRF }/>
+				<div class="form-actions">
+					<button type="submit">Unarchive</button>
+					<button type="button" class="btn" data-dialog-close="dlg-unarchive">Cancel</button>
+				</div>
+			</form>
+		}
+	</section>
+}

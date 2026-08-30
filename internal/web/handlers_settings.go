@@ -1,0 +1,189 @@
+package web
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+
+	"tickets_please/internal/config"
+	"tickets_please/internal/svc"
+	"tickets_please/internal/web/components/pages"
+)
+
+// userConfigPathFn is the indirection through which handlers locate the
+// on-disk config file. Production points at config.UserConfigPath which
+// resolves to ~/.tickets_please/config.yaml; tests swap this to a tempdir
+// path so they don't write to the real user's home dir.
+var userConfigPathFn = config.UserConfigPath
+
+// handlers_settings.go — top-level /settings page (per W5-T2 of the
+// per-project-embedders phase). Edits server defaults that gate *new*
+// projects: embed_provider, embed_model (ollama_model), ollama_url, plus the
+// shared OpenAI key. Existing projects pin their own choice in project.yaml,
+// so flipping the defaults does not rebuild live mounts — re-embed is the
+// migration tool, surfaced both per-project and as "Re-embed all projects"
+// here.
+//
+// Comment preservation is the load-bearing requirement: users hand-curate
+// ~/.tickets_please/config.yaml with comments explaining their choices, and
+// the form must round-trip without scrubbing them. config.SaveYAMLNode +
+// SetScalar handle that — we walk the existing yaml.Node tree and only
+// mutate the targeted scalar values.
+//
+// Concurrency: cfg writes are rare (only via this UI) and reads are loose
+// per-field, so we don't take a lock around the cfg field assignments. The
+// renderer reads fields one at a time and the service constructor has
+// already snapshotted the original Cfg into per-mount providers.
+
+// handleGlobalSettings serves GET /settings. Reads from a.deps.Cfg directly
+// — Service updates the same struct in handleGlobalSettingsUpdate, so the
+// page always shows the live values without a round-trip to disk.
+func (a *app) handleGlobalSettings(w http.ResponseWriter, r *http.Request) {
+	a.renderer.RenderTempl(w, r, PageOpts{
+		Title: "Settings · tickets_please",
+	}, pages.Settings(a.buildSettingsPageProps(w, r, "")))
+}
+
+// buildSettingsPageProps snapshots cfg + the project mount registry into the
+// typed templ view-model. Hoisted so error re-renders reuse the same
+// construction. CSRF is pulled off the chrome provider so the form posts can
+// round-trip through the existing checkCSRF middleware.
+func (a *app) buildSettingsPageProps(w http.ResponseWriter, r *http.Request, formErr string) pages.SettingsProps {
+	cfg := a.deps.Service.Cfg
+	rows := make([]pages.SettingsMount, 0)
+	_ = a.deps.Service.WalkProjectMounts(func(slug string, m *svc.ProjectMount) error {
+		row := pages.SettingsMount{Slug: slug, EmbedModel: m.EmbedModel, EmbedDim: m.EmbedDim}
+		if m.Embed != nil {
+			row.EmbedName = m.Embed.Name()
+		}
+		rows = append(rows, row)
+		return nil
+	})
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Slug < rows[j].Slug })
+	configPath, _ := userConfigPathFn()
+	chrome := a.Chrome(w, r)
+	return pages.SettingsProps{
+		EmbedProvider: cfg.EmbedProvider,
+		EmbedModel:    cfg.OllamaModel,
+		OllamaURL:     cfg.OllamaURL,
+		DataDir:       cfg.DataDir,
+		DataRoot:      cfg.DataRoot,
+		ConfigPath:    configPath,
+		ConfigSource:  cfg.Source,
+		KeyMasked:     strings.TrimSpace(cfg.OpenAIKey) != "",
+		FormError:     formErr,
+		Mounts:        rows,
+		CSRF:          chrome.CSRF,
+	}
+}
+
+// handleGlobalSettingsUpdate handles POST /settings. Writes only the targeted
+// scalar nodes back to ~/.tickets_please/config.yaml via SaveYAMLNode (which
+// preserves the surrounding comments and key order). Updates Service.Cfg in
+// place so the next render reflects the change without a Service restart.
+//
+// The OpenAI key field is masked: a blank submit means "leave unchanged" —
+// the existing value stays put, the YAML node isn't touched. This keeps the
+// dots-only display from inadvertently wiping a real key.
+func (a *app) handleGlobalSettingsUpdate(w http.ResponseWriter, r *http.Request) {
+	provider := strings.TrimSpace(r.Form.Get("embed_provider"))
+	model := strings.TrimSpace(r.Form.Get("embed_model"))
+	ollamaURL := strings.TrimSpace(r.Form.Get("ollama_url"))
+	openAIKey := r.Form.Get("openai_api_key") // raw — preserve exact bytes
+
+	if provider != "ollama" && provider != "openai" {
+		a.renderSettingsError(w, r, fmt.Errorf("embed_provider must be 'ollama' or 'openai' (got %q)", provider), http.StatusUnprocessableEntity)
+		return
+	}
+
+	path, err := userConfigPathFn()
+	if err != nil {
+		a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	// SaveYAMLNode requires the file to exist (it reads + parses). Ensure
+	// it's there with at least an empty mapping so first-run setups can save
+	// even when the user has never created the file.
+	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0o755); mkErr != nil {
+			a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, fmt.Errorf("create config dir: %w", mkErr))
+			return
+		}
+		if writeErr := os.WriteFile(path, []byte("# tickets_please configuration\n"), 0o644); writeErr != nil {
+			a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, fmt.Errorf("create config file: %w", writeErr))
+			return
+		}
+	}
+
+	if err := config.SaveYAMLNode(path, func(root *yaml.Node) error {
+		if err := config.SetScalar(root, "embed_provider", provider); err != nil {
+			return err
+		}
+		if err := config.SetScalar(root, "ollama_model", model); err != nil {
+			return err
+		}
+		if err := config.SetScalar(root, "ollama_url", ollamaURL); err != nil {
+			return err
+		}
+		// Only persist a non-empty submission — blank means "leave the
+		// existing key alone" (the form rendered dots, not the raw value).
+		if strings.TrimSpace(openAIKey) != "" {
+			if err := config.SetScalar(root, "openai_api_key", openAIKey); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		a.renderer.RenderTemplError(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Mirror the disk write into the live Service.Cfg so subsequent renders
+	// (and any new-project mounts) see the new defaults without restarting.
+	a.deps.Service.Cfg.EmbedProvider = provider
+	a.deps.Service.Cfg.OllamaModel = model
+	a.deps.Service.Cfg.OllamaURL = ollamaURL
+	if strings.TrimSpace(openAIKey) != "" {
+		a.deps.Service.Cfg.OpenAIKey = openAIKey
+	}
+
+	SetFlash(w, r, "success", "Settings saved.")
+	http.Redirect(w, r, "/settings", http.StatusSeeOther)
+}
+
+// handleReembedAll handles POST /settings/reembed-all. Calls
+// Service.ReembedAllProjects which iterates every cached mount and queues a
+// reembed; flashes the queued count (plus any per-project failures) and
+// redirects back to /settings.
+func (a *app) handleReembedAll(w http.ResponseWriter, r *http.Request) {
+	queued, failures := a.deps.Service.ReembedAllProjects(r.Context())
+	if len(failures) > 0 {
+		// Render each failure as `<slug>: <err>` so the user can tell which
+		// project blocked the swap and why (probe error message comes
+		// through verbatim from svc.rebuildMountEmbedAssets).
+		parts := make([]string, 0, len(failures))
+		for _, f := range failures {
+			parts = append(parts, fmt.Sprintf("%s: %s", f.Slug, f.Err.Error()))
+		}
+		SetFlash(w, r, "error", fmt.Sprintf("Re-embed enqueued for %d projects; failed for %d: %s.", queued, len(failures), strings.Join(parts, "; ")))
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	SetFlash(w, r, "success", fmt.Sprintf("Re-embed enqueued for %d projects.", queued))
+	http.Redirect(w, r, "/settings", http.StatusSeeOther)
+}
+
+// renderSettingsError re-renders /settings with an inline error at the given
+// status. Used for client-side validation failures (e.g. unknown provider).
+func (a *app) renderSettingsError(w http.ResponseWriter, r *http.Request, err error, status int) {
+	w.WriteHeader(status)
+	a.renderer.RenderTempl(w, r, PageOpts{
+		Title: "Settings · tickets_please",
+	}, pages.Settings(a.buildSettingsPageProps(w, r, err.Error())))
+}

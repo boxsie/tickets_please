@@ -1,0 +1,78 @@
+package projects
+
+import "tickets_please/internal/web/components/ui"
+
+// RatingProps drives the inline 👍/👎 widget on a single search hit. EntryKey is
+// the `<kind>:<id>` the rate endpoint applies feedback to; Likes/Dislikes are
+// the current tallies (rendered only when > 0). Rated flips the widget into its
+// sticky post-rating state (the hx-post swaps the unrated widget for a rated
+// one rendered server-side, so it survives without any client state).
+type RatingProps struct {
+	Slug     string
+	EntryKey string
+	Likes    int
+	Dislikes int
+	CSRF     string
+	Query    string
+	Rated    bool   // sticky post-rating state
+	RatedAs  string // "like" | "dislike"
+}
+
+// RatingWidget renders the counts + 👍/👎 controls for one hit. The whole widget
+// is the hx-swap target (outerHTML) so a rate POST replaces it in place with
+// the rated variant. Both controls are real <form>s posting to the same
+// endpoint, so the feature degrades to a full-page POST when JS/htmx is absent.
+templ RatingWidget(p RatingProps) {
+	<span class="hit-rating" id={ ratingWidgetID(p.EntryKey) }>
+		if p.Likes > 0 || p.Dislikes > 0 {
+			<span class="hit-counts muted">
+				if p.Likes > 0 {
+					<span class="hit-count hit-count-like">&#128077; { itoa(p.Likes) }</span>
+				}
+				if p.Dislikes > 0 {
+					<span class="hit-count hit-count-dislike">&#128078; { itoa(p.Dislikes) }</span>
+				}
+			</span>
+		}
+		if p.Rated {
+			<span class="hit-rated" role="status" title="You rated this result">
+				rated { ratedGlyph(p.RatedAs) }
+			</span>
+			@ui.Toast(ui.ToastProps{Variant: ui.ToastVariantSuccess, Body: "Thanks — feedback noted"})
+		} else {
+			<form
+				class="hit-rate-form"
+				method="post"
+				action={ templ.SafeURL(searchRateHref(p.Slug)) }
+				hx-post={ searchRateHref(p.Slug) }
+				hx-target={ ratingTarget(p.EntryKey) }
+				hx-swap="outerHTML"
+			>
+				<input type="hidden" name="_csrf" value={ p.CSRF }/>
+				<input type="hidden" name="entry_key" value={ p.EntryKey }/>
+				<input type="hidden" name="query" value={ p.Query }/>
+				<button type="submit" name="rating" value="like" class="hit-rate-btn" title="Helpful result" aria-label="Thumbs up">&#128077;</button>
+			</form>
+			<details class="hit-dislike">
+				<summary class="hit-rate-btn" title="Not helpful" aria-label="Thumbs down">&#128078;</summary>
+				<form
+					class="hit-dislike-form"
+					method="post"
+					action={ templ.SafeURL(searchRateHref(p.Slug)) }
+					hx-post={ searchRateHref(p.Slug) }
+					hx-target={ ratingTarget(p.EntryKey) }
+					hx-swap="outerHTML"
+				>
+					<input type="hidden" name="_csrf" value={ p.CSRF }/>
+					<input type="hidden" name="entry_key" value={ p.EntryKey }/>
+					<input type="hidden" name="query" value={ p.Query }/>
+					<input type="hidden" name="rating" value="dislike"/>
+					<textarea name="reason" rows="2" placeholder="What was wrong? (optional)"></textarea>
+					<div class="hit-dislike-actions">
+						<button type="submit" class="btn btn-sm">Submit &#128078;</button>
+					</div>
+				</form>
+			</details>
+		}
+	</span>
+}

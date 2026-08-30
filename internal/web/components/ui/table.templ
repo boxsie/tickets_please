@@ -1,0 +1,22 @@
+package ui
+
+// Table renders the project-standard data table (`.data-table` from
+// @layer components) with an optional header row. Body rows are children —
+// callers write `<tr><td>…</td></tr>` directly so per-cell content stays
+// flexible (links, badges, formatted numbers, etc.).
+templ Table(props TableProps) {
+	<table class={ tableClass(props) }>
+		if len(props.Headers) > 0 {
+			<thead>
+				<tr>
+					for _, h := range props.Headers {
+						<th>{ h }</th>
+					}
+				</tr>
+			</thead>
+		}
+		<tbody>
+			{ children... }
+		</tbody>
+	</table>
+}

@@ -1,0 +1,40 @@
+package phases
+
+// AssignPhaseForm is the reassign-ticket-to-phase form embedded in the
+// ticket detail page (and reused by the ticket-side handler). 1:1 port of
+// partials/assign_phase_form.tmpl.
+//
+// Form fields:
+//   - phase   (required by UI, empty = "no phase")
+//   - comment (required server-side; AssignTicketToPhase rejects empty)
+//
+// The action URL carries a `?slug=` hint when ProjectSlug is set so
+// hostStoreForTicket can skip its O(mounts) walk on the redirect target.
+templ AssignPhaseForm(p AssignPhaseFormProps) {
+	<form method="post" action={ templ.SafeURL(AssignPhaseAction(p)) } class="stack assign-phase-form">
+		<label for="phase">Phase</label>
+		<select id="phase" name="phase">
+			<option value="">&mdash; no phase &mdash;</option>
+			for _, ph := range p.Phases {
+				if ph.Slug == p.CurrentPhaseSlug {
+					<option value={ ph.Slug } selected>{ ph.Name }</option>
+				} else {
+					<option value={ ph.Slug }>{ ph.Name }</option>
+				}
+			}
+		</select>
+		<label for="assign-comment">Comment <span class="muted">(required)</span></label>
+		<textarea
+			id="assign-comment"
+			name="comment"
+			rows="2"
+			required
+			placeholder="Why are you reassigning?"
+		></textarea>
+		<input type="hidden" name="_csrf" value={ p.CSRF }/>
+		<div class="form-actions">
+			<button type="submit">Reassign</button>
+		</div>
+	</form>
+}
+

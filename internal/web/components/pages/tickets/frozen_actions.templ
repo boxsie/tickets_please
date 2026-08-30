@@ -1,0 +1,11 @@
+package tickets
+
+// FrozenActions renders the locked-down action row that replaces the
+// edit/move/complete buttons on a done ticket. 1:1 port of
+// templates/partials/frozen_actions.tmpl.
+templ FrozenActions() {
+	<span class="frozen-badge" title="done tickets are frozen — no edits, no reopen, no comments">&#128274; frozen</span>
+	<button type="button" class="btn" disabled title="done tickets are frozen — create a new ticket if work resurfaces">Edit</button>
+	<button type="button" class="btn" disabled title="done tickets are frozen — create a new ticket if work resurfaces">Move</button>
+	<button type="button" class="btn" disabled title="done tickets are frozen — create a new ticket if work resurfaces">Complete</button>
+}

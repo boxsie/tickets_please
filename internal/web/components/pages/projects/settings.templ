@@ -1,0 +1,162 @@
+package projects
+
+import (
+	"strconv"
+
+	"tickets_please/internal/web/components/ui"
+)
+
+// Settings is the consolidated project settings page (1:1 port of
+// templates/pages/projects/settings.tmpl). Embedding-status panel + name /
+// description / embed_provider / embed_model edits + re-embed trigger.
+// Form widgets use the @ui.Label / @ui.Input / @ui.Select primitives so the
+// component library carries the styling.
+templ Settings(props SettingsProps) {
+	{{ p := props.Project }}
+	{{ s := props.Status }}
+	<section class="form-page">
+		<header class="page-header">
+			<h1>{ p.Name } · settings</h1>
+			<p class="subtitle">
+				Slug <code>{ p.Slug }</code> is immutable.
+				Edit the long-form summary on the <a href={ templ.SafeURL("/p/" + p.Slug + "/summary") }>Summary page</a>.
+			</p>
+		</header>
+		@ui.Card(ui.CardProps{Title: "Embedding status", Class: "embedding-status"}) {
+			if s.SidecarPresent {
+				<p>
+					Embedded with <code>{ s.SidecarProvider }/{ s.SidecarModel }</code>
+					(<code>{ strconv.Itoa(s.SidecarDim) }d</code>).
+					if s.SidecarProvider != s.ExpectedProvider || s.SidecarModel != s.ExpectedModel {
+						Project record asks for <code>{ s.ExpectedProvider }/{ s.ExpectedModel }</code> —
+						re-embed to bring sidecars in line.
+					}
+				</p>
+			} else {
+				<p class="hint">No sidecars yet. Either this project was just created or a re-embed is in flight.</p>
+			}
+			<form
+				method="post"
+				action={ templ.SafeURL("/p/" + p.Slug + "/reembed") }
+				hx-confirm="This will rebuild all embeddings for this project."
+			>
+				<input type="hidden" name="_csrf" value={ props.CSRF }/>
+				@ui.Button(ui.ButtonProps{Type: "submit", Label: "Re-embed project"})
+			</form>
+		}
+		if props.FormError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { props.FormError }</div>
+		}
+		<form method="post" action={ templ.SafeURL("/p/" + p.Slug + "/settings") } class="stack">
+			@ui.Label(ui.LabelProps{For: "name", Text: "Name"})
+			@ui.Input(ui.InputProps{ID: "name", Name: "name", Required: true, Value: props.Submitted.Name})
+			@ui.Label(ui.LabelProps{For: "description", Text: "Description"})
+			@ui.Input(ui.InputProps{ID: "description", Name: "description", Value: props.Submitted.Description})
+			@ui.Label(ui.LabelProps{For: "embed_provider", Text: "Embed provider"})
+			@ui.Select(ui.SelectProps{
+				ID:   "embed_provider",
+				Name: "embed_provider",
+				Options: []ui.SelectOption{
+					{Value: "ollama", Label: "ollama", Selected: props.Submitted.EmbedProvider == "ollama"},
+					{Value: "openai", Label: "openai", Selected: props.Submitted.EmbedProvider == "openai"},
+				},
+			})
+			<label for="embed_model">Embed model <span class="muted">(provider-specific identifier)</span></label>
+			@ui.Input(ui.InputProps{
+				ID:          "embed_model",
+				Name:        "embed_model",
+				Value:       props.Submitted.EmbedModel,
+				Placeholder: "e.g. nomic-embed-text or text-embedding-3-small",
+			})
+			<input type="hidden" name="_csrf" value={ props.CSRF }/>
+			<div class="form-actions">
+				@ui.Button(ui.ButtonProps{Type: "submit", Label: "Save settings"})
+				<a class="btn-link" href={ templ.SafeURL("/p/" + p.Slug) }>Cancel</a>
+			</div>
+			<p class="hint">Changing the provider or model triggers a full re-embed automatically.</p>
+		</form>
+		@archivePolicyCard(props)
+	</section>
+}
+
+// archivePolicyCard renders the "Archive policy" fieldset plus the inline
+// dry-run / apply report. The six knobs map 1:1 to the project.yaml `archive`
+// block; the three buttons share one form and differ only by their `action`
+// value (save | preview | apply).
+templ archivePolicyCard(props SettingsProps) {
+	{{ p := props.Project }}
+	{{ a := props.Archive }}
+	@ui.Card(ui.CardProps{Title: "Archive policy", Class: "archive-policy"}) {
+		<p class="hint">
+			The automatic-archive sweep is opt-in. With it enabled, old / unhelpful tickets are
+			hidden from the default lists and search (never deleted). Preview before applying.
+		</p>
+		if props.ArchiveError != "" {
+			<div class="form-error" role="alert"><strong>Error:</strong> { props.ArchiveError }</div>
+		}
+		<form method="post" action={ templ.SafeURL("/p/" + p.Slug + "/archive-policy") } class="stack archive-policy-form">
+			<label class="check-row">
+				<input type="checkbox" name="enabled" value="true" checked?={ a.Enabled }/>
+				Enabled <span class="muted">— turn the sweep on for this project</span>
+			</label>
+			<div class="form-grid">
+				<div>
+					<label for="min_age_days">Min age (days)</label>
+					<input id="min_age_days" type="number" name="min_age_days" min="0" value={ strconv.Itoa(a.MinAgeDays) }/>
+				</div>
+				<div>
+					<label for="min_retrievals">Min retrievals</label>
+					<input id="min_retrievals" type="number" name="min_retrievals" min="0" value={ strconv.Itoa(a.MinRetrievals) }/>
+				</div>
+				<div>
+					<label for="dislike_ratio">Dislike ratio <span class="muted">(0–1)</span></label>
+					<input id="dislike_ratio" type="number" name="dislike_ratio" min="0" max="1" step="0.05" value={ strconv.FormatFloat(a.DislikeRatio, 'g', -1, 64) }/>
+				</div>
+				<div>
+					<label for="early_archive_age_days">Early-archive age (days)</label>
+					<input id="early_archive_age_days" type="number" name="early_archive_age_days" min="0" value={ strconv.Itoa(a.EarlyArchiveAgeDays) }/>
+				</div>
+			</div>
+			<label class="check-row">
+				<input type="checkbox" name="auto_sweep_on_mount" value="true" checked?={ a.AutoSweepOnMount }/>
+				Auto-sweep on mount <span class="muted">— run the sweep automatically when the project loads</span>
+			</label>
+			<input type="hidden" name="_csrf" value={ props.CSRF }/>
+			<div class="form-actions">
+				<button type="submit" name="action" value="save" class="btn btn-primary">Save policy</button>
+				<button type="submit" name="action" value="preview" class="btn">Preview (dry-run)</button>
+				if props.IsOwner {
+					<button type="submit" name="action" value="apply" class="btn btn-danger">Apply now</button>
+				}
+			</div>
+			<p class="hint">Save your changes before previewing — Preview &amp; Apply run against the saved policy.</p>
+		</form>
+		if props.Report != nil {
+			@archiveReport(*props.Report)
+		}
+	}
+}
+
+// archiveReport renders a sweep report below the form: the baseline considered
+// count, whether it was a dry-run or a real apply, and the per-ticket rows.
+templ archiveReport(r ArchiveReportView) {
+	<div class={ "archive-report", templ.KV("archive-report-committed", r.Committed) } role="status">
+		if r.Committed {
+			<h3>Applied — archived { strconv.Itoa(len(r.Rows)) } of { strconv.Itoa(r.Considered) } considered</h3>
+		} else {
+			<h3>Dry-run — would archive { strconv.Itoa(len(r.Rows)) } of { strconv.Itoa(r.Considered) } considered</h3>
+		}
+		if len(r.Rows) == 0 {
+			<p class="hint">Nothing matches the policy right now.</p>
+		} else {
+			<ul class="archive-report-list">
+				for _, row := range r.Rows {
+					<li>
+						<a href={ templ.SafeURL("/tickets/" + row.TicketID + "?slug=" + row.Slug) }>{ row.Title }</a>
+						<span class="muted archive-report-reason">{ row.Reason }</span>
+					</li>
+				}
+			</ul>
+		}
+	</div>
+}
