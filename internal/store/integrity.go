@@ -83,7 +83,7 @@ func (s *Store) Integrity(ctx context.Context, agentSt ...*AgentStore) ([]Warnin
 		as = agentSt[0]
 	}
 	if as != nil {
-		if err := as.WalkAgents(func(rec *AgentRecord) error {
+		if err := as.WalkAllAgents(func(rec *AgentRecord) error {
 			knownAgents[rec.ID] = true
 			return nil
 		}); err != nil {

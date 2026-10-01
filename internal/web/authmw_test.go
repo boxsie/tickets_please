@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"tickets_please/internal/auth"
+	"tickets_please/internal/config"
 	"tickets_please/internal/domain"
 	"tickets_please/internal/store"
 	"tickets_please/internal/svc"
@@ -185,5 +186,92 @@ func TestGuard_DisabledIsPassthrough(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 299 {
 		t.Fatalf("auth-disabled guard = %d, want 299 (passthrough)", resp.StatusCode)
+	}
+}
+
+func countAgents(t *testing.T, s *svc.Service) int {
+	t.Helper()
+	n := 0
+	if err := s.AgentStore.WalkAgents(func(*store.AgentRecord) error { n++; return nil }); err != nil {
+		t.Fatalf("walk agents: %v", err)
+	}
+	return n
+}
+
+// TestMount_AnonymousRequestMintsNoAgent pins the real route chain: a
+// cookieless GET writes no agent record, with auth on (bounced to login) or
+// off (served with a pending cookie id). An uptime probe hitting / once a
+// minute used to leave a record per hit — 51k before the registry walk timed
+// out and took the web UI down.
+func TestMount_AnonymousRequestMintsNoAgent(t *testing.T) {
+	for _, authOn := range []bool{true, false} {
+		deps := freshDeps(t)
+		if authOn {
+			deps.Cfg.Auth.Providers = map[string]config.AuthProviderConfig{
+				"github": {ClientID: "id", ClientSecret: "secret"},
+			}
+		}
+		mux := http.NewServeMux()
+		Mount(mux, deps)
+
+		for _, path := range []string{"/", "/p", "/agents"} {
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+			if authOn && rr.Code != http.StatusSeeOther {
+				t.Fatalf("auth on: GET %s = %d, want 303 to login", path, rr.Code)
+			}
+		}
+		if n := countAgents(t, deps.Service); n != 0 {
+			t.Fatalf("auth=%v: anonymous GETs minted %d agents, want 0", authOn, n)
+		}
+	}
+}
+
+// TestSession_PendingIDMaterializesOnFirstMutation: the id a GET hands out is
+// the id the first POST registers, so CSRF tokens rendered against it hold.
+func TestSession_PendingIDMaterializesOnFirstMutation(t *testing.T) {
+	deps := freshDeps(t)
+	a := newApp(deps)
+	var seen string
+	h := a.session.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen, _ = svc.SessionIDFrom(r.Context())
+	}))
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+	var cookie *http.Cookie
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == cookieName {
+			cookie = c
+		}
+	}
+	if cookie == nil || seen == "" {
+		t.Fatalf("GET issued no pending id (cookie=%v, id=%q)", cookie, seen)
+	}
+	pending := seen
+	if n := countAgents(t, deps.Service); n != 0 {
+		t.Fatalf("GET wrote %d agents, want 0", n)
+	}
+
+	// A second GET with the cookie keeps the pending id and still writes nothing.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if seen != pending || countAgents(t, deps.Service) != 0 {
+		t.Fatalf("second GET: id %q (want %q), agents %d", seen, pending, countAgents(t, deps.Service))
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/", nil)
+	req.AddCookie(cookie)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if seen != pending {
+		t.Fatalf("POST session id = %q, want pending %q", seen, pending)
+	}
+	rec, err := deps.Service.AgentStore.ReadAgent(pending)
+	if err != nil || !rec.ExpiresAt.After(time.Now()) {
+		t.Fatalf("POST did not materialize a live agent: %v, %v", rec, err)
+	}
+	if n := countAgents(t, deps.Service); n != 1 {
+		t.Fatalf("agents after POST = %d, want 1", n)
 	}
 }

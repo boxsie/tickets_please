@@ -386,6 +386,9 @@ func newServiceCore(cfg config.Config, provider embed.Provider, factory func(emb
 
 	go s.Cache.RunEvictor(evictCtx)
 
+	s.bgWG.Add(1)
+	go s.runAgentArchiver(backfillCtx)
+
 	// Boot backfill: walk every mounted project and enqueue any source files
 	// lacking sidecars onto that mount's worker. Runs async so an empty /
 	// freshly-cloned data dir doesn't pay the cost on every startup, and so
@@ -1101,13 +1104,19 @@ func (s *Service) maybeEvictLocked(keep string) {
 // working without each test path having to register a mount.
 func (s *Service) cacheResolveStore(slug string) (*store.Store, error) {
 	s.mountsMu.Lock()
-	if mount, ok := s.projectMounts[slug]; ok && mount.Store != nil {
+	mount, ok := s.projectMounts[slug]
+	if ok && mount.Store != nil {
 		mount.LastTouchedAt = time.Now()
 		st := mount.Store
 		s.mountsMu.Unlock()
 		return st, nil
 	}
 	s.mountsMu.Unlock()
+	if ok {
+		// Registered but LRU-evicted: eviction is a cache miss, not a
+		// disappearance — re-mount it.
+		return s.ResolveProjectStore(context.Background(), slug)
+	}
 	if s.Store != nil {
 		return s.Store, nil
 	}
@@ -1121,14 +1130,30 @@ func (s *Service) cacheWalkAllStores(fn func(*store.Store) error) error {
 	seen := make(map[*store.Store]struct{})
 	s.mountsMu.Lock()
 	stores := make([]*store.Store, 0, len(s.projectMounts))
+	var evicted []string
 	for _, m := range s.projectMounts {
 		if m.Store == nil {
+			evicted = append(evicted, m.RepoPath)
 			continue
 		}
 		stores = append(stores, m.Store)
 		seen[m.Store] = struct{}{}
 	}
 	s.mountsMu.Unlock()
+	// LRU-evicted mounts are still registered projects: walk them through a
+	// transient store (cheap — no worker, indexes or watcher) rather than
+	// re-mounting, which would just evict something else. Skipping them made
+	// every project past the cap vanish from list_projects after a restart.
+	for _, repoPath := range evicted {
+		st, err := s.buildMountStore(filepath.Join(repoPath, ".tickets_please"))
+		if err != nil {
+			if s.Logger != nil {
+				s.Logger.Warn("svc: walk evicted mount failed", "repo", repoPath, "err", err)
+			}
+			continue
+		}
+		stores = append(stores, st)
+	}
 	if s.Store != nil {
 		if _, ok := seen[s.Store]; !ok {
 			stores = append(stores, s.Store)

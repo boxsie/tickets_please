@@ -31,14 +31,16 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	// No session middleware — assets don't need identity.
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServerFS(staticFS(deps.Dev))))
 
-	// Route wrappers (W2-3). Base chain: session (agent attribution) → auth
-	// (hydrate the logged-in user) → optional per-project role guard → CSRF
+	// Route wrappers (W2-3). Base chain: auth (hydrate the logged-in user) →
+	// session (agent attribution) → optional per-project role guard → CSRF
 	// (POST only) → handler. Auth/role enforcement is a no-op unless OAuth is
-	// configured, preserving the localhost no-auth mode.
+	// configured, preserving the localhost no-auth mode. Auth runs first so an
+	// anonymous request is bounced to login without minting an agent — a
+	// once-a-minute uptime probe used to mint one per hit, forever.
 	sess := a.session.middleware
 	// authed: any logged-in user, no per-project role requirement.
 	authed := func(h http.HandlerFunc) http.Handler {
-		return sess(a.authMiddleware(http.HandlerFunc(a.withCSRF(h))))
+		return a.authMiddleware(sess(http.HandlerFunc(a.withCSRF(h))))
 	}
 	// pub: public route — session + CSRF, but no login required.
 	pub := func(h http.HandlerFunc) http.Handler {
@@ -46,11 +48,11 @@ func Mount(mux *http.ServeMux, deps Deps) {
 	}
 	// slugRole: /p/{slug}/... guarded by a minimum role on that project.
 	slugRole := func(min domain.Role, h http.HandlerFunc) http.Handler {
-		return sess(a.authMiddleware(a.requireSlugRole(min, http.HandlerFunc(a.withCSRF(h)))))
+		return a.authMiddleware(sess(a.requireSlugRole(min, http.HandlerFunc(a.withCSRF(h)))))
 	}
 	// tktRole: /tickets/{id}... guarded by a minimum role on the ticket's project.
 	tktRole := func(min domain.Role, h http.HandlerFunc) http.Handler {
-		return sess(a.authMiddleware(a.requireTicketRole(min, http.HandlerFunc(a.withCSRF(h)))))
+		return a.authMiddleware(sess(a.requireTicketRole(min, http.HandlerFunc(a.withCSRF(h)))))
 	}
 	// wrap is an alias for authed so the non-slug routes below read cleanly.
 	wrap := authed

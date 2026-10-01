@@ -322,7 +322,9 @@ func activeAgentKeyForRepo(agentStore *store.AgentStore, repoRoot string, now ti
 
 func agentIDsForKey(agentStore *store.AgentStore, key string) (map[string]struct{}, error) {
 	ids := make(map[string]struct{})
-	if err := agentStore.WalkAgents(func(rec *store.AgentRecord) error {
+	// Archived sessions too: an earlier session under the same key can still
+	// own an in-progress ticket.
+	if err := agentStore.WalkAllAgents(func(rec *store.AgentRecord) error {
 		if rec.Key == key {
 			ids[rec.ID] = struct{}{}
 		}

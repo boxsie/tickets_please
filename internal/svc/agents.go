@@ -28,6 +28,21 @@ import (
 // the agent thereafter inherits that user's per-project membership for
 // authorization. Empty means a plain key-only agent — the default.
 func (s *Service) RegisterAgent(ctx context.Context, key, name string, metadata map[string]string, requestedTTL time.Duration, actingForUserID string) (string, time.Time, error) {
+	return s.registerAgent(ctx, uuid.NewString(), key, name, metadata, requestedTTL, actingForUserID)
+}
+
+// RegisterAgentWithID is RegisterAgent with a caller-chosen session id. The web
+// UI uses it to materialize the id it already handed a browser in a signed
+// cookie, so the CSRF tokens rendered against that id stay valid.
+func (s *Service) RegisterAgentWithID(ctx context.Context, id, key, name string, metadata map[string]string, requestedTTL time.Duration) (time.Time, error) {
+	if strings.TrimSpace(id) == "" {
+		return time.Time{}, fmt.Errorf("%w: agent id required", domain.ErrInvalidArgument)
+	}
+	_, expiresAt, err := s.registerAgent(ctx, id, key, name, metadata, requestedTTL, "")
+	return expiresAt, err
+}
+
+func (s *Service) registerAgent(ctx context.Context, id, key, name string, metadata map[string]string, requestedTTL time.Duration, actingForUserID string) (string, time.Time, error) {
 	if strings.TrimSpace(key) == "" {
 		return "", time.Time{}, fmt.Errorf("%w: agent key required", domain.ErrInvalidArgument)
 	}
@@ -66,7 +81,7 @@ func (s *Service) RegisterAgent(ctx context.Context, key, name string, metadata 
 
 	now := time.Now()
 	rec := &store.AgentRecord{
-		ID:              uuid.NewString(),
+		ID:              id,
 		Key:             key,
 		Name:            name,
 		Metadata:        metadata,

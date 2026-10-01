@@ -15,24 +15,11 @@ import (
 	"tickets_please/internal/domain"
 )
 
-// isInGitRepo returns true if path (or any ancestor) contains a `.git`
-// directory or file. Cheap probe used at Store.New time so we can disable
-// auto-commit when the data dir isn't tracked.
+// isInGitRepo uses the same repository opener as commits. A placeholder or
+// malformed .git is not a repository, and must not enable auto-commit.
 func isInGitRepo(path string) bool {
-	cur := path
-	for {
-		gitPath := filepath.Join(cur, ".git")
-		if info, err := os.Stat(gitPath); err == nil {
-			// Either a directory (regular repo) or a file (submodule).
-			_ = info
-			return true
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return false
-		}
-		cur = parent
-	}
+	_, _, err := openRepoFor(path)
+	return err == nil
 }
 
 // stageRemovedUnder stages the deletion of every tracked file at or beneath

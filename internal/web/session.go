@@ -14,6 +14,8 @@ import (
 
 	"crypto/rand"
 
+	"github.com/google/uuid"
+
 	"tickets_please/internal/domain"
 	"tickets_please/internal/svc"
 )
@@ -62,31 +64,58 @@ func (m *sessionManager) middleware(next http.Handler) http.Handler {
 	})
 }
 
-// resolve returns the agentID for the current request — reading the cookie
-// when valid, minting a fresh agent (and rewriting the cookie) otherwise.
+// resolve returns the agentID for the current request.
+//
+// A browser without a valid cookie is handed a fresh id in a signed cookie,
+// but the agent record behind it is only written on the first request that can
+// mutate (anything but GET/HEAD/OPTIONS) — see materialize. Reads don't need
+// identity, and an uptime probe that never returns its cookie used to leave a
+// record behind on every hit (51k of them from a once-a-minute porter check).
+// CSRF tokens are bound to the id, so they stay valid across materialization.
 func (m *sessionManager) resolve(w http.ResponseWriter, r *http.Request) (string, error) {
+	mutating := !isSafeMethod(r.Method)
 	if id := m.readCookie(r); id != "" {
-		// Verify the agent still exists and isn't expired. AgentStore is
-		// authoritative — if the on-disk record is gone, the cookie is stale.
-		if rec, err := m.deps.Service.AgentStore.ReadAgent(id); err == nil {
+		// AgentStore is authoritative for ids that were materialized: a live
+		// record is the session; an expired one means start over. No record at
+		// all is a still-pending id we issued earlier.
+		rec, err := m.deps.Service.AgentStore.ReadAgent(id)
+		switch {
+		case err == nil:
 			if rec.ExpiresAt.After(time.Now()) {
 				return id, nil
 			}
-		} else if !errors.Is(err, domain.ErrNotFound) {
+		case errors.Is(err, domain.ErrNotFound):
+			if !mutating {
+				return id, nil
+			}
+			return id, m.materialize(r, id)
+		default:
 			return "", err
 		}
 	}
-	return m.mintAgent(w, r)
+	id := uuid.NewString()
+	if mutating {
+		if err := m.materialize(r, id); err != nil {
+			return "", err
+		}
+	}
+	m.writeCookie(w, r, id)
+	return id, nil
 }
 
-// mintAgent calls svc.RegisterAgent with a fresh random key, sets the
-// signed cookie, and returns the new agentID.
-func (m *sessionManager) mintAgent(w http.ResponseWriter, r *http.Request) (string, error) {
-	suffix, err := randomHex(8)
-	if err != nil {
-		return "", fmt.Errorf("mint agent: random: %w", err)
+// isSafeMethod reports whether method is read-only per RFC 9110.
+func isSafeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
 	}
-	key := "web-ui:" + suffix
+	return false
+}
+
+// materialize writes the agent record for a cookie id the browser already
+// holds. The key derives from the id, so two racing first POSTs from one
+// browser land on the same record rather than conflicting.
+func (m *sessionManager) materialize(r *http.Request, id string) error {
 	meta := map[string]string{
 		"client_name": "Web UI",
 		"client_kind": "browser",
@@ -95,12 +124,10 @@ func (m *sessionManager) mintAgent(w http.ResponseWriter, r *http.Request) (stri
 	}
 	// Web-UI cookie agents are key-only; the user identity rides in the
 	// signed cookie, not an acting-for binding (that's an MCP-agent concept).
-	id, _, err := m.deps.Service.RegisterAgent(r.Context(), key, "Web UI", meta, agentTTL, "")
-	if err != nil {
-		return "", fmt.Errorf("mint agent: register: %w", err)
+	if _, err := m.deps.Service.RegisterAgentWithID(r.Context(), id, "web-ui:"+id, "Web UI", meta, agentTTL); err != nil {
+		return fmt.Errorf("mint agent: register: %w", err)
 	}
-	m.writeCookie(w, r, id)
-	return id, nil
+	return nil
 }
 
 // readCookie returns the agentID from a valid signed cookie, or "" if the

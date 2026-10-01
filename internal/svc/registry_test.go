@@ -334,3 +334,41 @@ func TestRegistry_NonAbsoluteRepoPathErrors(t *testing.T) {
 		t.Fatal("expected error for non-absolute repoPath")
 	}
 }
+
+// TestRegistry_EvictedMountStaysVisible drives the public entry points, not
+// ResolveProjectStore: with more projects than the cap, a restart left every
+// evicted project missing from list_projects and get_project until an agent
+// re-registered into it.
+func TestRegistry_EvictedMountStaysVisible(t *testing.T) {
+	s := freshServiceNoDataDir(t, config.Config{MaxLoadedProjects: 2})
+	tmp := t.TempDir()
+	for _, slug := range []string{"proj-a", "proj-b", "proj-c"} {
+		if _, err := s.RegisterProjectMount(context.Background(), seedRepo(t, tmp, slug, slug)); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	s.mountsMu.Lock()
+	evicted := s.projectMounts["proj-a"].Store == nil
+	s.mountsMu.Unlock()
+	if !evicted {
+		t.Fatal("precondition: proj-a should be evicted")
+	}
+
+	projects, err := s.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	got := map[string]bool{}
+	for _, p := range projects {
+		got[p.Slug] = true
+	}
+	if !got["proj-a"] || !got["proj-b"] || !got["proj-c"] {
+		t.Fatalf("ListProjects = %v, want all three", got)
+	}
+
+	p, err := s.GetProject(context.Background(), "proj-a")
+	if err != nil || p.Slug != "proj-a" {
+		t.Fatalf("GetProject(evicted proj-a) = %v, %v", p, err)
+	}
+}

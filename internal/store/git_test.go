@@ -78,8 +78,14 @@ func TestAutoCommit_ProducesOneCommit(t *testing.T) {
 }
 
 func TestAutoCommit_NoGitRepoDisablesSilently(t *testing.T) {
+	// Stop ancestor discovery at an explicit non-repository fixture, even when
+	// the machine's temporary directory itself lives beneath a Git checkout.
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	cfg := config.Config{
-		DataDir:            t.TempDir(),
+		DataDir:            filepath.Join(root, "data"),
 		AutoCommit:         true,
 		LockTimeoutSeconds: 5,
 		FsnotifyEnabled:    false,
